@@ -10,7 +10,7 @@
 
 ## Current Status
 
-**Phase:** Milestone 1 — Phase 1.4 COMPLETE
+**Phase:** Milestone 1 — Phase 1.5 COMPLETE
 **Last Updated:** 2026-02-11
 
 ---
@@ -277,12 +277,75 @@ cocolash-ai/
 
 **Build Status:** ✅ Compiles successfully — zero TypeScript errors
 
-### Phase 1.5: Gemini Integration & Image Pipeline
-- [ ] Step 15 — Gemini client + safety error handling
-- [ ] Step 16 — Logo overlay (sharp compositing)
-- [ ] Step 17 — Storage helpers
-- [ ] Step 18 — Generation API route (full pipeline)
-- [ ] Step 19 — Image management APIs
+### Phase 1.5: Gemini Integration & Image Pipeline ✅ COMPLETE
+
+**Date Completed:** 2026-02-11
+
+#### Step 15: Gemini Client + Safety Error Handling ✅
+- **What was done:**
+  - Created `lib/gemini/safety.ts` — Custom `GeminiError` class with typed error codes: `EMPTY_RESPONSE`, `SAFETY_BLOCK`, `NO_IMAGE_DATA`, `RATE_LIMITED`, `TIMEOUT`, `INVALID_API_KEY`, `MODEL_ERROR`, `UNKNOWN`. Each code maps to a default HTTP status code and user-friendly message. Added `classifyGeminiError()` helper that parses raw errors from the Gemini SDK into typed `GeminiError` instances.
+  - Created `lib/gemini/client.ts` — Singleton `GoogleGenAI` instance that lazily initializes from `GEMINI_API_KEY` env var. Exports `GEMINI_IMAGE_MODEL` constant (currently `gemini-2.0-flash-exp`) and `GEMINI_ASPECT_RATIOS` map.
+  - Created `lib/gemini/generate.ts` — Core `generateImage(prompt, aspectRatio)` function. Calls `client.models.generateContent()` with `responseModalities: ["image", "text"]` and optional `imageConfig.aspectRatio`. Extracts base64 image data from response parts, validates buffer, and handles safety blocks.
+- **What was tried:** Used Context7 MCP to get the latest `@google/genai` SDK docs. The API uses `generateContent` with `responseModalities` and `imageConfig` for image generation, returning base64 `inlineData` in response parts.
+- **Model choice:** `gemini-2.0-flash-exp` — the image generation model from the Gemini API. This can be easily changed in `lib/gemini/client.ts` if Google releases updated models.
+
+#### Step 16: Logo Overlay with Sharp ✅
+- **What was done:**
+  - Created `lib/image-processing/logo-overlay.ts` — `applyLogoOverlay(imageBuffer, options)` function using Sharp for compositing. Features:
+    - Downloads logo from Supabase Storage URL with in-memory cache (5-min TTL)
+    - Resizes logo to configurable `sizePercent` of image width (default 15%)
+    - Applies configurable `opacity` (default 0.9) via alpha channel manipulation
+    - Positions logo at `top-left`, `top-right`, `bottom-left`, `bottom-right`, or `center` with configurable `paddingPercent` (default 4%)
+    - Composites onto base image and returns PNG buffer
+  - Added `selectLogoUrl()` helper that picks the right logo variant from the brand profile, with fallback to any available logo.
+
+#### Step 17: Storage Helpers ✅
+- **What was done:** Already completed in Phase 1.3. The `uploadGeneratedImage()` function in `lib/supabase/storage.ts` handles uploading generated image buffers to the `generated-images` bucket with UUID-based filenames, returning the public URL and storage path. No changes needed.
+
+#### Step 18: Generation API Route (Full Pipeline) ✅
+- **What was done:**
+  - Created `app/api/generate/route.ts` — POST endpoint with `maxDuration = 60`. Full 10-step pipeline:
+    1. Parse and validate all selections (category, aspectRatio, lashStyle, skinTone, hairStyle, scene, composition, vibe, logoOverlay, contextNote)
+    2. Fetch brand profile from database (for prompt overrides + logo URLs)
+    3. Fetch diversity tracker data (recent skin tones + hair styles)
+    4. Compose prompt via `composePrompt()` with brand overrides and diversity data
+    5. Call Gemini `generateImage()` with composed prompt and aspect ratio
+    6. Upload raw image to Supabase Storage (suffixed `-raw`)
+    7. If logo overlay enabled, apply overlay and upload final version (suffixed `-final`)
+    8. Insert record into `generated_images` table with all metadata
+    9. Record diversity selection for future rotation
+    10. Return `{ success, image, generationTimeMs }`
+  - Error handling: `GeminiError` instances return appropriate HTTP codes (422 for safety, 429 for rate limit, etc.), validation errors return 400, generic errors return 500.
+- **What was tried:** Comprehensive input validation with whitelists for all enum fields. Logo overlay gracefully falls back to raw image if overlay fails.
+
+#### Step 19: Image Management APIs ✅
+- **What was done:**
+  - Created `app/api/images/route.ts` with three handlers:
+    - `GET` — Paginated image listing with filters: `category`, `favorite`, `dateFrom`, `dateTo`, `sortBy`, `sortOrder`. Returns `{ images, pagination }` with total count and hasMore flag.
+    - `DELETE` — Removes image by ID. Deletes both the final and raw storage files, then removes the DB record.
+    - `PATCH` — Toggles the `is_favorite` boolean on an image record.
+  - Created `app/api/images/[id]/route.ts` — `GET` single image detail by ID.
+  - Created `app/api/images/[id]/download/route.ts` — `GET` image download. Fetches image from Supabase Storage, returns with `Content-Disposition: attachment` and descriptive filename (e.g., `cocolash-lifestyle-4x5-2026-02-11-abc12345.png`).
+
+#### Build Verification ✅
+- TypeScript compilation: All files compile with zero errors
+- All routes registered: `/api/generate`, `/api/images`, `/api/images/[id]`, `/api/images/[id]/download`
+- Fixed: Added `INVALID_API_KEY` and `MODEL_ERROR` to `GenerateErrorResponse.code` type union in `lib/types/index.ts`
+
+**Files Created/Modified in Phase 1.5:**
+| File | Action | Description |
+|------|--------|-------------|
+| `lib/gemini/safety.ts` | Created | GeminiError class + classifyGeminiError helper |
+| `lib/gemini/client.ts` | Created | Singleton GoogleGenAI + model constants |
+| `lib/gemini/generate.ts` | Created | generateImage() core function |
+| `lib/image-processing/logo-overlay.ts` | Created | applyLogoOverlay() with Sharp compositing |
+| `app/api/generate/route.ts` | Created | Full 10-step generation pipeline |
+| `app/api/images/route.ts` | Created | GET (list), DELETE, PATCH (favorite) |
+| `app/api/images/[id]/route.ts` | Created | GET single image detail |
+| `app/api/images/[id]/download/route.ts` | Created | GET image download (attachment) |
+| `lib/types/index.ts` | Modified | Added INVALID_API_KEY, MODEL_ERROR to error codes |
+
+**Build Status:** ✅ Compiles successfully — zero TypeScript errors
 
 ### Phase 1.6: UI Components
 - [ ] Step 20 — Selector components (Category, SkinTone, LashStyle, HairStyle, Scene, Composition, AspectRatio, LogoOverlay, ContextNote)

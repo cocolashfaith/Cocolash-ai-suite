@@ -1,0 +1,329 @@
+/**
+ * POST /api/generate — Image Generation Pipeline
+ *
+ * Full pipeline:
+ *   1. Validate selections from the form
+ *   2. Fetch brand profile for overrides + logos
+ *   3. Fetch diversity data for "random" rotation
+ *   4. Compose prompt via prompt engine
+ *   5. Call Gemini generateImage()
+ *   6. Upload raw image to Supabase Storage
+ *   7. If logo enabled, apply overlay and upload final version
+ *   8. Insert record into generated_images table
+ *   9. Record diversity selection
+ *  10. Return { success, image, generationTimeMs }
+ */
+import { NextRequest, NextResponse } from "next/server";
+import { createClient } from "@/lib/supabase/server";
+import { uploadGeneratedImage } from "@/lib/supabase/storage";
+import { generateImage } from "@/lib/gemini/generate";
+import { GeminiError } from "@/lib/gemini/safety";
+import { composePrompt } from "@/lib/prompts/compose";
+import { getRecentDiversityUsage, recordDiversitySelection } from "@/lib/diversity/tracker";
+import { applyLogoOverlay, selectLogoUrl } from "@/lib/image-processing/logo-overlay";
+import type {
+  GenerationSelections,
+  ContentCategory,
+  AspectRatio,
+  Composition,
+  LashStyle,
+  SkinTone,
+  HairStyle,
+  Scene,
+  Vibe,
+  GenerateResponse,
+  GenerateErrorResponse,
+} from "@/lib/types";
+
+// Allow up to 60 seconds for image generation
+export const maxDuration = 60;
+
+// ── Validation Helpers ───────────────────────────────────────
+const VALID_CATEGORIES: ContentCategory[] = ["lash-closeup", "lifestyle", "product"];
+const VALID_RATIOS: AspectRatio[] = ["1:1", "4:5", "9:16", "16:9"];
+const VALID_COMPOSITIONS: Composition[] = ["solo", "duo"];
+const VALID_LASH_STYLES: LashStyle[] = [
+  "natural", "volume", "dramatic", "cat-eye",
+  "wispy", "doll-eye", "hybrid", "mega-volume",
+];
+const VALID_SKIN_TONES: SkinTone[] = ["deep", "medium-deep", "medium", "light", "random"];
+const VALID_HAIR_STYLES: HairStyle[] = [
+  "4c-natural", "afro", "twist-out", "blown-out",
+  "box-braids", "locs", "sew-in", "cornrows", "bantu-knots",
+  "silk-press", "loose-waves", "short-tapered", "random",
+];
+const VALID_SCENES: Scene[] = [
+  "studio", "bedroom", "cafe", "outdoor-golden-hour",
+  "rooftop", "salon", "bathroom-vanity", "minimalist-backdrop", "random",
+];
+const VALID_VIBES: Vibe[] = [
+  "confident-glam", "soft-romantic", "bold-editorial",
+  "natural-beauty", "night-out", "self-care", "professional", "random",
+];
+
+function validateSelections(body: unknown): GenerationSelections {
+  const data = body as Record<string, unknown>;
+
+  if (!data || typeof data !== "object") {
+    throw new Error("Request body must be a JSON object.");
+  }
+
+  // Required fields
+  const category = data.category as ContentCategory;
+  if (!VALID_CATEGORIES.includes(category)) {
+    throw new Error(`Invalid category: ${category}`);
+  }
+
+  const aspectRatio = (data.aspectRatio as AspectRatio) || "4:5";
+  if (!VALID_RATIOS.includes(aspectRatio)) {
+    throw new Error(`Invalid aspect ratio: ${aspectRatio}`);
+  }
+
+  const lashStyle = (data.lashStyle as LashStyle) || "natural";
+  if (!VALID_LASH_STYLES.includes(lashStyle)) {
+    throw new Error(`Invalid lash style: ${lashStyle}`);
+  }
+
+  const skinTone = (data.skinTone as SkinTone) || "random";
+  if (!VALID_SKIN_TONES.includes(skinTone)) {
+    throw new Error(`Invalid skin tone: ${skinTone}`);
+  }
+
+  const hairStyle = (data.hairStyle as HairStyle) || "random";
+  if (!VALID_HAIR_STYLES.includes(hairStyle)) {
+    throw new Error(`Invalid hair style: ${hairStyle}`);
+  }
+
+  const scene = (data.scene as Scene) || "studio";
+  if (!VALID_SCENES.includes(scene)) {
+    throw new Error(`Invalid scene: ${scene}`);
+  }
+
+  const composition = (data.composition as Composition) || "solo";
+  if (!VALID_COMPOSITIONS.includes(composition)) {
+    throw new Error(`Invalid composition: ${composition}`);
+  }
+
+  const vibe = (data.vibe as Vibe) || "confident-glam";
+  if (!VALID_VIBES.includes(vibe)) {
+    throw new Error(`Invalid vibe: ${vibe}`);
+  }
+
+  // Logo overlay settings
+  const logoData = (data.logoOverlay as Record<string, unknown>) || {};
+  const logoOverlay = {
+    enabled: Boolean(logoData.enabled),
+    position: (logoData.position as string) || "bottom-right",
+    variant: (logoData.variant as string) || "white",
+    opacity: typeof logoData.opacity === "number" ? logoData.opacity : 0.9,
+    paddingPercent: typeof logoData.paddingPercent === "number" ? logoData.paddingPercent : 4,
+    sizePercent: typeof logoData.sizePercent === "number" ? logoData.sizePercent : 15,
+  } as GenerationSelections["logoOverlay"];
+
+  // Optional context note (max 100 chars)
+  const contextNote = typeof data.contextNote === "string"
+    ? data.contextNote.substring(0, 100)
+    : undefined;
+
+  return {
+    category,
+    skinTone,
+    lashStyle,
+    hairStyle,
+    scene,
+    composition,
+    aspectRatio,
+    vibe,
+    logoOverlay,
+    contextNote,
+  };
+}
+
+// ── POST Handler ─────────────────────────────────────────────
+export async function POST(request: NextRequest) {
+  const startTime = Date.now();
+
+  try {
+    // 1. Parse and validate selections
+    const body = await request.json();
+    const selections = validateSelections(body);
+
+    // 2. Get Supabase client
+    const supabase = await createClient();
+
+    // 3. Fetch brand profile for prompt overrides and logo URLs
+    const { data: brandProfile, error: brandError } = await supabase
+      .from("brand_profiles")
+      .select("*")
+      .limit(1)
+      .single();
+
+    if (brandError || !brandProfile) {
+      console.error("Failed to fetch brand profile:", brandError?.message);
+      return NextResponse.json<GenerateErrorResponse>(
+        { error: "Brand profile not found. Please configure it in Settings.", code: "UNKNOWN" },
+        { status: 500 }
+      );
+    }
+
+    const brandId = brandProfile.id;
+
+    // 4. Fetch diversity data for "random" rotation
+    const { recentSkinTones, recentHairStyles } = await getRecentDiversityUsage(
+      supabase,
+      brandId
+    );
+
+    // 5. Compose the prompt
+    const composed = composePrompt(selections, {
+      customBrandDNA: brandProfile.brand_dna_prompt,
+      customNegativePrompt: brandProfile.negative_prompt,
+      recentSkinTones,
+      recentHairStyles,
+    });
+
+    console.log(`[Generate] Category: ${selections.category}, Aspect: ${selections.aspectRatio}`);
+    console.log(`[Generate] Resolved: skin=${composed.resolvedSelections.skinTone}, hair=${composed.resolvedSelections.hairStyle}, scene=${composed.resolvedSelections.scene}, vibe=${composed.resolvedSelections.vibe}`);
+
+    // 6. Call Gemini to generate the image
+    const geminiResult = await generateImage(
+      composed.fullPrompt,
+      selections.aspectRatio
+    );
+
+    console.log(`[Generate] Gemini returned ${geminiResult.buffer.length} bytes (${geminiResult.mimeType})`);
+
+    // 7. Upload raw image to Supabase Storage
+    const rawUpload = await uploadGeneratedImage(
+      supabase,
+      geminiResult.buffer,
+      brandId,
+      "-raw"
+    );
+
+    // 8. Logo overlay (if enabled)
+    let finalImageUrl = rawUpload.url;
+    let finalStoragePath = rawUpload.path;
+    let hasLogoOverlay = false;
+
+    if (selections.logoOverlay.enabled) {
+      const logoUrl = selectLogoUrl(selections.logoOverlay.variant, {
+        logo_white_url: brandProfile.logo_white_url,
+        logo_dark_url: brandProfile.logo_dark_url,
+        logo_gold_url: brandProfile.logo_gold_url,
+      });
+
+      if (logoUrl) {
+        try {
+          const overlayResult = await applyLogoOverlay(geminiResult.buffer, {
+            ...selections.logoOverlay,
+            logoUrl,
+          });
+
+          // Upload the logo-overlaid version
+          const finalUpload = await uploadGeneratedImage(
+            supabase,
+            overlayResult.buffer,
+            brandId,
+            "-final"
+          );
+
+          finalImageUrl = finalUpload.url;
+          finalStoragePath = finalUpload.path;
+          hasLogoOverlay = true;
+
+          console.log(`[Generate] Logo overlay applied (${selections.logoOverlay.position})`);
+        } catch (logoError) {
+          console.warn("[Generate] Logo overlay failed, using raw image:", logoError);
+          // Continue with the raw image if logo overlay fails
+        }
+      } else {
+        console.warn("[Generate] Logo overlay requested but no logo uploaded for variant:", selections.logoOverlay.variant);
+      }
+    }
+
+    // 9. Insert record into generated_images
+    const generationTimeMs = Date.now() - startTime;
+
+    const imageRecord = {
+      brand_id: brandId,
+      prompt_used: composed.fullPrompt,
+      selections: selections,
+      image_url: finalImageUrl,
+      raw_image_url: hasLogoOverlay ? rawUpload.url : null,
+      storage_path: finalStoragePath,
+      aspect_ratio: selections.aspectRatio,
+      category: selections.category,
+      composition: selections.composition,
+      has_logo_overlay: hasLogoOverlay,
+      logo_position: hasLogoOverlay ? selections.logoOverlay.position : null,
+      generation_time_ms: generationTimeMs,
+      gemini_model: geminiResult.model,
+    };
+
+    const { data: insertedImage, error: insertError } = await supabase
+      .from("generated_images")
+      .insert(imageRecord)
+      .select()
+      .single();
+
+    if (insertError) {
+      console.error("Failed to insert image record:", insertError.message);
+      // Don't fail the request — the image was generated and uploaded
+    }
+
+    // 10. Record diversity selection for rotation
+    await recordDiversitySelection(
+      supabase,
+      brandId,
+      composed.resolvedSelections.skinTone,
+      composed.resolvedSelections.hairStyle
+    );
+
+    console.log(`[Generate] Complete in ${generationTimeMs}ms`);
+
+    return NextResponse.json<GenerateResponse>({
+      success: true,
+      image: insertedImage || {
+        ...imageRecord,
+        id: "temp-" + Date.now(),
+        is_favorite: false,
+        tags: null,
+        created_at: new Date().toISOString(),
+      },
+      generationTimeMs,
+    });
+  } catch (error) {
+    const elapsed = Date.now() - startTime;
+    console.error(`[Generate] Failed after ${elapsed}ms:`, error);
+
+    // Handle Gemini-specific errors
+    if (error instanceof GeminiError) {
+      return NextResponse.json<GenerateErrorResponse>(
+        {
+          error: error.userMessage,
+          code: error.code,
+          retryAfterMs: error.retryAfterMs,
+        },
+        { status: error.statusCode }
+      );
+    }
+
+    // Handle validation errors
+    if (error instanceof Error && error.message.startsWith("Invalid ")) {
+      return NextResponse.json<GenerateErrorResponse>(
+        { error: error.message, code: "UNKNOWN" },
+        { status: 400 }
+      );
+    }
+
+    // Generic server error
+    return NextResponse.json<GenerateErrorResponse>(
+      {
+        error: "An unexpected error occurred during image generation.",
+        code: "UNKNOWN",
+      },
+      { status: 500 }
+    );
+  }
+}

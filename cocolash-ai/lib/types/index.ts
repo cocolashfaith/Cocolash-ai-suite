@@ -195,7 +195,7 @@ export interface GenerateResponse {
 
 export interface GenerateErrorResponse {
   error: string;
-  code?: "SAFETY_BLOCK" | "RATE_LIMITED" | "EMPTY_RESPONSE" | "NO_IMAGE_DATA" | "TIMEOUT" | "UNKNOWN";
+  code?: "SAFETY_BLOCK" | "RATE_LIMITED" | "EMPTY_RESPONSE" | "NO_IMAGE_DATA" | "TIMEOUT" | "INVALID_API_KEY" | "MODEL_ERROR" | "UNKNOWN";
   retryAfterMs?: number;
 }
 

@@ -1,0 +1,42 @@
+/**
+ * Gemini API Client — Singleton
+ *
+ * Creates a single GoogleGenAI instance reused across all requests.
+ * The client is initialized lazily and cached for the process lifetime.
+ */
+import { GoogleGenAI } from "@google/genai";
+
+let _client: GoogleGenAI | null = null;
+
+/**
+ * Returns a singleton GoogleGenAI client.
+ * Throws if GEMINI_API_KEY is not set.
+ */
+export function getGeminiClient(): GoogleGenAI {
+  if (!_client) {
+    const apiKey = process.env.GEMINI_API_KEY;
+    if (!apiKey) {
+      throw new Error(
+        "GEMINI_API_KEY environment variable is not set. " +
+          "Get your key from https://aistudio.google.com/apikey"
+      );
+    }
+    _client = new GoogleGenAI({ apiKey });
+  }
+  return _client;
+}
+
+// ── Model Constants ──────────────────────────────────────────
+/** Default image generation model */
+export const GEMINI_IMAGE_MODEL = "gemini-2.0-flash-exp";
+
+/**
+ * Supported aspect ratios for the image generation model.
+ * Maps our ratio strings to the format expected by Gemini.
+ */
+export const GEMINI_ASPECT_RATIOS: Record<string, string> = {
+  "1:1": "1:1",
+  "4:5": "4:5",
+  "9:16": "9:16",
+  "16:9": "16:9",
+};
