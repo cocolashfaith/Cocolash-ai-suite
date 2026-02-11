@@ -1,0 +1,175 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+@import "shadcn/tailwind.css";
+
+@custom-variant dark (&:is(.dark *));
+
+/*
+ * CocoLash AI — Brand Theme
+ * Colors: Pink (#ead1c1), Brown (#28150e), Golden (#ce9765),
+ *         Beige (#ede5d6), Charcoal (#242424), White (#ffffff)
+ * Design: Dark brown sidebar + warm beige content area
+ */
+
+@theme inline {
+  /* Base shadcn mappings */
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --font-sans: var(--font-geist-sans);
+  --font-mono: var(--font-geist-mono);
+  --color-sidebar-ring: var(--sidebar-ring);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar: var(--sidebar);
+  --color-chart-5: var(--chart-5);
+  --color-chart-4: var(--chart-4);
+  --color-chart-3: var(--chart-3);
+  --color-chart-2: var(--chart-2);
+  --color-chart-1: var(--chart-1);
+  --color-ring: var(--ring);
+  --color-input: var(--input);
+  --color-border: var(--border);
+  --color-destructive: var(--destructive);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-accent: var(--accent);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-muted: var(--muted);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-secondary: var(--secondary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-primary: var(--primary);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-popover: var(--popover);
+  --color-card-foreground: var(--card-foreground);
+  --color-card: var(--card);
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+  --radius-2xl: calc(var(--radius) + 8px);
+  --radius-3xl: calc(var(--radius) + 12px);
+  --radius-4xl: calc(var(--radius) + 16px);
+
+  /* CocoLash Brand Colors — available as bg-coco-*, text-coco-*, etc. */
+  --color-coco-pink: #ead1c1;
+  --color-coco-pink-light: #f5e8df;
+  --color-coco-pink-dark: #d4b5a0;
+  --color-coco-brown: #28150e;
+  --color-coco-brown-light: #3d2518;
+  --color-coco-brown-medium: #5a3d2e;
+  --color-coco-golden: #ce9765;
+  --color-coco-golden-light: #dbb48a;
+  --color-coco-golden-dark: #b07a48;
+  --color-coco-beige: #ede5d6;
+  --color-coco-beige-light: #f5f0e6;
+  --color-coco-beige-dark: #ddd3c0;
+  --color-coco-charcoal: #242424;
+  --color-coco-white: #ffffff;
+}
+
+:root {
+  --radius: 0.625rem;
+
+  /* CocoLash Light Theme — Warm beige content area */
+  --background: #ede5d6;
+  --foreground: #28150e;
+
+  --card: #ffffff;
+  --card-foreground: #28150e;
+
+  --popover: #ffffff;
+  --popover-foreground: #28150e;
+
+  --primary: #28150e;
+  --primary-foreground: #f5f0e6;
+
+  --secondary: #ead1c1;
+  --secondary-foreground: #28150e;
+
+  --muted: #ddd3c0;
+  --muted-foreground: #5a3d2e;
+
+  --accent: #ce9765;
+  --accent-foreground: #28150e;
+
+  --destructive: oklch(0.577 0.245 27.325);
+
+  --border: #d4b5a0;
+  --input: #d4b5a0;
+  --ring: #ce9765;
+
+  /* Chart colors — CocoLash palette */
+  --chart-1: #ce9765;
+  --chart-2: #ead1c1;
+  --chart-3: #28150e;
+  --chart-4: #5a3d2e;
+  --chart-5: #dbb48a;
+
+  /* Sidebar — Dark brown (#28150e) */
+  --sidebar: #28150e;
+  --sidebar-foreground: #ede5d6;
+  --sidebar-primary: #ce9765;
+  --sidebar-primary-foreground: #28150e;
+  --sidebar-accent: #3d2518;
+  --sidebar-accent-foreground: #ede5d6;
+  --sidebar-border: #3d2518;
+  --sidebar-ring: #ce9765;
+}
+
+.dark {
+  /* Dark mode (not primary for CocoLash, but available) */
+  --background: #1a1009;
+  --foreground: #ede5d6;
+
+  --card: #28150e;
+  --card-foreground: #ede5d6;
+
+  --popover: #28150e;
+  --popover-foreground: #ede5d6;
+
+  --primary: #ce9765;
+  --primary-foreground: #28150e;
+
+  --secondary: #3d2518;
+  --secondary-foreground: #ede5d6;
+
+  --muted: #3d2518;
+  --muted-foreground: #d4b5a0;
+
+  --accent: #ce9765;
+  --accent-foreground: #28150e;
+
+  --destructive: oklch(0.704 0.191 22.216);
+
+  --border: #3d2518;
+  --input: #3d2518;
+  --ring: #ce9765;
+
+  --chart-1: #ce9765;
+  --chart-2: #ead1c1;
+  --chart-3: #dbb48a;
+  --chart-4: #b07a48;
+  --chart-5: #5a3d2e;
+
+  --sidebar: #1a1009;
+  --sidebar-foreground: #ede5d6;
+  --sidebar-primary: #ce9765;
+  --sidebar-primary-foreground: #28150e;
+  --sidebar-accent: #28150e;
+  --sidebar-accent-foreground: #ede5d6;
+  --sidebar-border: #28150e;
+  --sidebar-ring: #ce9765;
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+  body {
+    @apply bg-background text-foreground;
+  }
+}
