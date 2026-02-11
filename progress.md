@@ -10,7 +10,7 @@
 
 ## Current Status
 
-**Phase:** Milestone 1 — Phase 1.1 COMPLETE
+**Phase:** Milestone 1 — Phase 1.2 COMPLETE
 **Last Updated:** 2026-02-11
 
 ---
@@ -22,6 +22,7 @@
 | 2026-02-11 | Original client proposal finalized (`original_proposal.md`) |
 | 2026-02-11 | Master implementation plan created (`MASTER_PLAN.md`) — full technical architecture, file structure, database schema, prompt system, and all 58 steps across 3 milestones defined |
 | 2026-02-11 | **Phase 1.1 COMPLETE** — Full project scaffolding done (see details below) |
+| 2026-02-11 | **Phase 1.2 COMPLETE** — Authentication & Layout done (see details below) |
 
 ---
 
@@ -105,10 +106,55 @@ cocolash-ai/
 └── package.json
 ```
 
-### Phase 1.2: Authentication & Layout
-- [ ] Step 6 — Auth middleware
-- [ ] Step 7 — Login page
-- [ ] Step 8 — Protected layout (sidebar + responsive nav)
+### Phase 1.2: Authentication & Layout ✅ COMPLETE
+- [x] Step 6 — Auth middleware
+  - Created `middleware.ts` with cookie-based auth checking
+  - Checks `cocolash-auth` httpOnly cookie against `AUTH_TOKEN` env var
+  - Unauthenticated users redirected to `/login`
+  - Public paths excluded: `/login`, `/api/auth`, static assets
+  - Authenticated users visiting `/login` are redirected to `/generate`
+  - Matcher excludes `_next/static`, `_next/image`, favicon, images
+  - **Note:** Next.js 16 shows deprecation warning for `middleware` (suggests `proxy`). Still works perfectly — can migrate later if needed.
+- [x] Step 7 — Login page + Auth API
+  - `app/api/auth/route.ts` — POST endpoint:
+    - Validates password against `AUTH_PASSWORD` env var
+    - Sets `cocolash-auth` httpOnly cookie (30-day expiry, secure in prod, sameSite: lax)
+    - Returns 401 on invalid password, 200 on success
+  - `app/api/auth/route.ts` — DELETE endpoint:
+    - Clears auth cookie for logout functionality
+  - `app/(auth)/login/page.tsx` — Beautiful branded login page:
+    - Warm beige background with subtle dot pattern
+    - CocoLash brand logo icon (Sparkles in brown square)
+    - Password input with show/hide toggle
+    - Golden "Sign In" button with loading state
+    - Error message display with red styling
+    - Auto-redirect to `/generate` on success
+- [x] Step 8 — Protected layout (sidebar + responsive nav)
+  - `app/(protected)/layout.tsx` — Protected wrapper:
+    - Desktop: 256px dark brown sidebar (fixed left) + beige content area
+    - Mobile: Header + scrollable content + bottom nav
+    - Max-width content container (7xl) with responsive padding
+  - `components/layout/Sidebar.tsx` — Desktop sidebar:
+    - Dark brown background (#28150e)
+    - CocoLash logo with golden sparkles icon
+    - 3 nav links: Generate, Gallery, Settings (with lucide icons)
+    - Active link highlighting with golden accent + dot indicator
+    - Tooltips on hover showing descriptions
+    - Logout button at bottom with loading state
+  - `components/layout/MobileNav.tsx` — Mobile bottom nav:
+    - Fixed bottom bar with dark brown background
+    - 3 nav items with icons and labels
+    - Active indicator with golden underline
+    - Hidden on desktop (md breakpoint)
+  - `components/layout/Header.tsx` — Mobile top header:
+    - Sticky header with backdrop blur
+    - Brand icon + current page title
+    - Logout button
+    - Hidden on desktop
+  - `app/page.tsx` — Root redirect to `/generate`
+  - Placeholder pages created for `/generate`, `/gallery`, `/settings`
+
+**Build Status:** ✅ Compiles successfully — all 7 routes detected
 
 ### Phase 1.3: Brand Profile System
 - [ ] Step 9 — Brand constants + prompt files
