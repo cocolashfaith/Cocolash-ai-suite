@@ -10,7 +10,7 @@
 
 ## Current Status
 
-**Phase:** Milestone 1 — Phase 1.3 COMPLETE
+**Phase:** Milestone 1 — Phase 1.4 COMPLETE
 **Last Updated:** 2026-02-11
 
 ---
@@ -24,6 +24,7 @@
 | 2026-02-11 | **Phase 1.1 COMPLETE** — Full project scaffolding done (see details below) |
 | 2026-02-11 | **Phase 1.2 COMPLETE** — Authentication & Layout done (see details below) |
 | 2026-02-11 | **Phase 1.3 COMPLETE** — Brand Profile System done + full browser testing (see details below) |
+| 2026-02-11 | **Phase 1.4 COMPLETE** — Prompt Engine built (types, 6 modules, 3 category templates, composer, diversity tracker) |
 
 ---
 
@@ -229,10 +230,52 @@ cocolash-ai/
 | Sign out clears cookie + redirects to /login | ✅ Pass |
 | Middleware protects routes (unauthenticated → /login) | ✅ Pass |
 
-### Phase 1.4: Prompt Engine
-- [ ] Step 12 — Type definitions
-- [ ] Step 13 — Prompt modules (skin tones, hair, lashes, scenes, vibes, compositions)
-- [ ] Step 14 — Category templates + composer
+**Architecture Decision: Supabase Service Role Key (Deferred to M3)**
+
+| Item | Detail |
+|------|--------|
+| **Issue** | During Phase 1.3, the Brand API initially used `createAdminClient()` which requires the `SUPABASE_SERVICE_ROLE_KEY` (a JWT from Settings → API → Project API keys). The key provided in `.env.local` was a publishable key (`sbp_...`) from the newer API Keys page, not the legacy `service_role` JWT. This caused "Invalid API key" errors. |
+| **What we did** | Switched all server-side Supabase calls to use `createClient()` (anon key) instead of `createAdminClient()` (service role key). This works because **RLS is currently disabled** on all tables (`brand_profiles`, `generated_images`, `diversity_tracker`). |
+| **Why this is fine for M1-M2** | This is a single-user, password-protected internal tool. With RLS off, the anon key has full read/write access to the tables. All API routes are server-side only (not exposed to browser). Auth is enforced by our middleware cookie check. |
+| **What changes in M3** | In Phase 3.1 (Supabase Auth Upgrade), we will: (1) Enable RLS policies on all tables, (2) Obtain the proper `service_role` JWT from Dashboard → Settings → API → Project API keys, (3) Switch admin operations back to `createAdminClient()` for elevated privileges, (4) Use the anon key + user session for client-side queries with proper RLS enforcement. |
+| **Action required later** | In M3: Go to Supabase Dashboard → Settings → API → copy the `service_role` key (long JWT, three `.`-separated chunks) and add to `.env.local`. |
+
+### Phase 1.4: Prompt Engine ✅ COMPLETE
+- [x] Step 12 — Type definitions (`lib/types/index.ts`)
+  - **Content types:** `ContentCategory` (lash-closeup, lifestyle, product) + `ContentCategoryAll` (M2 additions)
+  - **Composition:** `Composition` (solo, duo) + `CompositionAll` (M2 group)
+  - **Aspect ratios:** `AspectRatio` (1:1, 4:5, 9:16, 16:9) with `AspectRatioOption` including dimensions and platform labels
+  - **Skin tones:** `SkinTone` (deep, medium-deep, medium, light, random) with `SkinToneOption` for UI
+  - **Lash styles:** `LashStyle` — 8 styles (natural, volume, dramatic, cat-eye, wispy, doll-eye, hybrid, mega-volume)
+  - **Hair styles:** `HairStyle` — 12 styles + random, grouped by Natural/Protective/Styled with `HairStyleOption`
+  - **Scenes:** `Scene` — 8 environments + random
+  - **Vibes:** `Vibe` — 7 moods + random
+  - **Logo overlay:** `LogoPosition`, `LogoVariant`, `LogoOverlaySettings` with opacity/padding/size controls
+  - **Core interfaces:** `GenerationSelections` (full form state), `GeneratedImage` (DB record), `BrandProfile` (DB record)
+  - **API types:** `GenerateResponse`, `GenerateErrorResponse` with error codes
+  - **Utility:** `DescriptorFn<T>`, `DiversityRecord`
+- [x] Step 13 — Prompt modules (6 descriptor files)
+  - `lib/prompts/modules/skin-tones.ts` — Monk Skin Tone Scale with 3 rich descriptors per tier (12 total). Photography-grade descriptions emphasizing melanin, texture, and glow. `SKIN_TONE_OPTIONS` with visual swatch colors for UI.
+  - `lib/prompts/modules/hair-styles.ts` — 12 styles across Natural (4C, Afro, Twist-Out, Blown-Out), Protective (Box Braids, Locs, Sew-In, Cornrows, Bantu Knots), Styled (Silk Press, Loose Waves, Short Tapered). Each with detailed texture/styling description. Grouped options for UI.
+  - `lib/prompts/modules/lash-styles.ts` — 8 lash styles with descriptions focusing on fiber detail, volume, curl pattern, and overall effect. UI options include short descriptions.
+  - `lib/prompts/modules/scenes.ts` — 8 environments with full setting descriptions (studio, bedroom, cafe, golden hour, rooftop, salon, bathroom vanity, minimalist). Scene-to-category mapping (Close-ups → studio only, Lifestyle → all, Product → subset).
+  - `lib/prompts/modules/vibes.ts` — 7 moods with expression/pose/energy descriptions (confident glam, soft romantic, bold editorial, natural beauty, night out, self-care, professional). UI options with short descriptions.
+  - `lib/prompts/modules/compositions.ts` — Solo and Duo compositions with positioning/framing descriptions. UI options for selector.
+- [x] Step 14 — Category templates + composer
+  - `lib/prompts/categories/lash-closeup.ts` — Extreme macro eye photography. Randomized gaze directions. Butterfly lighting with catchlights. Pink gradient background. Hyper-realistic skin texture requirements.
+  - `lib/prompts/categories/lifestyle.ts` — Medium-shot editorial portraits. Persona-driven (randomly selects Balanced Beauty or She's Got Style). Scene, vibe, hair, composition all integrated. Brand colors in wardrobe. Negative space for logo overlay. Safety terms auto-appended.
+  - `lib/prompts/categories/product.ts` — Premium product staging. Randomized surface materials and prop arrangements. Center-weighted composition. "Glow" lighting. 8K commercial quality. Brand palette in scene.
+  - `lib/prompts/compose.ts` — **Master composer:**
+    - Formula: `BRAND_DNA + CATEGORY_TEMPLATE(selections) + NEGATIVE_PROMPT`
+    - Resolves all "random" selections via diversity-aware rotation
+    - Skin tone and hair style rotation uses least-recently-used algorithm from `diversity_tracker` table
+    - Scene resolution respects category constraints
+    - Returns `ComposedPrompt` with: fullPrompt, categoryPrompt, resolvedSelections
+  - `lib/diversity/tracker.ts` — Supabase-backed diversity rotation:
+    - `getRecentDiversityUsage()` — fetches last 20 selections for rotation
+    - `recordDiversitySelection()` — logs skin tone + hair style after generation
+
+**Build Status:** ✅ Compiles successfully — zero TypeScript errors
 
 ### Phase 1.5: Gemini Integration & Image Pipeline
 - [ ] Step 15 — Gemini client + safety error handling
