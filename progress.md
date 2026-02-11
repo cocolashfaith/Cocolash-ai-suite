@@ -10,7 +10,7 @@
 
 ## Current Status
 
-**Phase:** Milestone 1 — Phase 1.2 COMPLETE
+**Phase:** Milestone 1 — Phase 1.3 COMPLETE
 **Last Updated:** 2026-02-11
 
 ---
@@ -23,6 +23,7 @@
 | 2026-02-11 | Master implementation plan created (`MASTER_PLAN.md`) — full technical architecture, file structure, database schema, prompt system, and all 58 steps across 3 milestones defined |
 | 2026-02-11 | **Phase 1.1 COMPLETE** — Full project scaffolding done (see details below) |
 | 2026-02-11 | **Phase 1.2 COMPLETE** — Authentication & Layout done (see details below) |
+| 2026-02-11 | **Phase 1.3 COMPLETE** — Brand Profile System done + full browser testing (see details below) |
 
 ---
 
@@ -156,10 +157,77 @@ cocolash-ai/
 
 **Build Status:** ✅ Compiles successfully — all 7 routes detected
 
-### Phase 1.3: Brand Profile System
-- [ ] Step 9 — Brand constants + prompt files
-- [ ] Step 10 — Brand API (GET/PUT)
-- [ ] Step 11 — Settings page + LogoUploader
+### Phase 1.3: Brand Profile System ✅ COMPLETE
+- [x] Step 9 — Brand constants + prompt files
+  - `lib/constants/brand.ts` — Central source of truth:
+    - `BRAND_COLORS` object with primary/secondary/accent groups
+    - `BRAND_PALETTE` flat array for UI palette display (6 colors with labels, hex, categories)
+    - `DEFAULT_TONE_KEYWORDS` array (8 keywords)
+    - `LOGO_VARIANTS` for white/dark/gold logos
+    - `BRAND_PERSONAS` (Balanced Beauty, She's Got Style)
+    - `COLOR_RULE` (60-30-10 rule description)
+  - `lib/prompts/brand-dna.ts` — Master Brand DNA block:
+    - Full system context prompt (1244 chars) encoding CocoLash visual identity
+    - `getBrandDNA(customDNA?)` helper with fallback to default
+  - `lib/prompts/negative.ts` — Negative prompt constants:
+    - `DEFAULT_NEGATIVE_PROMPT` (236 chars) — terms to exclude
+    - `SAFETY_NEGATIVE_APPEND` — extra terms for lifestyle shots
+    - `getNegativePrompt()` and `getSafeNegativePrompt()` helpers
+  - `lib/supabase/client.ts` — Browser Supabase client (using `@supabase/ssr`)
+  - `lib/supabase/server.ts` — Server Supabase client + Admin client
+  - `lib/supabase/storage.ts` — Storage helpers:
+    - `uploadGeneratedImage()` — for AI-generated images
+    - `uploadBrandAsset()` — for logo uploads (upsert mode)
+    - `deleteStorageFile()` and `getPublicUrl()` utilities
+    - Storage bucket constants: `GENERATED_IMAGES`, `BRAND_ASSETS`
+- [x] Step 10 — Brand API (GET/PUT)
+  - `app/api/brand/route.ts`:
+    - **GET** — Fetches brand profile from Supabase. Auto-seeds defaults if no profile exists.
+    - **PUT** — Partial updates for: `tone_keywords`, `brand_dna_prompt`, `negative_prompt`, logo URLs. Color palette is read-only (hardcoded brand identity). Automatically sets `updated_at`.
+    - Whitelisted fields only — prevents arbitrary data injection
+  - **Bug Found & Fixed:** Initially used `createAdminClient()` with service role key, but user's `SUPABASE_SERVICE_ROLE_KEY` was a publishable key (`sbp_...`) not a JWT. Switched to `createClient()` (anon key) since RLS is disabled on tables. Will revisit when RLS is enabled in M3.
+- [x] Step 11 — Settings page + LogoUploader
+  - `app/(protected)/settings/page.tsx` — Full settings page:
+    - Loading skeleton state while fetching profile
+    - Error state with "Try Again" button
+    - Fetches brand profile from `/api/brand` on mount
+    - Passes data to child components with callback handlers
+    - Displays "Last updated" timestamp
+  - `components/settings/BrandProfileForm.tsx`:
+    - **Color Palette** (read-only) — 6 color swatches in a grid with hex codes and category badges (Primary 60%, Secondary 30%, Accent 10%)
+    - **Style Keywords** — Removable badge chips + text input to add new keywords (Enter key or Add button). Duplicate prevention.
+    - **Brand DNA Prompt** — Monospace textarea (12 rows) with character count and "Reset to default" button
+    - **Negative Prompt** — Monospace textarea (4 rows) with character count and "Reset to default" button
+    - **Save Changes** — Golden button with loading spinner, saves to `/api/brand` PUT, shows sonner toast on success/failure
+  - `components/settings/LogoUploader.tsx`:
+    - 3 logo variant slots (White, Dark, Gold) in a responsive grid
+    - Each slot has: label, description, preview area with appropriate background color
+    - Upload button triggers hidden file input (PNG/SVG/JPEG/WebP, max 5MB)
+    - Upload to Supabase Storage → update brand profile via API
+    - Remove logo functionality (sets URL to null)
+    - "Uploaded" badge indicator when logo exists
+    - Loading overlay during upload
+  - `next.config.ts` — Added Supabase storage domain to `images.remotePatterns` for `next/image`
+
+**Browser Testing Results (all passed):**
+| Test | Result |
+|------|--------|
+| Login page renders with CocoLash branding | ✅ Pass |
+| Password authentication (cocolash2026) | ✅ Pass |
+| Redirect to /generate after login | ✅ Pass |
+| Sidebar renders with correct branding | ✅ Pass |
+| Active link highlighting (golden accent + dot) | ✅ Pass |
+| Navigation: Generate → Gallery → Settings | ✅ Pass |
+| Settings page loads brand profile from Supabase | ✅ Pass |
+| Color palette displays 6 colors with hex + categories | ✅ Pass |
+| Style keywords display + add "glamorous" keyword | ✅ Pass |
+| Brand DNA prompt textarea with char count + reset | ✅ Pass |
+| Negative prompt textarea with char count + reset | ✅ Pass |
+| Logo uploader shows 3 variants with backgrounds | ✅ Pass |
+| Save changes persists to Supabase (DB verified) | ✅ Pass |
+| Toast notification on save success | ✅ Pass |
+| Sign out clears cookie + redirects to /login | ✅ Pass |
+| Middleware protects routes (unauthenticated → /login) | ✅ Pass |
 
 ### Phase 1.4: Prompt Engine
 - [ ] Step 12 — Type definitions
