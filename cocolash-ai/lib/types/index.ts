@@ -131,9 +131,40 @@ export interface LogoOverlaySettings {
   sizePercent?: number;    // % of image width, default 15
 }
 
+// ── Product Sub-Categories ────────────────────────────────────
+export type ProductCategoryKey =
+  | "single-black-tray"
+  | "single-nude-tray"
+  | "multi-lash-book"
+  | "full-kit-pouch"
+  | "full-kit-box"
+  | "storage-pouch"
+  | "branding-flatlay";
+
+export interface ProductCategory {
+  id: string;
+  key: ProductCategoryKey;
+  label: string;
+  description: string | null;
+  prompt_template: string | null;
+  sort_order: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ProductReferenceImage {
+  id: string;
+  category_id: string;
+  image_url: string;
+  storage_path: string;
+  sort_order: number;
+  created_at: string;
+}
+
 // ── Generation Selections (the full form state) ───────────────
 export interface GenerationSelections {
   category: ContentCategory;
+  productSubCategory?: ProductCategoryKey; // Only when category === "product"
   skinTone: SkinTone;
   lashStyle: LashStyle;
   hairStyle: HairStyle;
@@ -179,9 +210,11 @@ export interface BrandProfile {
   tone_keywords: string[];
   brand_dna_prompt: string;
   negative_prompt: string;
+  skin_realism_prompt: string | null;
   logo_white_url: string | null;
   logo_dark_url: string | null;
   logo_gold_url: string | null;
+  product_image_urls: string[];
   created_at: string;
   updated_at: string;
 }

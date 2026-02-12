@@ -16,7 +16,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { uploadGeneratedImage } from "@/lib/supabase/storage";
-import { generateImage } from "@/lib/gemini/generate";
+import { generateImage, type ReferenceImage } from "@/lib/gemini/generate";
 import { GeminiError } from "@/lib/gemini/safety";
 import { composePrompt } from "@/lib/prompts/compose";
 import { getRecentDiversityUsage, recordDiversitySelection } from "@/lib/diversity/tracker";
@@ -24,6 +24,7 @@ import { applyLogoOverlay, selectLogoUrl } from "@/lib/image-processing/logo-ove
 import type {
   GenerationSelections,
   ContentCategory,
+  ProductCategoryKey,
   AspectRatio,
   Composition,
   LashStyle,
@@ -59,6 +60,11 @@ const VALID_SCENES: Scene[] = [
 const VALID_VIBES: Vibe[] = [
   "confident-glam", "soft-romantic", "bold-editorial",
   "natural-beauty", "night-out", "self-care", "professional", "random",
+];
+const VALID_PRODUCT_SUB_CATEGORIES: ProductCategoryKey[] = [
+  "single-black-tray", "single-nude-tray", "multi-lash-book",
+  "full-kit-pouch", "full-kit-box",
+  "storage-pouch", "branding-flatlay",
 ];
 
 function validateSelections(body: unknown): GenerationSelections {
@@ -116,9 +122,17 @@ function validateSelections(body: unknown): GenerationSelections {
     position: (logoData.position as string) || "bottom-right",
     variant: (logoData.variant as string) || "white",
     opacity: typeof logoData.opacity === "number" ? logoData.opacity : 0.9,
-    paddingPercent: typeof logoData.paddingPercent === "number" ? logoData.paddingPercent : 4,
-    sizePercent: typeof logoData.sizePercent === "number" ? logoData.sizePercent : 15,
+    paddingPercent: typeof logoData.paddingPercent === "number" ? logoData.paddingPercent : 3,
+    sizePercent: typeof logoData.sizePercent === "number" ? logoData.sizePercent : 22,
   } as GenerationSelections["logoOverlay"];
+
+  // Product sub-category (required when category is "product")
+  const productSubCategory = data.productSubCategory as ProductCategoryKey | undefined;
+  if (category === "product" && productSubCategory) {
+    if (!VALID_PRODUCT_SUB_CATEGORIES.includes(productSubCategory)) {
+      throw new Error(`Invalid product sub-category: ${productSubCategory}`);
+    }
+  }
 
   // Optional context note (max 100 chars)
   const contextNote = typeof data.contextNote === "string"
@@ -127,6 +141,7 @@ function validateSelections(body: unknown): GenerationSelections {
 
   return {
     category,
+    productSubCategory,
     skinTone,
     lashStyle,
     hairStyle,
@@ -174,26 +189,91 @@ export async function POST(request: NextRequest) {
       brandId
     );
 
-    // 5. Compose the prompt
+    // 5. Fetch product reference images for the selected sub-category
+    const isProductCategory = selections.category === "product";
+    let productSubCategoryLabel = "";
+    let productSubCategoryDescription = "";
+    let referenceImages: ReferenceImage[] | undefined;
+    let hasProductRefs = false;
+
+    if (isProductCategory && selections.productSubCategory) {
+      // Look up the category and its images from the database
+      const { data: productCat } = await supabase
+        .from("product_categories")
+        .select("id, label, description, prompt_template")
+        .eq("key", selections.productSubCategory)
+        .single();
+
+      if (productCat) {
+        productSubCategoryLabel = productCat.label;
+        productSubCategoryDescription = productCat.description || "";
+
+        // Fetch reference images for this specific category
+        const { data: refImages } = await supabase
+          .from("product_reference_images")
+          .select("image_url")
+          .eq("category_id", productCat.id)
+          .order("sort_order", { ascending: true });
+
+        const imageUrls = (refImages || []).map((r) => r.image_url);
+
+        if (imageUrls.length > 0) {
+          console.log(`[Generate] Fetching ${imageUrls.length} reference image(s) for "${productCat.label}"...`);
+          referenceImages = [];
+          for (const url of imageUrls) {
+            try {
+              const cleanUrl = url.split("?")[0];
+              const res = await fetch(cleanUrl);
+              if (res.ok) {
+                const arrayBuffer = await res.arrayBuffer();
+                const buffer = Buffer.from(arrayBuffer);
+                const contentType = res.headers.get("content-type") || "image/png";
+                referenceImages.push({
+                  base64Data: buffer.toString("base64"),
+                  mimeType: contentType,
+                });
+              } else {
+                console.warn(`[Generate] Failed to fetch product image: ${cleanUrl} (${res.status})`);
+              }
+            } catch (err) {
+              console.warn(`[Generate] Error fetching product image:`, err);
+            }
+          }
+          hasProductRefs = referenceImages.length > 0;
+          console.log(`[Generate] Successfully loaded ${referenceImages.length} reference image(s) for "${productCat.label}"`);
+        }
+      }
+    }
+
+    // 6. Compose the prompt
     const composed = composePrompt(selections, {
       customBrandDNA: brandProfile.brand_dna_prompt,
       customNegativePrompt: brandProfile.negative_prompt,
+      customSkinRealismPrompt: brandProfile.skin_realism_prompt,
+      hasProductReferenceImages: hasProductRefs,
+      productSubCategoryKey: selections.productSubCategory,
+      productSubCategoryLabel,
+      productSubCategoryDescription,
       recentSkinTones,
       recentHairStyles,
     });
 
-    console.log(`[Generate] Category: ${selections.category}, Aspect: ${selections.aspectRatio}`);
+    console.log(`[Generate] Category: ${selections.category}${selections.productSubCategory ? ` (${selections.productSubCategory})` : ""}, Aspect: ${selections.aspectRatio}`);
     console.log(`[Generate] Resolved: skin=${composed.resolvedSelections.skinTone}, hair=${composed.resolvedSelections.hairStyle}, scene=${composed.resolvedSelections.scene}, vibe=${composed.resolvedSelections.vibe}`);
+    if (hasProductRefs) {
+      console.log(`[Generate] Product reference images for "${productSubCategoryLabel}": ${referenceImages?.length ?? 0}`);
+    }
 
-    // 6. Call Gemini to generate the image
+    // 7. Call Gemini to generate the image (with optional product references)
     const geminiResult = await generateImage(
       composed.fullPrompt,
-      selections.aspectRatio
+      selections.aspectRatio,
+      referenceImages
     );
 
     console.log(`[Generate] Gemini returned ${geminiResult.buffer.length} bytes (${geminiResult.mimeType})`);
 
-    // 7. Upload raw image to Supabase Storage
+    // 8. Upload raw image to Supabase Storage
     const rawUpload = await uploadGeneratedImage(
       supabase,
       geminiResult.buffer,
@@ -201,7 +281,7 @@ export async function POST(request: NextRequest) {
       "-raw"
     );
 
-    // 8. Logo overlay (if enabled)
+    // 9. Logo overlay (if enabled)
     let finalImageUrl = rawUpload.url;
     let finalStoragePath = rawUpload.path;
     let hasLogoOverlay = false;
@@ -242,7 +322,7 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // 9. Insert record into generated_images
+    // 10. Insert record into generated_images
     const generationTimeMs = Date.now() - startTime;
 
     const imageRecord = {
@@ -272,7 +352,7 @@ export async function POST(request: NextRequest) {
       // Don't fail the request — the image was generated and uploaded
     }
 
-    // 10. Record diversity selection for rotation
+    // 11. Record diversity selection for rotation
     await recordDiversitySelection(
       supabase,
       brandId,

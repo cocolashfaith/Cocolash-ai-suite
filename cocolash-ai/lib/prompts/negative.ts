@@ -5,7 +5,7 @@
  * visual elements, styles, and artifacts.
  */
 
-export const DEFAULT_NEGATIVE_PROMPT = `illustration, 3d render, cartoon, anime, plastic skin, airbrushed, blurry, blue lighting, cool tones, disfigured eyes, double iris, messy makeup, clumpy lashes, aggressive expression, stock photo feel, watermark, text overlay, logo text`;
+export const DEFAULT_NEGATIVE_PROMPT = `illustration, 3d render, cartoon, anime, plastic skin, airbrushed, blurry, blue lighting, cool tones, disfigured eyes, double iris, messy makeup, clumpy lashes, aggressive expression, stock photo feel, watermark, text overlay, logo text, no text in image, no typography, no lettering, no brand names rendered in image, no watermarks, no embedded logos, no words, no captions, no signatures`;
 
 /**
  * Safety-appended negative terms for lifestyle/editorial shots.

@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { BrandProfileForm } from "@/components/settings/BrandProfileForm";
 import { LogoUploader } from "@/components/settings/LogoUploader";
+import { ProductCategoryManager } from "@/components/settings/ProductCategoryManager";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Settings, AlertCircle } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -14,9 +15,11 @@ interface BrandProfile {
   tone_keywords: string[];
   brand_dna_prompt: string;
   negative_prompt: string;
+  skin_realism_prompt: string | null;
   logo_white_url: string | null;
   logo_dark_url: string | null;
   logo_gold_url: string | null;
+  product_image_urls: string[];
   created_at: string;
   updated_at: string;
 }
@@ -67,6 +70,8 @@ export default function SettingsPage() {
       setProfile({ ...profile, ...logos });
     }
   };
+
+  // Product images are now managed through ProductCategoryManager (separate tables)
 
   // ── Loading State ──────────────────────────────────────────
   if (isLoading) {
@@ -142,6 +147,9 @@ export default function SettingsPage() {
 
       {/* Logo Uploader */}
       <LogoUploader logos={profile} onLogosUpdated={handleLogosUpdated} />
+
+      {/* Product Reference Images — Category-based */}
+      <ProductCategoryManager />
 
       {/* Brand Profile Form */}
       <BrandProfileForm

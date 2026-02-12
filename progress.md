@@ -10,8 +10,8 @@
 
 ## Current Status
 
-**Phase:** Milestone 1 — Phase 1.5 COMPLETE
-**Last Updated:** 2026-02-11
+**Milestone 1: COMPLETE** (Phase 1.7 Deployment deferred — deploying after M2 or on demand)
+**Last Updated:** 2026-02-12
 
 ---
 
@@ -21,14 +21,21 @@
 |------|-------|
 | 2026-02-11 | Original client proposal finalized (`original_proposal.md`) |
 | 2026-02-11 | Master implementation plan created (`MASTER_PLAN.md`) — full technical architecture, file structure, database schema, prompt system, and all 58 steps across 3 milestones defined |
-| 2026-02-11 | **Phase 1.1 COMPLETE** — Full project scaffolding done (see details below) |
-| 2026-02-11 | **Phase 1.2 COMPLETE** — Authentication & Layout done (see details below) |
-| 2026-02-11 | **Phase 1.3 COMPLETE** — Brand Profile System done + full browser testing (see details below) |
-| 2026-02-11 | **Phase 1.4 COMPLETE** — Prompt Engine built (types, 6 modules, 3 category templates, composer, diversity tracker) |
+| 2026-02-11 | **Phase 1.1 COMPLETE** — Full project scaffolding (Next.js 16.1.6, shadcn/ui, Supabase, Tailwind theme) |
+| 2026-02-11 | **Phase 1.2 COMPLETE** — Authentication & Layout (middleware, login page, sidebar, mobile nav) |
+| 2026-02-11 | **Phase 1.3 COMPLETE** — Brand Profile System (constants, Supabase clients, API, Settings page, LogoUploader) |
+| 2026-02-11 | **Phase 1.4 COMPLETE** — Prompt Engine (types, 6 modules, 3 category templates, composer, diversity tracker) |
+| 2026-02-11 | **Phase 1.5 COMPLETE** — Gemini Integration & Image Pipeline (client, safety, generate, logo overlay, APIs) |
+| 2026-02-11 | **Phase 1.6 COMPLETE** — UI Components (10 selectors, GenerateForm, progress overlay, preview, error display, gallery) |
+| 2026-02-11 | **Post-1.6 Fixes** — Logo naming/preview, Gemini model update, end-to-end testing |
+| 2026-02-12 | **Post-1.6 Enhancement: Skin Realism DNA** — New skin realism prompt system for hyper-realistic African-American skin |
+| 2026-02-12 | **Post-1.6 Enhancement: Logo Overlay Fixes** — Increased logo size, added negative prompts to prevent AI text generation |
+| 2026-02-12 | **Post-1.6 Enhancement: Product Category System** — Complete overhaul of product generation with 7 sub-categories, 37 reference images, per-category prompts |
+| 2026-02-12 | **MILESTONE 1 COMPLETE** — All core features built, tested, and refined. Deployment (Phase 1.7) deferred to post-M2. |
 
 ---
 
-## Milestone 1: Foundation ($2,199)
+## Milestone 1: Foundation ($2,199) — COMPLETE
 
 ### Phase 1.1: Project Scaffolding ✅ COMPLETE
 - [x] Step 1 — Initialize Next.js project + shadcn/ui
@@ -45,9 +52,8 @@
   - `uuid` ^13.0.0 + `@types/uuid` — Unique IDs
   - Additional auto-installed by shadcn: `lucide-react`, `class-variance-authority`, `clsx`, `tailwind-merge`, `radix-ui`, `next-themes`, `tw-animate-css`
 - [x] Step 3 — Configure `.env.local`
-  - Created `.env.local` with Supabase URL and anon key populated
+  - Created `.env.local` with Supabase URL, anon key, Gemini API key populated
   - Created `.env.example` as a template (no secrets)
-  - **ACTION NEEDED:** User must add `GEMINI_API_KEY` and `SUPABASE_SERVICE_ROLE_KEY` manually
   - `.env*` files already in `.gitignore` by default
 - [x] Step 4 — Configure Tailwind theme with CocoLash colors
   - Extended `@theme inline` with all CocoLash brand colors:
@@ -56,366 +62,365 @@
     - `coco-golden` (#ce9765) + light/dark variants
     - `coco-beige` (#ede5d6) + light/dark variants
     - `coco-charcoal` (#242424), `coco-white` (#ffffff)
-  - shadcn CSS variables customized for CocoLash:
-    - Background: warm beige (#ede5d6)
-    - Primary: dark brown (#28150e)
-    - Secondary: soft pink (#ead1c1)
-    - Accent: golden (#ce9765)
-    - Sidebar: dark brown (#28150e) with beige text
-    - Ring/focus: golden (#ce9765)
-  - Dark mode theme also configured (secondary priority)
-  - All colors available as Tailwind utilities: `bg-coco-pink`, `text-coco-brown`, etc.
+  - shadcn CSS variables customized for CocoLash brand
 - [x] Step 5 — Create Supabase project + schema + storage buckets
   - **Project:** "CocoLash AI" (ID: `exkdmmxbrsgefpciyqkz`)
-  - **Region:** us-east-1
-  - **URL:** https://exkdmmxbrsgefpciyqkz.supabase.co
-  - **Cost:** $0/month (free tier)
-  - **Database tables created:**
-    - `brand_profiles` — Brand identity storage (1 row seeded with CocoLash defaults)
-    - `generated_images` — Image generation records with full metadata
-    - `diversity_tracker` — Tracks skin tone/hair style diversity rotation
-  - **Indexes created:**
-    - `idx_diversity_recent` — Recent diversity usage (for rotation system)
-    - `idx_images_created` — Chronological image listing
-    - `idx_images_category` — Category filtering
-    - `idx_images_favorite` — Partial index on favorites
-  - **Storage buckets created:**
-    - `generated-images` (public, 10MB limit, PNG/JPEG/WebP)
-    - `brand-assets` (public, 5MB limit, PNG/SVG/JPEG/WebP)
-  - **Storage policies:** Public read, service role write/delete on both buckets
-  - **Seed data:** Default CocoLash brand profile with full Brand DNA prompt, color palette, tone keywords, and negative prompt
-
-**Build Status:** ✅ Compiles successfully (Next.js 16.1.6 + Turbopack)
-
-**Full directory structure created:**
-```
-cocolash-ai/
-├── app/
-│   ├── (auth)/login/
-│   ├── (protected)/generate/, gallery/, settings/
-│   ├── api/generate/, images/[id]/download/, images/[id]/favorite/, brand/, auth/
-│   ├── layout.tsx (updated: metadata, TooltipProvider, Sonner)
-│   ├── globals.css (updated: CocoLash brand theme)
-│   └── page.tsx
-├── components/
-│   ├── ui/ (17 shadcn components)
-│   ├── layout/, generate/, gallery/, settings/, shared/
-├── lib/
-│   ├── supabase/, gemini/, prompts/categories/, prompts/modules/
-│   ├── image-processing/, diversity/, constants/, types/, utils/
-├── public/brand/
-├── .env.local, .env.example
-└── package.json
-```
+  - **Database tables:** `brand_profiles`, `generated_images`, `diversity_tracker`
+  - **Storage buckets:** `generated-images` (public, 10MB), `brand-assets` (public, 5MB)
+  - **Seed data:** Default CocoLash brand profile with full Brand DNA prompt
 
 ### Phase 1.2: Authentication & Layout ✅ COMPLETE
-- [x] Step 6 — Auth middleware
-  - Created `middleware.ts` with cookie-based auth checking
-  - Checks `cocolash-auth` httpOnly cookie against `AUTH_TOKEN` env var
-  - Unauthenticated users redirected to `/login`
-  - Public paths excluded: `/login`, `/api/auth`, static assets
-  - Authenticated users visiting `/login` are redirected to `/generate`
-  - Matcher excludes `_next/static`, `_next/image`, favicon, images
-  - **Note:** Next.js 16 shows deprecation warning for `middleware` (suggests `proxy`). Still works perfectly — can migrate later if needed.
-- [x] Step 7 — Login page + Auth API
-  - `app/api/auth/route.ts` — POST endpoint:
-    - Validates password against `AUTH_PASSWORD` env var
-    - Sets `cocolash-auth` httpOnly cookie (30-day expiry, secure in prod, sameSite: lax)
-    - Returns 401 on invalid password, 200 on success
-  - `app/api/auth/route.ts` — DELETE endpoint:
-    - Clears auth cookie for logout functionality
-  - `app/(auth)/login/page.tsx` — Beautiful branded login page:
-    - Warm beige background with subtle dot pattern
-    - CocoLash brand logo icon (Sparkles in brown square)
-    - Password input with show/hide toggle
-    - Golden "Sign In" button with loading state
-    - Error message display with red styling
-    - Auto-redirect to `/generate` on success
-- [x] Step 8 — Protected layout (sidebar + responsive nav)
-  - `app/(protected)/layout.tsx` — Protected wrapper:
-    - Desktop: 256px dark brown sidebar (fixed left) + beige content area
-    - Mobile: Header + scrollable content + bottom nav
-    - Max-width content container (7xl) with responsive padding
-  - `components/layout/Sidebar.tsx` — Desktop sidebar:
-    - Dark brown background (#28150e)
-    - CocoLash logo with golden sparkles icon
-    - 3 nav links: Generate, Gallery, Settings (with lucide icons)
-    - Active link highlighting with golden accent + dot indicator
-    - Tooltips on hover showing descriptions
-    - Logout button at bottom with loading state
-  - `components/layout/MobileNav.tsx` — Mobile bottom nav:
-    - Fixed bottom bar with dark brown background
-    - 3 nav items with icons and labels
-    - Active indicator with golden underline
-    - Hidden on desktop (md breakpoint)
-  - `components/layout/Header.tsx` — Mobile top header:
-    - Sticky header with backdrop blur
-    - Brand icon + current page title
-    - Logout button
-    - Hidden on desktop
-  - `app/page.tsx` — Root redirect to `/generate`
-  - Placeholder pages created for `/generate`, `/gallery`, `/settings`
-
-**Build Status:** ✅ Compiles successfully — all 7 routes detected
+- [x] Step 6 — Auth middleware (`middleware.ts`) — Cookie-based auth, redirects unauthenticated to `/login`
+- [x] Step 7 — Login page + Auth API — Beautiful branded login, httpOnly cookie (30-day), logout endpoint
+- [x] Step 8 — Protected layout — Desktop sidebar (256px dark brown) + mobile header/bottom nav, 3 nav links (Generate, Gallery, Settings)
 
 ### Phase 1.3: Brand Profile System ✅ COMPLETE
-- [x] Step 9 — Brand constants + prompt files
-  - `lib/constants/brand.ts` — Central source of truth:
-    - `BRAND_COLORS` object with primary/secondary/accent groups
-    - `BRAND_PALETTE` flat array for UI palette display (6 colors with labels, hex, categories)
-    - `DEFAULT_TONE_KEYWORDS` array (8 keywords)
-    - `LOGO_VARIANTS` for white/dark/gold logos
-    - `BRAND_PERSONAS` (Balanced Beauty, She's Got Style)
-    - `COLOR_RULE` (60-30-10 rule description)
-  - `lib/prompts/brand-dna.ts` — Master Brand DNA block:
-    - Full system context prompt (1244 chars) encoding CocoLash visual identity
-    - `getBrandDNA(customDNA?)` helper with fallback to default
-  - `lib/prompts/negative.ts` — Negative prompt constants:
-    - `DEFAULT_NEGATIVE_PROMPT` (236 chars) — terms to exclude
-    - `SAFETY_NEGATIVE_APPEND` — extra terms for lifestyle shots
-    - `getNegativePrompt()` and `getSafeNegativePrompt()` helpers
-  - `lib/supabase/client.ts` — Browser Supabase client (using `@supabase/ssr`)
-  - `lib/supabase/server.ts` — Server Supabase client + Admin client
-  - `lib/supabase/storage.ts` — Storage helpers:
-    - `uploadGeneratedImage()` — for AI-generated images
-    - `uploadBrandAsset()` — for logo uploads (upsert mode)
-    - `deleteStorageFile()` and `getPublicUrl()` utilities
-    - Storage bucket constants: `GENERATED_IMAGES`, `BRAND_ASSETS`
-- [x] Step 10 — Brand API (GET/PUT)
-  - `app/api/brand/route.ts`:
-    - **GET** — Fetches brand profile from Supabase. Auto-seeds defaults if no profile exists.
-    - **PUT** — Partial updates for: `tone_keywords`, `brand_dna_prompt`, `negative_prompt`, logo URLs. Color palette is read-only (hardcoded brand identity). Automatically sets `updated_at`.
-    - Whitelisted fields only — prevents arbitrary data injection
-  - **Bug Found & Fixed:** Initially used `createAdminClient()` with service role key, but user's `SUPABASE_SERVICE_ROLE_KEY` was a publishable key (`sbp_...`) not a JWT. Switched to `createClient()` (anon key) since RLS is disabled on tables. Will revisit when RLS is enabled in M3.
-- [x] Step 11 — Settings page + LogoUploader
-  - `app/(protected)/settings/page.tsx` — Full settings page:
-    - Loading skeleton state while fetching profile
-    - Error state with "Try Again" button
-    - Fetches brand profile from `/api/brand` on mount
-    - Passes data to child components with callback handlers
-    - Displays "Last updated" timestamp
-  - `components/settings/BrandProfileForm.tsx`:
-    - **Color Palette** (read-only) — 6 color swatches in a grid with hex codes and category badges (Primary 60%, Secondary 30%, Accent 10%)
-    - **Style Keywords** — Removable badge chips + text input to add new keywords (Enter key or Add button). Duplicate prevention.
-    - **Brand DNA Prompt** — Monospace textarea (12 rows) with character count and "Reset to default" button
-    - **Negative Prompt** — Monospace textarea (4 rows) with character count and "Reset to default" button
-    - **Save Changes** — Golden button with loading spinner, saves to `/api/brand` PUT, shows sonner toast on success/failure
-  - `components/settings/LogoUploader.tsx`:
-    - 3 logo variant slots (White, Dark, Gold) in a responsive grid
-    - Each slot has: label, description, preview area with appropriate background color
-    - Upload button triggers hidden file input (PNG/SVG/JPEG/WebP, max 5MB)
-    - Upload to Supabase Storage → update brand profile via API
-    - Remove logo functionality (sets URL to null)
-    - "Uploaded" badge indicator when logo exists
-    - Loading overlay during upload
-  - `next.config.ts` — Added Supabase storage domain to `images.remotePatterns` for `next/image`
-
-**Browser Testing Results (all passed):**
-| Test | Result |
-|------|--------|
-| Login page renders with CocoLash branding | ✅ Pass |
-| Password authentication (cocolash2026) | ✅ Pass |
-| Redirect to /generate after login | ✅ Pass |
-| Sidebar renders with correct branding | ✅ Pass |
-| Active link highlighting (golden accent + dot) | ✅ Pass |
-| Navigation: Generate → Gallery → Settings | ✅ Pass |
-| Settings page loads brand profile from Supabase | ✅ Pass |
-| Color palette displays 6 colors with hex + categories | ✅ Pass |
-| Style keywords display + add "glamorous" keyword | ✅ Pass |
-| Brand DNA prompt textarea with char count + reset | ✅ Pass |
-| Negative prompt textarea with char count + reset | ✅ Pass |
-| Logo uploader shows 3 variants with backgrounds | ✅ Pass |
-| Save changes persists to Supabase (DB verified) | ✅ Pass |
-| Toast notification on save success | ✅ Pass |
-| Sign out clears cookie + redirects to /login | ✅ Pass |
-| Middleware protects routes (unauthenticated → /login) | ✅ Pass |
+- [x] Step 9 — Brand constants (`lib/constants/brand.ts`), Brand DNA prompt (`lib/prompts/brand-dna.ts`), Negative prompt (`lib/prompts/negative.ts`), Supabase clients (`lib/supabase/client.ts`, `server.ts`, `storage.ts`)
+- [x] Step 10 — Brand API (`app/api/brand/route.ts`) — GET with auto-seed, PUT with whitelisted fields
+- [x] Step 11 — Settings page with BrandProfileForm (color palette, keywords, DNA/negative prompts) + LogoUploader (3 variants)
 
 **Architecture Decision: Supabase Service Role Key (Deferred to M3)**
 
 | Item | Detail |
 |------|--------|
-| **Issue** | During Phase 1.3, the Brand API initially used `createAdminClient()` which requires the `SUPABASE_SERVICE_ROLE_KEY` (a JWT from Settings → API → Project API keys). The key provided in `.env.local` was a publishable key (`sbp_...`) from the newer API Keys page, not the legacy `service_role` JWT. This caused "Invalid API key" errors. |
-| **What we did** | Switched all server-side Supabase calls to use `createClient()` (anon key) instead of `createAdminClient()` (service role key). This works because **RLS is currently disabled** on all tables (`brand_profiles`, `generated_images`, `diversity_tracker`). |
-| **Why this is fine for M1-M2** | This is a single-user, password-protected internal tool. With RLS off, the anon key has full read/write access to the tables. All API routes are server-side only (not exposed to browser). Auth is enforced by our middleware cookie check. |
-| **What changes in M3** | In Phase 3.1 (Supabase Auth Upgrade), we will: (1) Enable RLS policies on all tables, (2) Obtain the proper `service_role` JWT from Dashboard → Settings → API → Project API keys, (3) Switch admin operations back to `createAdminClient()` for elevated privileges, (4) Use the anon key + user session for client-side queries with proper RLS enforcement. |
-| **Action required later** | In M3: Go to Supabase Dashboard → Settings → API → copy the `service_role` key (long JWT, three `.`-separated chunks) and add to `.env.local`. |
+| **Issue** | The `SUPABASE_SERVICE_ROLE_KEY` provided was a publishable key (`sbp_...`) not a legacy JWT. This caused "Invalid API key" errors with `createAdminClient()`. |
+| **Solution** | Switched to `createClient()` (anon key) since RLS is disabled. Works fine for single-user M1-M2. |
+| **M3 Action** | Enable RLS, obtain proper `service_role` JWT, switch admin operations back to `createAdminClient()`. |
 
 ### Phase 1.4: Prompt Engine ✅ COMPLETE
-- [x] Step 12 — Type definitions (`lib/types/index.ts`)
-  - **Content types:** `ContentCategory` (lash-closeup, lifestyle, product) + `ContentCategoryAll` (M2 additions)
-  - **Composition:** `Composition` (solo, duo) + `CompositionAll` (M2 group)
-  - **Aspect ratios:** `AspectRatio` (1:1, 4:5, 9:16, 16:9) with `AspectRatioOption` including dimensions and platform labels
-  - **Skin tones:** `SkinTone` (deep, medium-deep, medium, light, random) with `SkinToneOption` for UI
-  - **Lash styles:** `LashStyle` — 8 styles (natural, volume, dramatic, cat-eye, wispy, doll-eye, hybrid, mega-volume)
-  - **Hair styles:** `HairStyle` — 12 styles + random, grouped by Natural/Protective/Styled with `HairStyleOption`
-  - **Scenes:** `Scene` — 8 environments + random
-  - **Vibes:** `Vibe` — 7 moods + random
-  - **Logo overlay:** `LogoPosition`, `LogoVariant`, `LogoOverlaySettings` with opacity/padding/size controls
-  - **Core interfaces:** `GenerationSelections` (full form state), `GeneratedImage` (DB record), `BrandProfile` (DB record)
-  - **API types:** `GenerateResponse`, `GenerateErrorResponse` with error codes
-  - **Utility:** `DescriptorFn<T>`, `DiversityRecord`
-- [x] Step 13 — Prompt modules (6 descriptor files)
-  - `lib/prompts/modules/skin-tones.ts` — Monk Skin Tone Scale with 3 rich descriptors per tier (12 total). Photography-grade descriptions emphasizing melanin, texture, and glow. `SKIN_TONE_OPTIONS` with visual swatch colors for UI.
-  - `lib/prompts/modules/hair-styles.ts` — 12 styles across Natural (4C, Afro, Twist-Out, Blown-Out), Protective (Box Braids, Locs, Sew-In, Cornrows, Bantu Knots), Styled (Silk Press, Loose Waves, Short Tapered). Each with detailed texture/styling description. Grouped options for UI.
-  - `lib/prompts/modules/lash-styles.ts` — 8 lash styles with descriptions focusing on fiber detail, volume, curl pattern, and overall effect. UI options include short descriptions.
-  - `lib/prompts/modules/scenes.ts` — 8 environments with full setting descriptions (studio, bedroom, cafe, golden hour, rooftop, salon, bathroom vanity, minimalist). Scene-to-category mapping (Close-ups → studio only, Lifestyle → all, Product → subset).
-  - `lib/prompts/modules/vibes.ts` — 7 moods with expression/pose/energy descriptions (confident glam, soft romantic, bold editorial, natural beauty, night out, self-care, professional). UI options with short descriptions.
-  - `lib/prompts/modules/compositions.ts` — Solo and Duo compositions with positioning/framing descriptions. UI options for selector.
-- [x] Step 14 — Category templates + composer
-  - `lib/prompts/categories/lash-closeup.ts` — Extreme macro eye photography. Randomized gaze directions. Butterfly lighting with catchlights. Pink gradient background. Hyper-realistic skin texture requirements.
-  - `lib/prompts/categories/lifestyle.ts` — Medium-shot editorial portraits. Persona-driven (randomly selects Balanced Beauty or She's Got Style). Scene, vibe, hair, composition all integrated. Brand colors in wardrobe. Negative space for logo overlay. Safety terms auto-appended.
-  - `lib/prompts/categories/product.ts` — Premium product staging. Randomized surface materials and prop arrangements. Center-weighted composition. "Glow" lighting. 8K commercial quality. Brand palette in scene.
-  - `lib/prompts/compose.ts` — **Master composer:**
-    - Formula: `BRAND_DNA + CATEGORY_TEMPLATE(selections) + NEGATIVE_PROMPT`
-    - Resolves all "random" selections via diversity-aware rotation
-    - Skin tone and hair style rotation uses least-recently-used algorithm from `diversity_tracker` table
-    - Scene resolution respects category constraints
-    - Returns `ComposedPrompt` with: fullPrompt, categoryPrompt, resolvedSelections
-  - `lib/diversity/tracker.ts` — Supabase-backed diversity rotation:
-    - `getRecentDiversityUsage()` — fetches last 20 selections for rotation
-    - `recordDiversitySelection()` — logs skin tone + hair style after generation
-
-**Build Status:** ✅ Compiles successfully — zero TypeScript errors
+- [x] Step 12 — Comprehensive type definitions (`lib/types/index.ts`) — 15+ types covering categories, compositions, skin tones, lash/hair styles, scenes, vibes, logo settings, selections, generated images, brand profiles, API responses
+- [x] Step 13 — 6 prompt descriptor modules: skin-tones (Monk Scale, 4 tiers × 3 descriptors), hair-styles (12 grouped by Natural/Protective/Styled), lash-styles (8), scenes (8 + category mapping), vibes (7), compositions (solo/duo)
+- [x] Step 14 — 3 category templates (lash-closeup, lifestyle, product) + master `composePrompt()` assembler with diversity-aware random resolution
 
 ### Phase 1.5: Gemini Integration & Image Pipeline ✅ COMPLETE
+- [x] Step 15 — Gemini client (`lib/gemini/client.ts`), safety error handling (`lib/gemini/safety.ts` with `GeminiError` class), image generation (`lib/gemini/generate.ts` with multimodal support)
+- [x] Step 16 — Logo overlay (`lib/image-processing/logo-overlay.ts`) — Sharp-based compositing with configurable position, opacity, size, padding. Logo URL caching with 5-min TTL.
+- [x] Step 17 — Storage helpers (completed in Phase 1.3)
+- [x] Step 18 — Generation API (`app/api/generate/route.ts`) — Full 11-step pipeline: validate → fetch brand → fetch diversity → fetch product refs → compose prompt → call Gemini → upload raw → apply logo → insert record → record diversity → return result
+- [x] Step 19 — Image management APIs: `GET /api/images` (paginated, filtered), `DELETE /api/images`, `PATCH /api/images` (favorite toggle), `GET /api/images/[id]`, `GET /api/images/[id]/download`
 
-**Date Completed:** 2026-02-11
+### Phase 1.6: UI Components ✅ COMPLETE
+- [x] Step 20 — 10 selector components: CategorySelector, SkinToneSelector, LashStyleSelector, HairStyleSelector, SceneSelector, VibeSelector, CompositionSelector, AspectRatioSelector, LogoOverlayToggle, ContextNoteInput
+- [x] Step 21 — GenerateForm with two-column layout, conditional rendering per category, smart defaults
+- [x] Step 22 — GenerationProgress (animated overlay with cycling messages, elapsed timer, gradient progress bar)
+- [x] Step 23 — ImagePreview (full-quality display, metadata badges, download, prompt viewer)
+- [x] Step 24 — ErrorDisplay (per-error-code messages: safety block, rate limit with countdown, API key error, timeout)
+- [x] Step 25 — Gallery page with GalleryFilters, ImageCard (hover effects, badges), ImageModal (full-size, download, favorite, delete), pagination
 
-#### Step 15: Gemini Client + Safety Error Handling ✅
-- **What was done:**
-  - Created `lib/gemini/safety.ts` — Custom `GeminiError` class with typed error codes: `EMPTY_RESPONSE`, `SAFETY_BLOCK`, `NO_IMAGE_DATA`, `RATE_LIMITED`, `TIMEOUT`, `INVALID_API_KEY`, `MODEL_ERROR`, `UNKNOWN`. Each code maps to a default HTTP status code and user-friendly message. Added `classifyGeminiError()` helper that parses raw errors from the Gemini SDK into typed `GeminiError` instances.
-  - Created `lib/gemini/client.ts` — Singleton `GoogleGenAI` instance that lazily initializes from `GEMINI_API_KEY` env var. Exports `GEMINI_IMAGE_MODEL` constant (currently `gemini-2.0-flash-exp`) and `GEMINI_ASPECT_RATIOS` map.
-  - Created `lib/gemini/generate.ts` — Core `generateImage(prompt, aspectRatio)` function. Calls `client.models.generateContent()` with `responseModalities: ["image", "text"]` and optional `imageConfig.aspectRatio`. Extracts base64 image data from response parts, validates buffer, and handles safety blocks.
-- **What was tried:** Used Context7 MCP to get the latest `@google/genai` SDK docs. The API uses `generateContent` with `responseModalities` and `imageConfig` for image generation, returning base64 `inlineData` in response parts.
-- **Model choice:** `gemini-2.0-flash-exp` — the image generation model from the Gemini API. This can be easily changed in `lib/gemini/client.ts` if Google releases updated models.
+### Phase 1.7: Deploy & Verify — DEFERRED
+- [ ] Step 26 — Deploy to Vercel (deferred to after M2 or on-demand)
+- [ ] Step 27 — Test matrix (manual testing performed; formal matrix deferred)
+- [ ] Step 28 — Client handoff (deferred)
 
-#### Step 16: Logo Overlay with Sharp ✅
-- **What was done:**
-  - Created `lib/image-processing/logo-overlay.ts` — `applyLogoOverlay(imageBuffer, options)` function using Sharp for compositing. Features:
-    - Downloads logo from Supabase Storage URL with in-memory cache (5-min TTL)
-    - Resizes logo to configurable `sizePercent` of image width (default 15%)
-    - Applies configurable `opacity` (default 0.9) via alpha channel manipulation
-    - Positions logo at `top-left`, `top-right`, `bottom-left`, `bottom-right`, or `center` with configurable `paddingPercent` (default 4%)
-    - Composites onto base image and returns PNG buffer
-  - Added `selectLogoUrl()` helper that picks the right logo variant from the brand profile, with fallback to any available logo.
-
-#### Step 17: Storage Helpers ✅
-- **What was done:** Already completed in Phase 1.3. The `uploadGeneratedImage()` function in `lib/supabase/storage.ts` handles uploading generated image buffers to the `generated-images` bucket with UUID-based filenames, returning the public URL and storage path. No changes needed.
-
-#### Step 18: Generation API Route (Full Pipeline) ✅
-- **What was done:**
-  - Created `app/api/generate/route.ts` — POST endpoint with `maxDuration = 60`. Full 10-step pipeline:
-    1. Parse and validate all selections (category, aspectRatio, lashStyle, skinTone, hairStyle, scene, composition, vibe, logoOverlay, contextNote)
-    2. Fetch brand profile from database (for prompt overrides + logo URLs)
-    3. Fetch diversity tracker data (recent skin tones + hair styles)
-    4. Compose prompt via `composePrompt()` with brand overrides and diversity data
-    5. Call Gemini `generateImage()` with composed prompt and aspect ratio
-    6. Upload raw image to Supabase Storage (suffixed `-raw`)
-    7. If logo overlay enabled, apply overlay and upload final version (suffixed `-final`)
-    8. Insert record into `generated_images` table with all metadata
-    9. Record diversity selection for future rotation
-    10. Return `{ success, image, generationTimeMs }`
-  - Error handling: `GeminiError` instances return appropriate HTTP codes (422 for safety, 429 for rate limit, etc.), validation errors return 400, generic errors return 500.
-- **What was tried:** Comprehensive input validation with whitelists for all enum fields. Logo overlay gracefully falls back to raw image if overlay fails.
-
-#### Step 19: Image Management APIs ✅
-- **What was done:**
-  - Created `app/api/images/route.ts` with three handlers:
-    - `GET` — Paginated image listing with filters: `category`, `favorite`, `dateFrom`, `dateTo`, `sortBy`, `sortOrder`. Returns `{ images, pagination }` with total count and hasMore flag.
-    - `DELETE` — Removes image by ID. Deletes both the final and raw storage files, then removes the DB record.
-    - `PATCH` — Toggles the `is_favorite` boolean on an image record.
-  - Created `app/api/images/[id]/route.ts` — `GET` single image detail by ID.
-  - Created `app/api/images/[id]/download/route.ts` — `GET` image download. Fetches image from Supabase Storage, returns with `Content-Disposition: attachment` and descriptive filename (e.g., `cocolash-lifestyle-4x5-2026-02-11-abc12345.png`).
-
-#### Build Verification ✅
-- TypeScript compilation: All files compile with zero errors
-- All routes registered: `/api/generate`, `/api/images`, `/api/images/[id]`, `/api/images/[id]/download`
-- Fixed: Added `INVALID_API_KEY` and `MODEL_ERROR` to `GenerateErrorResponse.code` type union in `lib/types/index.ts`
-
-**Files Created/Modified in Phase 1.5:**
-| File | Action | Description |
-|------|--------|-------------|
-| `lib/gemini/safety.ts` | Created | GeminiError class + classifyGeminiError helper |
-| `lib/gemini/client.ts` | Created | Singleton GoogleGenAI + model constants |
-| `lib/gemini/generate.ts` | Created | generateImage() core function |
-| `lib/image-processing/logo-overlay.ts` | Created | applyLogoOverlay() with Sharp compositing |
-| `app/api/generate/route.ts` | Created | Full 10-step generation pipeline |
-| `app/api/images/route.ts` | Created | GET (list), DELETE, PATCH (favorite) |
-| `app/api/images/[id]/route.ts` | Created | GET single image detail |
-| `app/api/images/[id]/download/route.ts` | Created | GET image download (attachment) |
-| `lib/types/index.ts` | Modified | Added INVALID_API_KEY, MODEL_ERROR to error codes |
-
-**Build Status:** ✅ Compiles successfully — zero TypeScript errors
-
-### Phase 1.6: UI Components
-- [ ] Step 20 — Selector components (Category, SkinTone, LashStyle, HairStyle, Scene, Composition, AspectRatio, LogoOverlay, ContextNote)
-- [ ] Step 21 — GenerateForm (two-column layout)
-- [ ] Step 22 — GenerationProgress (animated overlay)
-- [ ] Step 23 — ImagePreview
-- [ ] Step 24 — ErrorDisplay
-- [ ] Step 25 — Gallery page (filters, grid, modal, pagination)
-
-### Phase 1.7: Deploy & Verify
-- [ ] Step 26 — Deploy to Vercel
-- [ ] Step 27 — Test matrix
-- [ ] Step 28 — Client handoff
+**Reason for deferral:** Client opted to complete M2 features before deploying, or deploy on-demand before M2 if needed.
 
 ---
 
-## Milestone 2: Expansion ($2,199)
+## Post-Phase 1.6: Enhancements & Fixes
 
-### Phase 2.1: Seasonal/Holiday Presets
-- [ ] Step 29 — Define 15+ presets
-- [ ] Step 30 — Seed presets into database
-- [ ] Step 31 — SeasonalSelector component
-- [ ] Step 32 — Integrate into prompt composer
+### Skin Realism DNA System ✅ COMPLETE (2026-02-12)
 
-### Phase 2.2: Group Shots
-- [ ] Step 33 — Extend composition system
-- [ ] Step 34 — DiversityControls component
-- [ ] Step 35 — Update form + API
+**Problem:** AI-generated images had plastic/fake-looking skin — not the hyper-realistic African-American skin quality needed for the brand.
 
-### Phase 2.3: Before/After & Application Process
-- [ ] Step 36 — Before/After template
-- [ ] Step 37 — Application Process template
-- [ ] Step 38 — UI updates for new categories
+**Technical Solution:**
+1. **Database migration** — Added `skin_realism_prompt` column to `brand_profiles` table (TEXT, nullable).
+2. **New prompt module** — Created `lib/prompts/skin-realism.ts`:
+   - `DEFAULT_SKIN_REALISM_PROMPT` — 1500+ character directive covering melanin pigmentation, pore visibility, subdermal vascularity, melanin variance, subsurface scattering, natural oil sheen, iris striations, and strict forbidden list.
+   - `getSkinRealismDNA(customPrompt?)` — Returns custom or default.
+3. **Prompt composition update** — Modified `lib/prompts/compose.ts`:
+   - Skin realism block is injected for `lifestyle` and `lash-closeup` categories only (skipped for `product` — no human skin).
+   - Positioned between Brand DNA and Category Template in the prompt assembly.
+4. **Settings UI** — Added "Skin Realism Prompt" section in `BrandProfileForm.tsx` with textarea, character count, and "Reset to default" button.
+5. **API update** — `app/api/brand/route.ts` now accepts and persists `skin_realism_prompt`.
 
-### Phase 2.4: Before/After Compositor
-- [ ] Step 39 — Side-by-side compositor (sharp)
+**Files modified:** `lib/prompts/skin-realism.ts` (new), `lib/prompts/compose.ts`, `components/settings/BrandProfileForm.tsx`, `app/api/brand/route.ts`, `lib/types/index.ts`
 
-### Phase 2.5: Multi-Platform Export
-- [ ] Step 40 — Export API
-- [ ] Step 41 — Export UI
+### Logo Overlay Fixes ✅ COMPLETE (2026-02-12)
 
-### Phase 2.6: Deploy & Verify
-- [ ] Step 42 — Deploy M2
-- [ ] Step 43 — Test matrix
+**Problems identified during testing:**
+1. Logo was too small in generated images
+2. AI was generating text ("LOGA") in the image conflicting with the overlay
+3. Logo missing in some close-up shots
+
+**Technical Solution:**
+1. **Increased logo size** — Changed default `sizePercent` from 15% to 22% and reduced `paddingPercent` from 4% to 3% in `lib/image-processing/logo-overlay.ts`.
+2. **Expanded negative prompt** — Added explicit anti-text directives to `lib/prompts/negative.ts`: `"no text in image, no typography, no lettering, no brand names rendered in image, no watermarks, no embedded logos, no words, no captions, no signatures"`.
+3. **Logo labels renamed** — Updated to match actual logo colors provided by client:
+   - "White Logo" → **"Light Pink Logo"** (for dark backgrounds)
+   - "Gold Logo" → **"Beige Logo"** (for premium/accent use)
+   - Updated in: `lib/constants/brand.ts`, `components/generate/LogoOverlayToggle.tsx`, `components/settings/LogoUploader.tsx`
+4. **Logo preview backgrounds fixed** — Each logo preview now has a contrasting background (dark logo → white bg, light/beige logos → brown bg).
+
+### Gemini Model Fix ✅ COMPLETE (2026-02-11)
+
+**Problem:** Initial model names were outdated.
+- `gemini-2.0-flash-exp` → 404 (model not found)
+- `gemini-2.0-flash-preview-image-generation` → 404 (model retired)
+- **Fix:** Updated to `gemini-2.5-flash-image` in `lib/gemini/client.ts`
+
+### Product Category System — COMPLETE OVERHAUL ✅ (2026-02-12)
+
+**Problem:** The original product generation system sent ALL product reference images (5 generic photos) to Gemini in every product generation. The AI mashed all product types together — showing boxes, trays, pouches, and accessories in one chaotic scene. There was no way to specify which product type to generate.
+
+**Original Design:** A single "Product Reference Images" section in Settings (max 5 images), all sent to Gemini for every product generation with a single generic prompt.
+
+**New Design:** 7 distinct product sub-categories, each with its own reference images and ultra-specific prompt template. Only the selected sub-category's images and prompt are sent to Gemini.
+
+**Technical Implementation:**
+
+#### 1. Database Schema (New Tables)
+
+```sql
+-- Product sub-categories (7 rows seeded)
+CREATE TABLE product_categories (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  key TEXT UNIQUE NOT NULL,          -- e.g., 'single-black-tray'
+  label TEXT NOT NULL,               -- e.g., 'Single Black Lid Trays'
+  description TEXT,
+  prompt_template TEXT,              -- Category-specific prompt (future use)
+  sort_order INT DEFAULT 0,
+  created_at TIMESTAMPTZ DEFAULT now(),
+  updated_at TIMESTAMPTZ DEFAULT now()
+);
+
+-- Reference images linked to categories (37 total across 7 categories)
+CREATE TABLE product_reference_images (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  category_id UUID REFERENCES product_categories(id) ON DELETE CASCADE,
+  image_url TEXT NOT NULL,
+  storage_path TEXT NOT NULL,
+  sort_order INT DEFAULT 0,
+  created_at TIMESTAMPTZ DEFAULT now()
+);
+```
+
+RLS enabled with permissive policies. Indexes on `category_id` and `sort_order`.
+
+#### 2. Product Sub-Categories & Reference Images
+
+| # | Key | Label | Images | Description |
+|---|-----|-------|--------|-------------|
+| 1 | `single-black-tray` | Single Black Lid Trays | 5 | Individual lash pairs in black round trays (Dahlia, Poppy, Marigold, Orchid, Rose) |
+| 2 | `single-nude-tray` | Single Nude Lid Trays | 5 | Individual lash pairs in nude/brown round trays (Daisy, Iris, Jasmine, Peony, Violet) |
+| 3 | `multi-lash-book` | Multi-Lash Book Boxes | 5 | 5-pair lash sets in book-style boxes (black or pink) |
+| 4 | `full-kit-pouch` | Full Kits with Pouch | 5 | Complete sets including fabric storage pouch |
+| 5 | `full-kit-box` | Full Kits in Box | 8 | Complete sets in rigid cardboard boxes |
+| 6 | `storage-pouch` | Storage Pouches Only | 3 | Just the linen/fabric bags without other products |
+| 7 | `branding-flatlay` | Branding & Flatlays | 6 | Styled overhead shots, pattern arrangements, bulk displays |
+| **Total** | | | **37** | |
+
+**Note:** An 8th category "Multi-Lash Display Boxes" was initially created but removed at the client's request (too similar to Multi-Lash Book Boxes). Fully cleaned from DB, types, prompts, and UI.
+
+#### 3. TypeScript Types (`lib/types/index.ts`)
+
+Added `ProductCategoryKey` union type (7 values), `ProductCategory` interface, `ProductReferenceImage` interface, and `productSubCategory?: ProductCategoryKey` to `GenerationSelections`.
+
+#### 4. API Endpoints (New)
+
+- **`GET /api/product-categories`** — Returns all 7 categories with their reference images and image counts. Used by both the Generate page selector and the Settings page manager.
+- **`POST /api/product-categories/[id]/images`** — Registers a new reference image for a category (after uploading to Supabase Storage).
+- **`DELETE /api/product-categories/[id]/images?imageId=...`** — Removes a reference image (deletes from both Storage and DB).
+
+#### 5. Generate Page UI (`components/generate/ProductSubCategorySelector.tsx`)
+
+New component that appears when "Product" is selected in the category selector. Shows a 4-column grid of the 7 sub-categories, each with:
+- An icon (Circle, CircleDot, BookOpen, ShoppingBag, Box, Briefcase, Layers)
+- The category name
+- An image count badge (e.g., "5" in golden for categories with images, "No images yet" warning for empty ones)
+- Golden active border when selected
+
+#### 6. Settings Page UI (`components/settings/ProductCategoryManager.tsx`)
+
+Replaced the old `ProductImageUploader` (5-image max) with a new accordion-style category manager. Each of the 7 categories is an expandable row showing:
+- Category name and description
+- Image count badge
+- When expanded: grid of uploaded reference images with remove buttons, plus an "Add Reference Image" upload button
+- Total image count badge in the header
+
+#### 7. Generate API Route (`app/api/generate/route.ts`)
+
+Updated to:
+1. Accept `productSubCategory` in the request body
+2. Look up the category in the `product_categories` table
+3. Fetch only that category's reference images from `product_reference_images`
+4. Convert them to base64 for Gemini's multimodal input
+5. Pass the category key, label, and description to the prompt composer
+
+#### 8. Prompt System (`lib/prompts/categories/product.ts`)
+
+Completely refactored with:
+- **Per-category prompt templates** (`CATEGORY_PROMPTS` record): Each of the 7 categories has a detailed prompt block specifying:
+  - What the product type IS (physical description)
+  - Composition rules (what to show, how many items)
+  - Strict constraints (what CAN'T be changed)
+- **Fidelity block** (`buildFidelityBlock()`): Ultra-strict 9-point directive added whenever reference images exist, covering: product identity, shape/form, color/finish, branding/text, packaging details, what can change, what cannot change, product type enforcement, accuracy check.
+- **Updated `composePrompt()`**: Now accepts `productSubCategoryKey`, `productSubCategoryLabel`, `productSubCategoryDescription` and passes them through to `buildProductPrompt()`.
+
+#### 9. Upload Tooling
+
+Created reusable scripts for bulk image upload:
+- **`scripts/upload-category-images.mjs`** — CLI tool that takes a category key and list of image paths, uploads each to Supabase Storage under `products/{category-key}/`, registers them in `product_reference_images` with auto-incrementing sort order.
+- **`scripts/migrate-product-categories.mjs`** — Creates tables (if needed) and seeds the 7 categories.
 
 ---
 
-## Milestone 3: Polish & Launch ($1,099)
+## Architecture Summary
 
-### Phase 3.1: Supabase Auth Upgrade
-- [ ] Step 44 — Enable Supabase Auth
-- [ ] Step 45 — Update auth flow
-- [ ] Step 46 — Add user_id + backfill
+### File Structure (Final M1)
 
-### Phase 3.2: Favorites System
-- [ ] Step 47 — Favorite toggle API
-- [ ] Step 48 — FavoriteButton component
-- [ ] Step 49 — Favorites page
+```
+cocolash-ai/
+├── app/
+│   ├── (auth)/login/page.tsx              # Branded login
+│   ├── (protected)/
+│   │   ├── layout.tsx                     # Sidebar + mobile nav
+│   │   ├── generate/page.tsx              # Image generation
+│   │   ├── gallery/page.tsx               # Image history
+│   │   └── settings/page.tsx              # Brand settings
+│   └── api/
+│       ├── auth/route.ts                  # Login/logout
+│       ├── brand/route.ts                 # GET/PUT brand profile
+│       ├── generate/route.ts              # POST: full generation pipeline
+│       ├── images/route.ts                # GET (list), DELETE, PATCH (favorite)
+│       ├── images/[id]/route.ts           # GET single image
+│       ├── images/[id]/download/route.ts  # GET download
+│       ├── product-categories/route.ts    # GET all categories + images
+│       └── product-categories/[id]/images/route.ts  # POST/DELETE ref images
+├── components/
+│   ├── ui/ (17 shadcn components)
+│   ├── layout/ (Sidebar, Header, MobileNav)
+│   ├── generate/
+│   │   ├── GenerateForm.tsx               # Master form
+│   │   ├── CategorySelector.tsx           # 3 categories
+│   │   ├── ProductSubCategorySelector.tsx  # 7 product sub-categories (NEW)
+│   │   ├── SkinToneSelector.tsx           # 5 options with swatches
+│   │   ├── LashStyleSelector.tsx          # 8 styles
+│   │   ├── HairStyleSelector.tsx          # 12+ grouped
+│   │   ├── SceneSelector.tsx              # 8 + random
+│   │   ├── VibeSelector.tsx               # 7 + random
+│   │   ├── CompositionSelector.tsx        # Solo/Duo
+│   │   ├── AspectRatioSelector.tsx        # 4 ratios
+│   │   ├── LogoOverlayToggle.tsx          # Switch + settings
+│   │   ├── ContextNoteInput.tsx           # 100-char note
+│   │   ├── GenerationProgress.tsx         # Animated overlay
+│   │   ├── ImagePreview.tsx               # Result display
+│   │   └── ErrorDisplay.tsx               # Error cards
+│   ├── gallery/
+│   │   ├── GalleryFilters.tsx             # Category + favorites
+│   │   ├── ImageCard.tsx                  # Thumbnail card
+│   │   └── ImageModal.tsx                 # Full-size detail
+│   └── settings/
+│       ├── BrandProfileForm.tsx           # DNA, skin realism, keywords, negative
+│       ├── LogoUploader.tsx               # 3 logo variants
+│       └── ProductCategoryManager.tsx     # 7-category accordion (NEW)
+├── lib/
+│   ├── supabase/ (client.ts, server.ts, storage.ts)
+│   ├── gemini/ (client.ts, generate.ts, safety.ts)
+│   ├── prompts/
+│   │   ├── brand-dna.ts                   # Master Brand DNA
+│   │   ├── skin-realism.ts                # Skin realism directive (NEW)
+│   │   ├── negative.ts                    # Negative/forbidden terms
+│   │   ├── compose.ts                     # Master prompt assembler
+│   │   ├── categories/ (lash-closeup.ts, lifestyle.ts, product.ts)
+│   │   └── modules/ (skin-tones.ts, hair-styles.ts, lash-styles.ts, scenes.ts, vibes.ts, compositions.ts)
+│   ├── image-processing/logo-overlay.ts   # Sharp compositing
+│   ├── diversity/tracker.ts               # Diversity rotation
+│   ├── constants/brand.ts                 # Brand identity
+│   └── types/index.ts                     # All TypeScript types
+├── scripts/
+│   ├── upload-category-images.mjs         # Bulk image upload tool
+│   ├── upload-products.mjs                # Legacy product upload (superseded)
+│   └── migrate-product-categories.mjs     # DB migration + seeding
+├── middleware.ts                           # Auth protection
+├── .env.local                             # API keys (gitignored)
+└── .env.example                           # Template
+```
 
-### Phase 3.3: Saved Prompt Templates
-- [ ] Step 50 — Saved prompts API
-- [ ] Step 51 — "Save These Settings" flow
-- [ ] Step 52 — "Quick Generate" from saved
+### Database Schema (Final M1)
 
-### Phase 3.4: Full QA
-- [ ] Step 53 — Comprehensive testing
-- [ ] Step 54 — Edge case testing
-- [ ] Step 55 — Bug fix sprint
+| Table | Purpose | Rows |
+|-------|---------|------|
+| `brand_profiles` | Brand identity, prompts, logo URLs | 1 |
+| `generated_images` | All generated image records with metadata | Variable |
+| `diversity_tracker` | Skin tone/hair style rotation tracking | Variable |
+| `product_categories` | 7 product sub-categories with labels/descriptions | 7 |
+| `product_reference_images` | Reference photos linked to product categories | 37 |
 
-### Phase 3.5: Final Launch
-- [ ] Step 56 — Production hardening
-- [ ] Step 57 — Final deployment
-- [ ] Step 58 — Client training session
+Additional columns added to `brand_profiles` during M1:
+- `skin_realism_prompt TEXT` — Custom skin realism directive
+- `product_image_urls JSONB` — Legacy field (superseded by product_categories system)
+
+### Prompt Assembly Formula
+
+```
+FINAL_PROMPT = BRAND_DNA
+             + [SKIN_REALISM_DNA]       (lifestyle + lash-closeup only)
+             + CATEGORY_TEMPLATE(selections, subCategory)
+             + [PRODUCT_FIDELITY_BLOCK]  (product with reference images only)
+             + NEGATIVE_PROMPT
+```
+
+### Generation Pipeline (11 Steps)
+
+1. Parse and validate all selections (including `productSubCategory`)
+2. Fetch brand profile (for prompt overrides + logo URLs)
+3. Fetch diversity tracker data (recent skin tones + hair styles)
+4. Fetch product reference images for selected sub-category (if product)
+5. Convert reference images to base64 for Gemini multimodal input
+6. Compose prompt via `composePrompt()` with all overrides
+7. Call Gemini `generateImage()` with prompt + optional reference images
+8. Upload raw image to Supabase Storage
+9. Apply logo overlay if enabled (Sharp compositing)
+10. Insert record into `generated_images` table
+11. Record diversity selection for future rotation
+
+### Key Technical Decisions
+
+| Decision | Rationale |
+|----------|-----------|
+| **Structured input only (no free-text prompt box)** | Enforces brand consistency. User selects from dropdowns/buttons. Only a 100-char context note is allowed. |
+| **Programmatic logo overlay (Sharp, not AI)** | AI-generated text is unreliable. Sharp composites the real PNG logo pixel-perfectly every time. |
+| **Per-category product prompts** | Generic prompts caused AI to mash all product types together. Each sub-category has strict instructions about what to show and what not to change. |
+| **Multimodal reference images** | Product images are converted to base64 and sent to Gemini alongside the text prompt, giving the AI visual references to match exactly. |
+| **Skin realism as separate DNA block** | Keeps the concern isolated. Can be edited independently in Settings. Only injected for human-featuring categories. |
+| **Diversity rotation (least-recently-used)** | When "Random" is selected, the system picks the least-used skin tone/hair style from the last 20 generations, ensuring visual diversity. |
+| **Sonner instead of Toast** | shadcn/ui deprecated `toast` in favor of `sonner`. Changed during Phase 1.1 installation. |
+| **Anon key for all Supabase calls** | Service role key mismatch (publishable vs JWT). RLS is off, so anon key works. Proper service role setup deferred to M3. |
+
+### Errors Encountered & Resolutions
+
+| # | Error | Resolution |
+|---|-------|------------|
+| 1 | `EPERM: operation not permitted, mkdir create-next-app-nodejs` | Re-ran `npx create-next-app` with elevated permissions |
+| 2 | "The toast component is deprecated" during shadcn install | Replaced `toast` with `sonner` |
+| 3 | "Invalid API key" for `SUPABASE_SERVICE_ROLE_KEY` | Switched to anon key (RLS off). Deferred to M3. |
+| 4 | Next.js build failed — network blocked during font fetch | Re-ran build with `full_network` permission |
+| 5 | TypeScript type error — `GeminiErrorCode` not assignable | Added `INVALID_API_KEY` and `MODEL_ERROR` to error code union |
+| 6 | Dev server port 3000 in use + `uv_interface_addresses` error | Killed conflicting processes, restarted with permissions |
+| 7 | Gemini 404 — `gemini-2.0-flash-exp` model not found | Updated to `gemini-2.5-flash-image` (current model) |
+| 8 | "Brand profile not found" — transient Supabase fetch failure | Resolved on retry (network glitch) |
+| 9 | TypeScript error — `uploadBrandAsset` too strictly typed | Created dedicated `uploadProductImage` function |
+| 10 | TypeScript error — `contents` type mismatch in Gemini SDK | Explicitly typed multimodal content array |
+
+---
+
+## What Remains
+
+### Phase 1.7: Deploy & Verify — DEFERRED
+- Deployment to Vercel deferred until after M2 or on-demand by client
+- Manual testing performed by client; formal test matrix deferred
+
+### Milestone 2: Expansion ($2,199) — NOT STARTED
+- Phase 2.1: Seasonal/Holiday Presets (15+ presets)
+- Phase 2.2: Group Shots (3+ people with diversity controls)
+- Phase 2.3: Before/After & Application Process categories
+- Phase 2.4: Before/After Compositor (Sharp side-by-side)
+- Phase 2.5: Multi-Platform Export
+- Phase 2.6: Deploy & Verify
+
+### Milestone 3: Polish & Launch ($1,099) — NOT STARTED
+- Phase 3.1: Supabase Auth Upgrade (RLS, proper service role key)
+- Phase 3.2: Favorites System (dedicated page)
+- Phase 3.3: Saved Prompt Templates
+- Phase 3.4: Full QA
+- Phase 3.5: Final Launch + Client Training

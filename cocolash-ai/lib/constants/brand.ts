@@ -53,9 +53,9 @@ export const BRAND_AUDIENCE =
 
 // ── Logo Variants ─────────────────────────────────────────────
 export const LOGO_VARIANTS = [
-  { key: "white", label: "White Logo", description: "For dark backgrounds" },
+  { key: "white", label: "Light Pink Logo", description: "For dark backgrounds" },
   { key: "dark", label: "Dark Logo", description: "For light backgrounds" },
-  { key: "gold", label: "Gold Logo", description: "For premium/accent use" },
+  { key: "gold", label: "Beige Logo", description: "For premium/accent use" },
 ] as const;
 
 export type LogoVariantKey = (typeof LOGO_VARIANTS)[number]["key"];

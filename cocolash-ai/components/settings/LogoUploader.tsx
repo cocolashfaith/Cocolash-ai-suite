@@ -127,12 +127,16 @@ export function LogoUploader({ logos, onLogosUpdated }: LogoUploaderProps) {
           {LOGO_VARIANTS.map((variant) => {
             const logoUrl = getLogoUrl(variant.key);
             const isUploading = uploading === variant.key;
+            // Background must contrast with the logo color:
+            // Light Pink logo → dark brown background
+            // Dark logo → white/light background
+            // Beige logo → dark brown background
             const bgClass =
               variant.key === "white"
                 ? "bg-coco-brown"
                 : variant.key === "dark"
-                  ? "bg-coco-beige"
-                  : "bg-gradient-to-br from-coco-brown to-coco-brown-medium";
+                  ? "bg-white border border-coco-beige-dark"
+                  : "bg-coco-brown";
 
             return (
               <div

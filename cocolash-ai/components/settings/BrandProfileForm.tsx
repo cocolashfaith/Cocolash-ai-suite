@@ -12,6 +12,7 @@ import { Loader2, Save, Plus, X, RotateCcw } from "lucide-react";
 import { toast } from "sonner";
 import { MASTER_BRAND_DNA } from "@/lib/prompts/brand-dna";
 import { DEFAULT_NEGATIVE_PROMPT } from "@/lib/prompts/negative";
+import { DEFAULT_SKIN_REALISM_PROMPT } from "@/lib/prompts/skin-realism";
 
 interface BrandProfile {
   id: string;
@@ -20,9 +21,11 @@ interface BrandProfile {
   tone_keywords: string[];
   brand_dna_prompt: string;
   negative_prompt: string;
+  skin_realism_prompt: string | null;
   logo_white_url: string | null;
   logo_dark_url: string | null;
   logo_gold_url: string | null;
+  product_image_urls: string[];
   created_at: string;
   updated_at: string;
 }
@@ -43,6 +46,9 @@ export function BrandProfileForm({
   const [brandDNA, setBrandDNA] = useState(profile.brand_dna_prompt || "");
   const [negativePrompt, setNegativePrompt] = useState(
     profile.negative_prompt || ""
+  );
+  const [skinRealismPrompt, setSkinRealismPrompt] = useState(
+    profile.skin_realism_prompt || DEFAULT_SKIN_REALISM_PROMPT
   );
   const [isSaving, setIsSaving] = useState(false);
 
@@ -75,6 +81,7 @@ export function BrandProfileForm({
           tone_keywords: toneKeywords,
           brand_dna_prompt: brandDNA,
           negative_prompt: negativePrompt,
+          skin_realism_prompt: skinRealismPrompt,
         }),
       });
 
@@ -97,6 +104,11 @@ export function BrandProfileForm({
   const handleResetDNA = () => {
     setBrandDNA(MASTER_BRAND_DNA);
     toast.info("Brand DNA reset to default");
+  };
+
+  const handleResetSkinRealism = () => {
+    setSkinRealismPrompt(DEFAULT_SKIN_REALISM_PROMPT);
+    toast.info("Skin realism prompt reset to default");
   };
 
   const handleResetNegative = () => {
@@ -230,6 +242,44 @@ export function BrandProfileForm({
           />
           <p className="mt-1 text-xs text-coco-brown-medium/60">
             {brandDNA.length} characters
+          </p>
+        </CardContent>
+      </Card>
+
+      {/* ── Skin Realism Prompt ────────────────────────────── */}
+      <Card className="border-coco-pink-dark/20 bg-white">
+        <CardHeader className="pb-3">
+          <div className="flex items-center justify-between">
+            <div>
+              <CardTitle className="text-lg text-coco-brown">
+                Skin Realism Prompt
+              </CardTitle>
+              <p className="text-sm text-coco-brown-medium">
+                Injected into Lifestyle and Close-Up generations for hyper-realistic skin rendering. Skipped for Product shots.
+              </p>
+            </div>
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              onClick={handleResetSkinRealism}
+              className="text-xs text-coco-brown-medium hover:bg-coco-pink/30 hover:text-coco-brown"
+            >
+              <RotateCcw className="mr-1 h-3 w-3" />
+              Reset
+            </Button>
+          </div>
+        </CardHeader>
+        <CardContent>
+          <textarea
+            value={skinRealismPrompt}
+            onChange={(e) => setSkinRealismPrompt(e.target.value)}
+            rows={10}
+            className="w-full rounded-lg border border-coco-pink-dark/30 bg-coco-beige-light p-3 font-mono text-xs text-coco-brown placeholder:text-coco-brown-medium/40 focus:outline-none focus:ring-2 focus:ring-coco-golden/50"
+            placeholder="Enter skin realism directives..."
+          />
+          <p className="mt-1 text-xs text-coco-brown-medium/60">
+            {skinRealismPrompt.length} characters
           </p>
         </CardContent>
       </Card>

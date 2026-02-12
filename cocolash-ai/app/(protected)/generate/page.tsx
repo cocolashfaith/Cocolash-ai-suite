@@ -1,21 +1,24 @@
-import { Sparkles } from "lucide-react";
+import { GenerateForm } from "@/components/generate/GenerateForm";
 
 /**
  * Generate Page — Main image generation interface.
- * Placeholder for Phase 1.6 (Step 20-22).
+ *
+ * Two-column layout:
+ *   Left: All selector controls (category, skin tone, lash style, etc.)
+ *   Right: Preview area (placeholder → progress → result or error)
  */
 export default function GeneratePage() {
   return (
-    <div className="flex flex-col items-center justify-center py-20">
-      <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-coco-golden/10">
-        <Sparkles className="h-8 w-8 text-coco-golden" />
+    <div>
+      <div className="mb-6">
+        <h1 className="text-2xl font-bold text-coco-brown">
+          Generate Images
+        </h1>
+        <p className="mt-1 text-sm text-coco-brown-medium">
+          Create brand-consistent, luxury lash imagery with AI
+        </p>
       </div>
-      <h1 className="mt-4 text-2xl font-bold text-coco-brown">
-        Generate Images
-      </h1>
-      <p className="mt-2 text-sm text-coco-brown-medium">
-        The image generation interface will be built in Phase 1.6.
-      </p>
+      <GenerateForm />
     </div>
   );
 }

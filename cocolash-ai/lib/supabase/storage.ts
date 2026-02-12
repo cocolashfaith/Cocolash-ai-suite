@@ -76,6 +76,36 @@ export async function uploadBrandAsset(
   return { url: `${publicUrl}?t=${Date.now()}`, path: filename };
 }
 
+// ── Upload Product Reference Image ─────────────────────────────
+export async function uploadProductImage(
+  supabase: SupabaseClient,
+  file: File | Blob,
+  index: number
+): Promise<{ url: string; path: string }> {
+  const ext = file instanceof File ? file.name.split(".").pop() || "png" : "png";
+  const filename = `products/product-${index}-${uuidv4()}.${ext}`;
+
+  const { error } = await supabase.storage
+    .from(BUCKETS.BRAND_ASSETS)
+    .upload(filename, file, {
+      contentType: file.type || "image/png",
+      cacheControl: "3600",
+      upsert: false,
+    });
+
+  if (error) {
+    throw new Error(`Failed to upload product image: ${error.message}`);
+  }
+
+  const {
+    data: { publicUrl },
+  } = supabase.storage
+    .from(BUCKETS.BRAND_ASSETS)
+    .getPublicUrl(filename);
+
+  return { url: `${publicUrl}?t=${Date.now()}`, path: filename };
+}
+
 // ── Delete Storage File ───────────────────────────────────────
 export async function deleteStorageFile(
   supabase: SupabaseClient,

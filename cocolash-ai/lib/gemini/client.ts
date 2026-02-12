@@ -28,7 +28,7 @@ export function getGeminiClient(): GoogleGenAI {
 
 // ── Model Constants ──────────────────────────────────────────
 /** Default image generation model */
-export const GEMINI_IMAGE_MODEL = "gemini-2.0-flash-exp";
+export const GEMINI_IMAGE_MODEL = "gemini-2.5-flash-image";
 
 /**
  * Supported aspect ratios for the image generation model.

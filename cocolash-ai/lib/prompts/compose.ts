@@ -14,8 +14,10 @@ import type {
   Scene,
   Vibe,
   ContentCategory,
+  ProductCategoryKey,
 } from "@/lib/types";
 import { getBrandDNA } from "./brand-dna";
+import { getSkinRealismDNA } from "./skin-realism";
 import { getNegativePrompt, getSafeNegativePrompt } from "./negative";
 import { buildLashCloseupPrompt } from "./categories/lash-closeup";
 import { buildLifestylePrompt } from "./categories/lifestyle";
@@ -116,6 +118,11 @@ export function composePrompt(
   options?: {
     customBrandDNA?: string | null;
     customNegativePrompt?: string | null;
+    customSkinRealismPrompt?: string | null;
+    hasProductReferenceImages?: boolean;
+    productSubCategoryKey?: ProductCategoryKey;
+    productSubCategoryLabel?: string;
+    productSubCategoryDescription?: string;
     recentSkinTones?: Exclude<SkinTone, "random">[];
     recentHairStyles?: Exclude<HairStyle, "random">[];
   }
@@ -151,15 +158,30 @@ export function composePrompt(
       break;
 
     case "product":
-      categoryPrompt = buildProductPrompt(selections, resolvedScene);
+      categoryPrompt = buildProductPrompt(
+        selections,
+        resolvedScene,
+        options?.hasProductReferenceImages ?? false,
+        {
+          subCategoryKey: options?.productSubCategoryKey,
+          subCategoryLabel: options?.productSubCategoryLabel,
+          subCategoryDescription: options?.productSubCategoryDescription,
+        }
+      );
       break;
 
     default:
       throw new Error(`Unknown category: ${selections.category}`);
   }
 
-  // 3. Get Brand DNA and Negative Prompt (with optional custom overrides)
+  // 3. Get Brand DNA, Skin Realism DNA, and Negative Prompt
   const brandDNA = getBrandDNA(options?.customBrandDNA);
+
+  // Skin realism is only injected for human-featuring categories
+  const isHumanCategory = selections.category === "lifestyle" || selections.category === "lash-closeup";
+  const skinRealismDNA = isHumanCategory
+    ? getSkinRealismDNA(options?.customSkinRealismPrompt)
+    : "";
 
   // Use safe negative prompt for lifestyle (adds safety terms)
   const negativePrompt =
@@ -168,12 +190,14 @@ export function composePrompt(
       : getNegativePrompt(options?.customNegativePrompt);
 
   // 4. Assemble the final prompt
-  const fullPrompt = `${brandDNA}
+  const promptParts = [brandDNA];
+  if (skinRealismDNA) {
+    promptParts.push(skinRealismDNA);
+  }
+  promptParts.push(categoryPrompt);
+  promptParts.push(`[NEGATIVE / AVOID]:\n${negativePrompt}`);
 
-${categoryPrompt}
-
-[NEGATIVE / AVOID]:
-${negativePrompt}`;
+  const fullPrompt = promptParts.join("\n\n");
 
   return {
     fullPrompt,

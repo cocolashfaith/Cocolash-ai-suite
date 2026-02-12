@@ -20,25 +20,68 @@ export interface GenerateImageResult {
 
 // ── Main Generate Function ───────────────────────────────────
 /**
+ * A reference image to include in the Gemini API call.
+ * Used for product photography to show the AI the actual product.
+ */
+export interface ReferenceImage {
+  /** Base64-encoded image data */
+  base64Data: string;
+  /** MIME type (e.g., "image/png", "image/jpeg") */
+  mimeType: string;
+}
+
+/**
  * Generates an image using Google Gemini.
  *
  * @param prompt - The full composed prompt (Brand DNA + Category + Negative)
  * @param aspectRatio - Desired aspect ratio
+ * @param referenceImages - Optional array of reference images for multimodal generation
  * @returns GenerateImageResult with buffer, mimeType, and model info
  * @throws GeminiError with typed error code on failure
  */
 export async function generateImage(
   prompt: string,
-  aspectRatio: AspectRatio = "4:5"
+  aspectRatio: AspectRatio = "4:5",
+  referenceImages?: ReferenceImage[]
 ): Promise<GenerateImageResult> {
   const client = getGeminiClient();
   const model = GEMINI_IMAGE_MODEL;
 
   try {
+    // Build contents: text-only or multimodal (text + reference images)
+    let contents: string | { role: string; parts: { text?: string; inlineData?: { mimeType: string; data: string } }[] }[];
+
+    if (referenceImages && referenceImages.length > 0) {
+      // Multimodal: reference images + text prompt
+      const parts: { text?: string; inlineData?: { mimeType: string; data: string } }[] = [];
+
+      // Add reference image instruction first
+      parts.push({
+        text: `[PRODUCT REFERENCE IMAGES — ${referenceImages.length} image(s) provided below]\nStudy these reference images carefully. They show the EXACT product you must recreate.`,
+      });
+
+      // Add each reference image
+      for (const ref of referenceImages) {
+        parts.push({
+          inlineData: {
+            mimeType: ref.mimeType,
+            data: ref.base64Data,
+          },
+        });
+      }
+
+      // Add the main prompt after the images
+      parts.push({ text: prompt });
+
+      contents = [{ role: "user", parts }];
+    } else {
+      contents = prompt;
+    }
+
     // Call Gemini with image generation config
     const response = await client.models.generateContent({
       model,
-      contents: prompt,
+      contents,
       config: {
         responseModalities: ["image", "text"],
         ...(GEMINI_ASPECT_RATIOS[aspectRatio] && {
