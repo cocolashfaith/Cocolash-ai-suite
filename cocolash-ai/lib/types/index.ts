@@ -49,6 +49,21 @@ export interface GroupDiversitySelections {
   groupAction: GroupAction;
 }
 
+// ── Image Resolution ──────────────────────────────────────────
+export type ImageResolution = "1K" | "2K" | "4K";
+
+export interface ImageResolutionOption {
+  value: ImageResolution;
+  label: string;
+  description: string;
+}
+
+export const IMAGE_RESOLUTION_OPTIONS: ImageResolutionOption[] = [
+  { value: "1K", label: "1K", description: "Standard — fast & efficient" },
+  { value: "2K", label: "2K", description: "High quality — sharper details" },
+  { value: "4K", label: "4K", description: "Ultra HD — maximum detail" },
+];
+
 // ── Aspect Ratios ─────────────────────────────────────────────
 export type AspectRatio = "1:1" | "4:5" | "9:16" | "16:9";
 
@@ -233,6 +248,7 @@ export interface GenerationSelections {
   scene: Scene;
   composition: Composition;
   aspectRatio: AspectRatio;
+  resolution: ImageResolution; // Image output resolution: "1K", "2K", or "4K"
   vibe: Vibe;
   logoOverlay: LogoOverlaySettings;
   contextNote?: string; // 100-char max optional note

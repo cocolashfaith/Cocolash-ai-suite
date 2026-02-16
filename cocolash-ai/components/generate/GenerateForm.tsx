@@ -14,6 +14,7 @@ import { SceneSelector } from "./SceneSelector";
 import { VibeSelector } from "./VibeSelector";
 import { CompositionSelector } from "./CompositionSelector";
 import { AspectRatioSelector } from "./AspectRatioSelector";
+import { ResolutionSelector } from "./ResolutionSelector";
 import { LogoOverlayToggle } from "./LogoOverlayToggle";
 import { ContextNoteInput } from "./ContextNoteInput";
 import { SeasonalSelector } from "./SeasonalSelector";
@@ -34,6 +35,7 @@ import type {
   Scene,
   Composition,
   AspectRatio,
+  ImageResolution,
   Vibe,
   LogoOverlaySettings,
   SeasonalSelection,
@@ -52,6 +54,7 @@ const DEFAULT_SELECTIONS: GenerationSelections = {
   scene: "studio",
   composition: "solo",
   aspectRatio: "4:5",
+  resolution: "1K",
   vibe: "confident-glam",
   logoOverlay: {
     enabled: false,
@@ -324,6 +327,12 @@ export function GenerateForm() {
           <AspectRatioSelector
             value={selections.aspectRatio}
             onChange={(v: AspectRatio) => update("aspectRatio", v)}
+          />
+
+          {/* Output Resolution */}
+          <ResolutionSelector
+            value={selections.resolution}
+            onChange={(v: ImageResolution) => update("resolution", v)}
           />
 
           {/* Logo Overlay */}

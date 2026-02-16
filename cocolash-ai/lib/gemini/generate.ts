@@ -4,7 +4,7 @@
  * Core function that calls the Gemini API to generate images.
  * Returns the raw image buffer and MIME type.
  */
-import type { AspectRatio } from "@/lib/types";
+import type { AspectRatio, ImageResolution } from "@/lib/types";
 import { getGeminiClient, GEMINI_IMAGE_MODEL, GEMINI_ASPECT_RATIOS } from "./client";
 import { GeminiError, classifyGeminiError } from "./safety";
 
@@ -38,6 +38,7 @@ export interface ReferenceImage {
  * @param referenceImages - Optional array of reference images for multimodal generation
  * @param referenceInstruction - Optional custom instruction for reference images
  *        (defaults to product reference wording; pass a custom string for Before/After etc.)
+ * @param resolution - Output image resolution: "1K", "2K", or "4K" (defaults to "1K")
  * @returns GenerateImageResult with buffer, mimeType, and model info
  * @throws GeminiError with typed error code on failure
  */
@@ -45,7 +46,8 @@ export async function generateImage(
   prompt: string,
   aspectRatio: AspectRatio = "4:5",
   referenceImages?: ReferenceImage[],
-  referenceInstruction?: string
+  referenceInstruction?: string,
+  resolution: ImageResolution = "1K"
 ): Promise<GenerateImageResult> {
   const client = getGeminiClient();
   const model = GEMINI_IMAGE_MODEL;
@@ -90,6 +92,7 @@ export async function generateImage(
         ...(GEMINI_ASPECT_RATIOS[aspectRatio] && {
           imageConfig: {
             aspectRatio: GEMINI_ASPECT_RATIOS[aspectRatio],
+            imageSize: resolution,
           },
         }),
       },

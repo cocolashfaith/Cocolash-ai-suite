@@ -28,6 +28,7 @@ import type {
   ProductCategoryKey,
   ApplicationStep,
   AspectRatio,
+  ImageResolution,
   Composition,
   LashStyle,
   SkinTone,
@@ -53,6 +54,7 @@ const VALID_APPLICATION_STEPS: ApplicationStep[] = [
   "preparation", "isolation", "application", "final-check", "reveal",
 ];
 const VALID_RATIOS: AspectRatio[] = ["1:1", "4:5", "9:16", "16:9"];
+const VALID_RESOLUTIONS: ImageResolution[] = ["1K", "2K", "4K"];
 const VALID_COMPOSITIONS: Composition[] = ["solo", "duo", "group"];
 const VALID_GROUP_ACTIONS: GroupAction[] = ["laughing", "walking", "posing", "brunch", "getting-ready"];
 const VALID_AGE_RANGES: AgeRange[] = ["same", "mixed", "mature"];
@@ -96,6 +98,11 @@ function validateSelections(body: unknown): GenerationSelections {
   const aspectRatio = (data.aspectRatio as AspectRatio) || "4:5";
   if (!VALID_RATIOS.includes(aspectRatio)) {
     throw new Error(`Invalid aspect ratio: ${aspectRatio}`);
+  }
+
+  const resolution = (data.resolution as ImageResolution) || "1K";
+  if (!VALID_RESOLUTIONS.includes(resolution)) {
+    throw new Error(`Invalid resolution: ${resolution}`);
   }
 
   const lashStyle = (data.lashStyle as LashStyle) || "natural";
@@ -248,6 +255,7 @@ function validateSelections(body: unknown): GenerationSelections {
     scene,
     composition,
     aspectRatio,
+    resolution,
     vibe,
     logoOverlay,
     contextNote,
@@ -378,14 +386,17 @@ export async function POST(request: NextRequest) {
 
       const composedBA = composeBeforeAfterPrompts(selections, composeOptions);
 
-      console.log(`[Generate] Before/After (sequential w/ reference) — Aspect: ${selections.aspectRatio}`);
+      console.log(`[Generate] Before/After (sequential w/ reference) — Aspect: ${selections.aspectRatio}, Resolution: ${selections.resolution}`);
       console.log(`[Generate] Resolved: skin=${composedBA.resolvedSelections.skinTone}, hair=${composedBA.resolvedSelections.hairStyle}`);
 
       // STAGE 1: Generate the "BEFORE" image first
       console.log(`[Generate] Stage 1: Generating "Before" image...`);
       const beforeResult = await generateImage(
         composedBA.beforePrompt,
-        selections.aspectRatio
+        selections.aspectRatio,
+        undefined,
+        undefined,
+        selections.resolution
       );
       console.log(`[Generate] Before: ${beforeResult.buffer.length} bytes (${beforeResult.mimeType})`);
 
@@ -401,7 +412,8 @@ export async function POST(request: NextRequest) {
         composedBA.afterPrompt,
         selections.aspectRatio,
         [beforeAsReference],
-        composedBA.afterReferenceInstruction
+        composedBA.afterReferenceInstruction,
+        selections.resolution
       );
       console.log(`[Generate] After: ${afterResult.buffer.length} bytes (${afterResult.mimeType})`);
 
@@ -594,7 +606,7 @@ export async function POST(request: NextRequest) {
       recentHairStyles,
     });
 
-    console.log(`[Generate] Category: ${selections.category}${selections.productSubCategory ? ` (${selections.productSubCategory})` : ""}${selections.applicationStep ? `, Step: ${selections.applicationStep}` : ""}${selections.seasonal?.presetSlug ? `, Season: ${selections.seasonal.presetSlug}` : ""}, Aspect: ${selections.aspectRatio}`);
+    console.log(`[Generate] Category: ${selections.category}${selections.productSubCategory ? ` (${selections.productSubCategory})` : ""}${selections.applicationStep ? `, Step: ${selections.applicationStep}` : ""}${selections.seasonal?.presetSlug ? `, Season: ${selections.seasonal.presetSlug}` : ""}, Aspect: ${selections.aspectRatio}, Resolution: ${selections.resolution}`);
     console.log(`[Generate] Resolved: skin=${composed.resolvedSelections.skinTone}, hair=${composed.resolvedSelections.hairStyle}, scene=${composed.resolvedSelections.scene}, vibe=${composed.resolvedSelections.vibe}`);
     if (selections.composition === "group" && selections.groupDiversity) {
       console.log(`[Generate] Group: ${selections.groupDiversity.groupCount} people, mode=${selections.groupDiversity.mode}, action=${selections.groupDiversity.groupAction}, age=${selections.groupDiversity.ageRange}`);
@@ -607,7 +619,9 @@ export async function POST(request: NextRequest) {
     const geminiResult = await generateImage(
       composed.fullPrompt,
       selections.aspectRatio,
-      referenceImages
+      referenceImages,
+      undefined,
+      selections.resolution
     );
 
     console.log(`[Generate] Gemini returned ${geminiResult.buffer.length} bytes (${geminiResult.mimeType})`);

@@ -140,11 +140,14 @@ CRITICAL RULES (NON-NEGOTIABLE):
 OUTPUT: A single clean image at ${targetAspectRatio} aspect ratio that preserves 100% of the original content.`;
 
     // 6. Call Gemini with the original image as reference + reformat instructions
+    // Use the same resolution as the original image, defaulting to "1K" for older records
+    const originalResolution = original.selections?.resolution || "1K";
     const result = await generateImage(
       reformatPrompt,
       targetAspectRatio,
       [referenceImg],
-      referenceInstruction
+      referenceInstruction,
+      originalResolution
     );
     console.log(`[Export] Gemini returned ${result.buffer.length} bytes (${result.mimeType})`);
 
