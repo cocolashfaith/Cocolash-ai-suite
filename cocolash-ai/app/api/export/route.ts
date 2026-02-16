@@ -156,7 +156,8 @@ OUTPUT: A single clean image at ${targetAspectRatio} aspect ratio that preserves
       supabase,
       result.buffer,
       original.brand_id,
-      `-export-${targetAspectRatio.replace(":", "x")}-raw`
+      `-export-${targetAspectRatio.replace(":", "x")}-raw`,
+      result.mimeType
     );
 
     let finalUrl = rawUpload.url;
@@ -188,7 +189,8 @@ OUTPUT: A single clean image at ${targetAspectRatio} aspect ratio that preserves
               supabase,
               overlayResult.buffer,
               original.brand_id,
-              `-export-${targetAspectRatio.replace(":", "x")}-final`
+              `-export-${targetAspectRatio.replace(":", "x")}-final`,
+              overlayResult.mimeType
             );
 
             finalUrl = finalUpload.url;

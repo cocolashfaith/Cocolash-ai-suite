@@ -175,7 +175,11 @@ export async function applyLogoOverlay(
   );
 
   // 5. Composite logo onto base image
-  const result = await sharp(imageBuffer)
+  // Use JPEG for large images (>4MB input) to avoid exceeding storage limits.
+  // PNG is lossless but massive for high-res images; JPEG at quality 95 is visually identical.
+  const usePng = imageBuffer.length < 4 * 1024 * 1024;
+
+  let resultPipeline = sharp(imageBuffer)
     .composite([
       {
         input: processedLogo,
@@ -183,13 +187,15 @@ export async function applyLogoOverlay(
         top: Math.max(0, top),
         blend: "over",
       },
-    ])
-    .png()
-    .toBuffer();
+    ]);
+
+  const result = usePng
+    ? await resultPipeline.png().toBuffer()
+    : await resultPipeline.jpeg({ quality: 95 }).toBuffer();
 
   return {
     buffer: result,
-    mimeType: "image/png",
+    mimeType: usePng ? "image/png" : "image/jpeg",
   };
 }
 

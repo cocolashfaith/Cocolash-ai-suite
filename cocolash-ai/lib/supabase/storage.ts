@@ -19,14 +19,16 @@ export async function uploadGeneratedImage(
   supabase: SupabaseClient,
   buffer: Buffer,
   brandId: string,
-  suffix: string = ""
+  suffix: string = "",
+  mimeType: string = "image/png"
 ): Promise<{ url: string; path: string }> {
-  const filename = `${brandId}/${uuidv4()}${suffix}.png`;
+  const ext = mimeType === "image/jpeg" ? "jpg" : "png";
+  const filename = `${brandId}/${uuidv4()}${suffix}.${ext}`;
 
   const { error } = await supabase.storage
     .from(BUCKETS.GENERATED_IMAGES)
     .upload(filename, buffer, {
-      contentType: "image/png",
+      contentType: mimeType,
       cacheControl: "3600",
       upsert: false,
     });

@@ -5,7 +5,14 @@
  * visual elements, styles, and artifacts.
  */
 
-export const DEFAULT_NEGATIVE_PROMPT = `illustration, 3d render, cartoon, anime, plastic skin, airbrushed, blurry, blue lighting, cool tones, disfigured eyes, double iris, messy makeup, clumpy lashes, aggressive expression, stock photo feel, watermark, text overlay, logo text, no text in image, no typography, no lettering, no brand names rendered in image, no watermarks, no embedded logos, no words, no captions, no signatures`;
+export const DEFAULT_NEGATIVE_PROMPT = `STRICT TEXT/LOGO BAN — DO NOT GENERATE ANY OF THE FOLLOWING IN THE IMAGE:
+- No logos, brand marks, brand names, wordmarks, monograms, or insignia of any kind
+- No text, typography, lettering, words, captions, labels, signatures, or watermarks
+- No "CocoLash", "COCOLASH", "CL", or any brand name rendered in the image
+- No embedded overlays, badges, stickers, or UI elements
+- The image must be completely free of any text or logo — branding is applied separately after generation
+
+OTHER EXCLUSIONS: illustration, 3d render, cartoon, anime, plastic skin, airbrushed, blurry, blue lighting, cool tones, disfigured eyes, double iris, messy makeup, clumpy lashes, aggressive expression, stock photo feel`;
 
 /**
  * Safety-appended negative terms for lifestyle/editorial shots.

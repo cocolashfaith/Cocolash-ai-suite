@@ -419,8 +419,8 @@ export async function POST(request: NextRequest) {
 
       // Upload both raw images
       const [beforeUpload, afterUpload] = await Promise.all([
-        uploadGeneratedImage(supabase, beforeResult.buffer, brandId, "-before-raw"),
-        uploadGeneratedImage(supabase, afterResult.buffer, brandId, "-after-raw"),
+        uploadGeneratedImage(supabase, beforeResult.buffer, brandId, "-before-raw", beforeResult.mimeType),
+        uploadGeneratedImage(supabase, afterResult.buffer, brandId, "-after-raw", afterResult.mimeType),
       ]);
 
       // Logo overlay (applied to both if enabled)
@@ -445,8 +445,8 @@ export async function POST(request: NextRequest) {
             ]);
 
             const [beforeFinal, afterFinal] = await Promise.all([
-              uploadGeneratedImage(supabase, beforeOverlay.buffer, brandId, "-before-final"),
-              uploadGeneratedImage(supabase, afterOverlay.buffer, brandId, "-after-final"),
+              uploadGeneratedImage(supabase, beforeOverlay.buffer, brandId, "-before-final", beforeOverlay.mimeType),
+              uploadGeneratedImage(supabase, afterOverlay.buffer, brandId, "-after-final", afterOverlay.mimeType),
             ]);
 
             beforeFinalUrl = beforeFinal.url;
@@ -631,7 +631,8 @@ export async function POST(request: NextRequest) {
       supabase,
       geminiResult.buffer,
       brandId,
-      "-raw"
+      "-raw",
+      geminiResult.mimeType
     );
 
     // 9. Logo overlay (if enabled)
@@ -658,7 +659,8 @@ export async function POST(request: NextRequest) {
             supabase,
             overlayResult.buffer,
             brandId,
-            "-final"
+            "-final",
+            overlayResult.mimeType
           );
 
           finalImageUrl = finalUpload.url;
