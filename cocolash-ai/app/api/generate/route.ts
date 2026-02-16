@@ -32,6 +32,7 @@ import type {
   HairStyle,
   Scene,
   Vibe,
+  SeasonalSelection,
   GenerateResponse,
   GenerateErrorResponse,
 } from "@/lib/types";
@@ -139,6 +140,18 @@ function validateSelections(body: unknown): GenerationSelections {
     ? data.contextNote.substring(0, 100)
     : undefined;
 
+  // [M2] Seasonal preset selection (optional)
+  const seasonalData = data.seasonal as Record<string, unknown> | undefined;
+  let seasonal: SeasonalSelection | undefined;
+  if (seasonalData && typeof seasonalData === "object" && seasonalData.presetSlug) {
+    seasonal = {
+      presetSlug: String(seasonalData.presetSlug),
+      selectedProps: Array.isArray(seasonalData.selectedProps)
+        ? (seasonalData.selectedProps as string[]).map(String)
+        : [],
+    };
+  }
+
   return {
     category,
     productSubCategory,
@@ -151,6 +164,7 @@ function validateSelections(body: unknown): GenerationSelections {
     vibe,
     logoOverlay,
     contextNote,
+    seasonal,
   };
 }
 
@@ -245,6 +259,22 @@ export async function POST(request: NextRequest) {
       }
     }
 
+    // 5b. [M2] Look up seasonal preset ID if a seasonal slug is provided
+    let seasonalPresetId: string | null = null;
+    if (selections.seasonal?.presetSlug) {
+      const { data: seasonalPreset } = await supabase
+        .from("seasonal_presets")
+        .select("id")
+        .eq("slug", selections.seasonal.presetSlug)
+        .eq("is_active", true)
+        .single();
+
+      if (seasonalPreset) {
+        seasonalPresetId = seasonalPreset.id;
+      }
+      console.log(`[Generate] Seasonal preset: "${selections.seasonal.presetSlug}" (ID: ${seasonalPresetId || "not found"}), Props: ${selections.seasonal.selectedProps.join(", ") || "none"}`);
+    }
+
     // 6. Compose the prompt
     const composed = composePrompt(selections, {
       customBrandDNA: brandProfile.brand_dna_prompt,
@@ -254,11 +284,12 @@ export async function POST(request: NextRequest) {
       productSubCategoryKey: selections.productSubCategory,
       productSubCategoryLabel,
       productSubCategoryDescription,
+      seasonalSelection: selections.seasonal || null,
       recentSkinTones,
       recentHairStyles,
     });
 
-    console.log(`[Generate] Category: ${selections.category}${selections.productSubCategory ? ` (${selections.productSubCategory})` : ""}, Aspect: ${selections.aspectRatio}`);
+    console.log(`[Generate] Category: ${selections.category}${selections.productSubCategory ? ` (${selections.productSubCategory})` : ""}${selections.seasonal?.presetSlug ? `, Season: ${selections.seasonal.presetSlug}` : ""}, Aspect: ${selections.aspectRatio}`);
     console.log(`[Generate] Resolved: skin=${composed.resolvedSelections.skinTone}, hair=${composed.resolvedSelections.hairStyle}, scene=${composed.resolvedSelections.scene}, vibe=${composed.resolvedSelections.vibe}`);
     if (hasProductRefs) {
       console.log(`[Generate] Product reference images for "${productSubCategoryLabel}": ${referenceImages?.length ?? 0}`);
@@ -339,6 +370,7 @@ export async function POST(request: NextRequest) {
       logo_position: hasLogoOverlay ? selections.logoOverlay.position : null,
       generation_time_ms: generationTimeMs,
       gemini_model: geminiResult.model,
+      seasonal_preset_id: seasonalPresetId,
     };
 
     const { data: insertedImage, error: insertError } = await supabase

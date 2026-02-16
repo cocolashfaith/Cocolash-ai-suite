@@ -131,6 +131,43 @@ export interface LogoOverlaySettings {
   sizePercent?: number;    // % of image width, default 15
 }
 
+// ── Seasonal / Holiday Presets ────────────────────────────────
+export type SeasonalPresetCategory = "major_holiday" | "beauty_industry" | "seasonal";
+
+export interface SeasonalPresetDefinition {
+  name: string;
+  slug: string;
+  category: SeasonalPresetCategory;
+  promptModifier: string;
+  colorOverrides: { accent: string; background: string } | null;
+  props: string[];
+  moodKeywords: string[];
+  availableMonths: number[]; // 1-12
+  sortOrder: number;
+}
+
+/** DB record shape for seasonal_presets table */
+export interface SeasonalPreset {
+  id: string;
+  name: string;
+  slug: string;
+  category: string;
+  prompt_modifier: string;
+  color_overrides: { accent: string; background: string } | null;
+  props: string[];
+  mood_keywords: string[];
+  available_months: number[];
+  sort_order: number;
+  is_active: boolean;
+  created_at: string;
+}
+
+/** What the user selects on the form (seasonal portion) */
+export interface SeasonalSelection {
+  presetSlug: string | null;      // null = "No Season"
+  selectedProps: string[];        // Which of the preset's props the user toggled on
+}
+
 // ── Product Sub-Categories ────────────────────────────────────
 export type ProductCategoryKey =
   | "single-black-tray"
@@ -174,6 +211,7 @@ export interface GenerationSelections {
   vibe: Vibe;
   logoOverlay: LogoOverlaySettings;
   contextNote?: string; // 100-char max optional note
+  seasonal?: SeasonalSelection; // [M2] Seasonal/holiday preset
 }
 
 // ── Generated Image (database record) ─────────────────────────
@@ -194,6 +232,7 @@ export interface GeneratedImage {
   gemini_model: string;
   is_favorite: boolean;
   tags: string[] | null;
+  seasonal_preset_id: string | null; // [M2] Reference to seasonal_presets
   created_at: string;
 }
 

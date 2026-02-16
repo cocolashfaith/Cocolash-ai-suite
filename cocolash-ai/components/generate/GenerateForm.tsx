@@ -16,6 +16,7 @@ import { CompositionSelector } from "./CompositionSelector";
 import { AspectRatioSelector } from "./AspectRatioSelector";
 import { LogoOverlayToggle } from "./LogoOverlayToggle";
 import { ContextNoteInput } from "./ContextNoteInput";
+import { SeasonalSelector } from "./SeasonalSelector";
 import { GenerationProgress } from "./GenerationProgress";
 import { ImagePreview } from "./ImagePreview";
 import { ErrorDisplay } from "./ErrorDisplay";
@@ -32,6 +33,7 @@ import type {
   AspectRatio,
   Vibe,
   LogoOverlaySettings,
+  SeasonalSelection,
   GenerateResponse,
   GenerateErrorResponse,
   GeneratedImage,
@@ -157,6 +159,12 @@ export function GenerateForm() {
               }
             />
           )}
+
+          {/* Seasonal / Holiday Preset (available for all categories) */}
+          <SeasonalSelector
+            value={selections.seasonal || { presetSlug: null, selectedProps: [] }}
+            onChange={(v: SeasonalSelection) => update("seasonal", v)}
+          />
 
           {/* Skin Tone (for lash-closeup and lifestyle) */}
           {selections.category !== "product" && (

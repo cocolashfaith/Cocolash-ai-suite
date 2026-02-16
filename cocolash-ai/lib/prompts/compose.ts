@@ -15,6 +15,7 @@ import type {
   Vibe,
   ContentCategory,
   ProductCategoryKey,
+  SeasonalSelection,
 } from "@/lib/types";
 import { getBrandDNA } from "./brand-dna";
 import { getSkinRealismDNA } from "./skin-realism";
@@ -22,6 +23,7 @@ import { getNegativePrompt, getSafeNegativePrompt } from "./negative";
 import { buildLashCloseupPrompt } from "./categories/lash-closeup";
 import { buildLifestylePrompt } from "./categories/lifestyle";
 import { buildProductPrompt } from "./categories/product";
+import { getPresetBySlug, buildSeasonalPromptModifier } from "./modules/seasonal";
 import { SKIN_TONE_TIERS } from "./modules/skin-tones";
 import { ALL_HAIR_STYLES } from "./modules/hair-styles";
 import { ALL_SCENES, SCENES_BY_CATEGORY } from "./modules/scenes";
@@ -123,6 +125,7 @@ export function composePrompt(
     productSubCategoryKey?: ProductCategoryKey;
     productSubCategoryLabel?: string;
     productSubCategoryDescription?: string;
+    seasonalSelection?: SeasonalSelection | null;
     recentSkinTones?: Exclude<SkinTone, "random">[];
     recentHairStyles?: Exclude<HairStyle, "random">[];
   }
@@ -189,12 +192,26 @@ export function composePrompt(
       ? getSafeNegativePrompt(options?.customNegativePrompt)
       : getNegativePrompt(options?.customNegativePrompt);
 
-  // 4. Assemble the final prompt
+  // 4. Build seasonal modifier (if a preset is selected)
+  let seasonalModifier = "";
+  const seasonal = options?.seasonalSelection ?? selections.seasonal;
+  if (seasonal?.presetSlug) {
+    const preset = getPresetBySlug(seasonal.presetSlug);
+    if (preset) {
+      seasonalModifier = buildSeasonalPromptModifier(preset, seasonal.selectedProps);
+    }
+  }
+
+  // 5. Assemble the final prompt
+  //    BRAND_DNA + [SKIN_REALISM] + CATEGORY_TEMPLATE + [SEASONAL_MODIFIER] + NEGATIVE
   const promptParts = [brandDNA];
   if (skinRealismDNA) {
     promptParts.push(skinRealismDNA);
   }
   promptParts.push(categoryPrompt);
+  if (seasonalModifier) {
+    promptParts.push(seasonalModifier);
+  }
   promptParts.push(`[NEGATIVE / AVOID]:\n${negativePrompt}`);
 
   const fullPrompt = promptParts.join("\n\n");
