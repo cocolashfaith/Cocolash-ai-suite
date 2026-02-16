@@ -19,10 +19,32 @@ export type ContentCategoryAll =
   | "application-process";
 
 // ── Composition ───────────────────────────────────────────────
-/** M1 compositions. M2 adds "group". */
-export type Composition = "solo" | "duo";
+export type Composition = "solo" | "duo" | "group";
 
-export type CompositionAll = Composition | "group";
+// ── Group Shot Types (M2) ────────────────────────────────────
+export type GroupAction =
+  | "laughing"
+  | "walking"
+  | "posing"
+  | "brunch"
+  | "getting-ready";
+
+export type AgeRange = "same" | "mixed" | "mature";
+
+/** Per-person configuration in a group shot */
+export interface GroupPersonConfig {
+  skinTone: SkinTone;
+  hairStyle: HairStyle;
+}
+
+/** Full group diversity selection from the form */
+export interface GroupDiversitySelections {
+  groupCount: 3 | 4 | 5;
+  mode: "diverse-mix" | "custom"; // "diverse-mix" = auto-assign, "custom" = per-person
+  people: GroupPersonConfig[]; // Only used when mode === "custom"
+  ageRange: AgeRange;
+  groupAction: GroupAction;
+}
 
 // ── Aspect Ratios ─────────────────────────────────────────────
 export type AspectRatio = "1:1" | "4:5" | "9:16" | "16:9";
@@ -212,6 +234,7 @@ export interface GenerationSelections {
   logoOverlay: LogoOverlaySettings;
   contextNote?: string; // 100-char max optional note
   seasonal?: SeasonalSelection; // [M2] Seasonal/holiday preset
+  groupDiversity?: GroupDiversitySelections; // [M2] Group shot diversity config
 }
 
 // ── Generated Image (database record) ─────────────────────────
@@ -233,6 +256,8 @@ export interface GeneratedImage {
   is_favorite: boolean;
   tags: string[] | null;
   seasonal_preset_id: string | null; // [M2] Reference to seasonal_presets
+  group_count: number | null; // [M2] Number of people in group shots
+  diversity_selections: GroupDiversitySelections | null; // [M2] Group diversity config
   created_at: string;
 }
 

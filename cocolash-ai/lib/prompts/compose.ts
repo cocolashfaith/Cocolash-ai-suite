@@ -16,6 +16,7 @@ import type {
   ContentCategory,
   ProductCategoryKey,
   SeasonalSelection,
+  GroupDiversitySelections,
 } from "@/lib/types";
 import { getBrandDNA } from "./brand-dna";
 import { getSkinRealismDNA } from "./skin-realism";
@@ -126,6 +127,7 @@ export function composePrompt(
     productSubCategoryLabel?: string;
     productSubCategoryDescription?: string;
     seasonalSelection?: SeasonalSelection | null;
+    groupDiversity?: GroupDiversitySelections | null;
     recentSkinTones?: Exclude<SkinTone, "random">[];
     recentHairStyles?: Exclude<HairStyle, "random">[];
   }
@@ -156,7 +158,8 @@ export function composePrompt(
         resolvedSkinTone,
         resolvedScene,
         resolvedVibe,
-        resolvedHairStyle
+        resolvedHairStyle,
+        options?.groupDiversity ?? selections.groupDiversity ?? null
       );
       break;
 

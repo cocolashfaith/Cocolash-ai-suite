@@ -33,6 +33,9 @@ import type {
   Scene,
   Vibe,
   SeasonalSelection,
+  GroupDiversitySelections,
+  GroupAction,
+  AgeRange,
   GenerateResponse,
   GenerateErrorResponse,
 } from "@/lib/types";
@@ -43,7 +46,9 @@ export const maxDuration = 60;
 // ── Validation Helpers ───────────────────────────────────────
 const VALID_CATEGORIES: ContentCategory[] = ["lash-closeup", "lifestyle", "product"];
 const VALID_RATIOS: AspectRatio[] = ["1:1", "4:5", "9:16", "16:9"];
-const VALID_COMPOSITIONS: Composition[] = ["solo", "duo"];
+const VALID_COMPOSITIONS: Composition[] = ["solo", "duo", "group"];
+const VALID_GROUP_ACTIONS: GroupAction[] = ["laughing", "walking", "posing", "brunch", "getting-ready"];
+const VALID_AGE_RANGES: AgeRange[] = ["same", "mixed", "mature"];
 const VALID_LASH_STYLES: LashStyle[] = [
   "natural", "volume", "dramatic", "cat-eye",
   "wispy", "doll-eye", "hybrid", "mega-volume",
@@ -152,6 +157,68 @@ function validateSelections(body: unknown): GenerationSelections {
     };
   }
 
+  // [M2] Group diversity selections (required when composition is "group")
+  const groupDiversityData = data.groupDiversity as Record<string, unknown> | undefined;
+  let groupDiversity: GroupDiversitySelections | undefined;
+  if (composition === "group" && groupDiversityData && typeof groupDiversityData === "object") {
+    const groupCount = Number(groupDiversityData.groupCount) as 3 | 4 | 5;
+    if (![3, 4, 5].includes(groupCount)) {
+      throw new Error(`Invalid group count: ${groupCount}`);
+    }
+
+    const mode = groupDiversityData.mode === "custom" ? "custom" : "diverse-mix";
+
+    const groupAction = (groupDiversityData.groupAction as GroupAction) || "posing";
+    if (!VALID_GROUP_ACTIONS.includes(groupAction)) {
+      throw new Error(`Invalid group action: ${groupAction}`);
+    }
+
+    const ageRange = (groupDiversityData.ageRange as AgeRange) || "same";
+    if (!VALID_AGE_RANGES.includes(ageRange)) {
+      throw new Error(`Invalid age range: ${ageRange}`);
+    }
+
+    // Parse per-person configs
+    const rawPeople = Array.isArray(groupDiversityData.people) ? groupDiversityData.people : [];
+    const people = rawPeople.slice(0, groupCount).map((p: unknown) => {
+      const person = p as Record<string, unknown>;
+      return {
+        skinTone: (VALID_SKIN_TONES.includes(person?.skinTone as SkinTone)
+          ? person.skinTone
+          : "random") as SkinTone,
+        hairStyle: (VALID_HAIR_STYLES.includes(person?.hairStyle as HairStyle)
+          ? person.hairStyle
+          : "random") as HairStyle,
+      };
+    });
+
+    // Pad with defaults if needed
+    while (people.length < groupCount) {
+      people.push({ skinTone: "random" as SkinTone, hairStyle: "random" as HairStyle });
+    }
+
+    groupDiversity = {
+      groupCount,
+      mode,
+      people,
+      ageRange,
+      groupAction,
+    };
+  } else if (composition === "group") {
+    // Default group config if none provided
+    groupDiversity = {
+      groupCount: 3,
+      mode: "diverse-mix",
+      people: [
+        { skinTone: "random", hairStyle: "random" },
+        { skinTone: "random", hairStyle: "random" },
+        { skinTone: "random", hairStyle: "random" },
+      ],
+      ageRange: "same",
+      groupAction: "posing",
+    };
+  }
+
   return {
     category,
     productSubCategory,
@@ -165,6 +232,7 @@ function validateSelections(body: unknown): GenerationSelections {
     logoOverlay,
     contextNote,
     seasonal,
+    groupDiversity,
   };
 }
 
@@ -285,12 +353,16 @@ export async function POST(request: NextRequest) {
       productSubCategoryLabel,
       productSubCategoryDescription,
       seasonalSelection: selections.seasonal || null,
+      groupDiversity: selections.groupDiversity || null,
       recentSkinTones,
       recentHairStyles,
     });
 
     console.log(`[Generate] Category: ${selections.category}${selections.productSubCategory ? ` (${selections.productSubCategory})` : ""}${selections.seasonal?.presetSlug ? `, Season: ${selections.seasonal.presetSlug}` : ""}, Aspect: ${selections.aspectRatio}`);
     console.log(`[Generate] Resolved: skin=${composed.resolvedSelections.skinTone}, hair=${composed.resolvedSelections.hairStyle}, scene=${composed.resolvedSelections.scene}, vibe=${composed.resolvedSelections.vibe}`);
+    if (selections.composition === "group" && selections.groupDiversity) {
+      console.log(`[Generate] Group: ${selections.groupDiversity.groupCount} people, mode=${selections.groupDiversity.mode}, action=${selections.groupDiversity.groupAction}, age=${selections.groupDiversity.ageRange}`);
+    }
     if (hasProductRefs) {
       console.log(`[Generate] Product reference images for "${productSubCategoryLabel}": ${referenceImages?.length ?? 0}`);
     }
@@ -371,6 +443,10 @@ export async function POST(request: NextRequest) {
       generation_time_ms: generationTimeMs,
       gemini_model: geminiResult.model,
       seasonal_preset_id: seasonalPresetId,
+      group_count: selections.composition === "group" && selections.groupDiversity
+        ? selections.groupDiversity.groupCount
+        : selections.composition === "duo" ? 2 : 1,
+      diversity_selections: selections.groupDiversity || null,
     };
 
     const { data: insertedImage, error: insertError } = await supabase

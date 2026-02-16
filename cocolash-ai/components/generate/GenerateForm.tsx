@@ -17,6 +17,7 @@ import { AspectRatioSelector } from "./AspectRatioSelector";
 import { LogoOverlayToggle } from "./LogoOverlayToggle";
 import { ContextNoteInput } from "./ContextNoteInput";
 import { SeasonalSelector } from "./SeasonalSelector";
+import { DiversityControls } from "./DiversityControls";
 import { GenerationProgress } from "./GenerationProgress";
 import { ImagePreview } from "./ImagePreview";
 import { ErrorDisplay } from "./ErrorDisplay";
@@ -34,6 +35,7 @@ import type {
   Vibe,
   LogoOverlaySettings,
   SeasonalSelection,
+  GroupDiversitySelections,
   GenerateResponse,
   GenerateErrorResponse,
   GeneratedImage,
@@ -208,6 +210,29 @@ export function GenerateForm() {
             onChange={(v: Composition) => update("composition", v)}
             category={selections.category}
           />
+
+          {/* Group Diversity Controls (when composition is "group" + lifestyle) */}
+          {selections.category === "lifestyle" &&
+            selections.composition === "group" && (
+              <DiversityControls
+                value={
+                  selections.groupDiversity || {
+                    groupCount: 3,
+                    mode: "diverse-mix",
+                    people: [
+                      { skinTone: "random", hairStyle: "random" },
+                      { skinTone: "random", hairStyle: "random" },
+                      { skinTone: "random", hairStyle: "random" },
+                    ],
+                    ageRange: "same",
+                    groupAction: "posing",
+                  }
+                }
+                onChange={(v: GroupDiversitySelections) =>
+                  update("groupDiversity", v)
+                }
+              />
+            )}
 
           {/* Aspect Ratio */}
           <AspectRatioSelector

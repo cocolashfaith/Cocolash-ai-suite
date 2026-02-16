@@ -4,14 +4,24 @@
  * Generates medium-shot portrait / lifestyle photography.
  * Persona-driven, considers scene, vibe, composition, and outfit.
  * Includes negative space instruction for logo overlay.
+ *
+ * M2: Added group composition support with per-person diversity descriptions.
  */
-import type { GenerationSelections, SkinTone, Composition } from "@/lib/types";
+import type {
+  GenerationSelections,
+  SkinTone,
+  Composition,
+  GroupDiversitySelections,
+} from "@/lib/types";
 import { getSkinToneDescriptor } from "../modules/skin-tones";
 import { getLashStyleDescriptor } from "../modules/lash-styles";
 import { getHairStyleDescriptor } from "../modules/hair-styles";
 import { getSceneDescriptor } from "../modules/scenes";
 import { getVibeDescriptor } from "../modules/vibes";
-import { getCompositionDescriptor } from "../modules/compositions";
+import {
+  getCompositionDescriptor,
+  getGroupCompositionPrompt,
+} from "../modules/compositions";
 import type { Scene, Vibe, HairStyle } from "@/lib/types";
 
 export function buildLifestylePrompt(
@@ -19,14 +29,12 @@ export function buildLifestylePrompt(
   resolvedSkinTone: Exclude<SkinTone, "random">,
   resolvedScene: Exclude<Scene, "random">,
   resolvedVibe: Exclude<Vibe, "random">,
-  resolvedHairStyle: Exclude<HairStyle, "random">
+  resolvedHairStyle: Exclude<HairStyle, "random">,
+  groupDiversity?: GroupDiversitySelections | null
 ): string {
-  const skinDesc = getSkinToneDescriptor(resolvedSkinTone);
   const lashDesc = getLashStyleDescriptor(selections.lashStyle);
-  const hairDesc = getHairStyleDescriptor(resolvedHairStyle);
   const sceneDesc = getSceneDescriptor(resolvedScene);
   const vibeDesc = getVibeDescriptor(resolvedVibe);
-  const compDesc = getCompositionDescriptor(selections.composition as Composition);
 
   const personaDescriptions = [
     '"Balanced Beauty" persona — effortless, natural-enhanced glam that says "I woke up like this"',
@@ -44,6 +52,34 @@ export function buildLifestylePrompt(
   const logoSpaceInstruction = selections.logoOverlay.enabled
     ? `\n\nLOGO SPACE: Leave intentional negative space in the ${selections.logoOverlay.position?.replace("-", " ") || "bottom right"} area of the image for logo overlay. Keep this area clean — no important subject elements there.`
     : "";
+
+  // ── Group Composition ─────────────────────────────────────
+  if (selections.composition === "group" && groupDiversity) {
+    const groupPrompt = getGroupCompositionPrompt(groupDiversity);
+
+    return `CATEGORY: LIFESTYLE / EDITORIAL — Group portrait photography.
+
+${groupPrompt}
+
+LASHES: Every woman is wearing stunning ${lashDesc}. Lashes should be clearly visible on each woman — a standout feature for all.
+
+EXPRESSION & VIBE: ${vibeDesc}. "Black Girl Magic" energy — authentic sisterhood, joy, and confidence. ${persona}.
+
+SCENE: ${sceneDesc}.
+
+OUTFIT: Each woman ${outfit}, each with her own personal style twist while maintaining visual cohesion as a group.
+
+FRAMING: Wide to medium group shot. All ${groupDiversity.groupCount} women clearly visible. Rule of thirds composition. Sharp focus on all subjects.
+
+STYLING: CocoLash brand colors present in the scene — warm pinks, beiges, browns, and golden accents woven naturally into wardrobe, props, or environment.
+
+LIGHTING: Warm diffused lighting (3500K-4200K), soft and flattering. Even illumination on ALL faces — no one in shadow.${logoSpaceInstruction}${selections.contextNote ? `\n\nCONTEXT NOTE: ${selections.contextNote}` : ""}`;
+  }
+
+  // ── Solo / Duo Composition ────────────────────────────────
+  const skinDesc = getSkinToneDescriptor(resolvedSkinTone);
+  const hairDesc = getHairStyleDescriptor(resolvedHairStyle);
+  const compDesc = getCompositionDescriptor(selections.composition as Composition);
 
   return `CATEGORY: LIFESTYLE / EDITORIAL — Medium-shot portrait photography.
 

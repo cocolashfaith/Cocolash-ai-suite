@@ -1,6 +1,6 @@
 "use client";
 
-import { User, Users } from "lucide-react";
+import { User, Users, UsersRound } from "lucide-react";
 import type { Composition, ContentCategory } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
@@ -18,6 +18,7 @@ const COMPOSITIONS: {
 }[] = [
   { value: "solo", label: "Solo", description: "Single person portrait", icon: User },
   { value: "duo", label: "Duo", description: "Two people together", icon: Users },
+  { value: "group", label: "Group", description: "3-5 people together", icon: UsersRound },
 ];
 
 export function CompositionSelector({
@@ -33,7 +34,7 @@ export function CompositionSelector({
       <label className="text-sm font-semibold text-coco-brown">
         Composition
       </label>
-      <div className="grid grid-cols-2 gap-3">
+      <div className="grid grid-cols-3 gap-3">
         {COMPOSITIONS.map((comp) => {
           const Icon = comp.icon;
           const isActive = value === comp.value;
