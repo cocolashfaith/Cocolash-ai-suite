@@ -21,6 +21,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { ImageLightbox } from "@/components/ui/image-lightbox";
+import { ExportForPlatform } from "@/components/generate/ExportForPlatform";
 import type { GeneratedImage } from "@/lib/types";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
@@ -196,6 +197,11 @@ export function ImageModal({
               {confirmDelete ? "Confirm?" : "Delete"}
             </Button>
           </div>
+
+          {/* Export for platform */}
+          {!image.is_composite && (
+            <ExportForPlatform image={image} />
+          )}
 
           {/* Expandable prompt section */}
           <div className="rounded-xl border border-coco-beige-dark">

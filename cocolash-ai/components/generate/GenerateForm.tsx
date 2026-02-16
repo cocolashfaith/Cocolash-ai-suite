@@ -376,6 +376,7 @@ export function GenerateForm() {
               image={generatedImage}
               generationTimeMs={generationTime}
               onGenerateAnother={handleGenerateAnother}
+              onRegenerate={handleGenerate}
               beforeImage={beforeImage || undefined}
               compositeImageUrl={compositeImageUrl || undefined}
             />

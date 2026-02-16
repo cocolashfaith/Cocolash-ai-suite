@@ -5,6 +5,7 @@ import Image from "next/image";
 import {
   Download,
   RefreshCw,
+  RotateCw,
   ChevronDown,
   ChevronUp,
   Clock,
@@ -15,12 +16,15 @@ import {
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { ImageLightbox } from "@/components/ui/image-lightbox";
+import { ExportForPlatform } from "./ExportForPlatform";
 import type { GeneratedImage } from "@/lib/types";
 
 interface ImagePreviewProps {
   image: GeneratedImage;
   generationTimeMs: number;
   onGenerateAnother: () => void;
+  /** Re-generate with the exact same settings */
+  onRegenerate: () => void;
   /** For Before/After, the "before" image is passed separately */
   beforeImage?: GeneratedImage;
   /** The side-by-side composite image URL (Phase 2.4) */
@@ -31,6 +35,7 @@ export function ImagePreview({
   image,
   generationTimeMs,
   onGenerateAnother,
+  onRegenerate,
   beforeImage,
   compositeImageUrl,
 }: ImagePreviewProps) {
@@ -298,7 +303,7 @@ export function ImagePreview({
       </div>
 
       {/* Action buttons */}
-      <div className="flex gap-3">
+      <div className="flex gap-2">
         {!isBeforeAfter && (
           <Button
             onClick={() => handleDownload(image)}
@@ -310,13 +315,29 @@ export function ImagePreview({
         )}
         <Button
           variant="outline"
+          onClick={onRegenerate}
+          className="flex-1 gap-2 border-coco-golden/30 text-coco-golden-dark hover:bg-coco-golden/5"
+          title="Regenerate with the same settings"
+        >
+          <RotateCw className="h-4 w-4" />
+          Regenerate
+        </Button>
+        <Button
+          variant="outline"
           onClick={onGenerateAnother}
-          className={`${isBeforeAfter ? "w-full" : "flex-1"} gap-2 border-coco-brown-medium/20`}
+          className="flex-1 gap-2 border-coco-brown-medium/20"
         >
           <RefreshCw className="h-4 w-4" />
-          Generate Another
+          New Settings
         </Button>
       </div>
+
+      {/* Export for platform */}
+      {!image.is_composite && (
+        <div className="rounded-xl border border-coco-beige-dark bg-white p-3">
+          <ExportForPlatform image={image} />
+        </div>
+      )}
 
       {/* Expandable prompt section */}
       <div className="rounded-xl border border-coco-beige-dark bg-white">
