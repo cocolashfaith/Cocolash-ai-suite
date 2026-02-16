@@ -1,6 +1,6 @@
 "use client";
 
-import { Eye, Camera, Package, Images } from "lucide-react";
+import { Eye, Camera, Package, Images, ArrowLeftRight, ListOrdered } from "lucide-react";
 import type { ContentCategory } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
@@ -20,6 +20,8 @@ const FILTER_OPTIONS: {
   { value: "lash-closeup", label: "Close-Up", icon: Eye },
   { value: "lifestyle", label: "Lifestyle", icon: Camera },
   { value: "product", label: "Product", icon: Package },
+  { value: "before-after", label: "Before/After", icon: ArrowLeftRight },
+  { value: "application-process", label: "Application", icon: ListOrdered },
 ];
 
 export function GalleryFilters({

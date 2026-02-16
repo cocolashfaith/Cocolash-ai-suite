@@ -20,6 +20,7 @@ import {
   DialogContent,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { ImageLightbox } from "@/components/ui/image-lightbox";
 import type { GeneratedImage } from "@/lib/types";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
@@ -41,6 +42,7 @@ export function ImageModal({
 }: ImageModalProps) {
   const [showPrompt, setShowPrompt] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
+  const [lightboxOpen, setLightboxOpen] = useState(false);
 
   if (!image) return null;
 
@@ -87,6 +89,8 @@ export function ImageModal({
     "lash-closeup": "Lash Close-Up",
     lifestyle: "Lifestyle",
     product: "Product",
+    "before-after": "Before/After",
+    "application-process": "Application",
   };
 
   return (
@@ -102,8 +106,12 @@ export function ImageModal({
           <X className="h-4 w-4" />
         </button>
 
-        {/* Image */}
-        <div className="relative bg-coco-beige/30">
+        {/* Image — click to open lightbox */}
+        <button
+          type="button"
+          onClick={() => setLightboxOpen(true)}
+          className="relative block w-full bg-coco-beige/30 cursor-pointer transition-opacity hover:opacity-95"
+        >
           <Image
             src={image.image_url}
             alt={`Generated ${image.category} image`}
@@ -112,7 +120,7 @@ export function ImageModal({
             className="h-auto max-h-[60vh] w-full object-contain"
             priority
           />
-        </div>
+        </button>
 
         {/* Details */}
         <div className="space-y-4 p-5">
@@ -213,6 +221,15 @@ export function ImageModal({
           </div>
         </div>
       </DialogContent>
+
+      {/* Lightbox for full-screen image view */}
+      <ImageLightbox
+        src={image.image_url}
+        alt={`Generated ${image.category} image`}
+        isOpen={lightboxOpen}
+        onClose={() => setLightboxOpen(false)}
+        downloadFilename={`cocolash-${image.category}-${image.aspect_ratio.replace(":", "x")}.png`}
+      />
     </Dialog>
   );
 }

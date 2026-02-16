@@ -71,6 +71,7 @@ export function GenerateForm() {
   const [isGenerating, setIsGenerating] = useState(false);
   const [generatedImage, setGeneratedImage] = useState<GeneratedImage | null>(null);
   const [beforeImage, setBeforeImage] = useState<GeneratedImage | null>(null);
+  const [compositeImageUrl, setCompositeImageUrl] = useState<string | null>(null);
   const [generationTime, setGenerationTime] = useState(0);
   const [error, setError] = useState<GenerateErrorResponse | null>(null);
 
@@ -105,6 +106,7 @@ export function GenerateForm() {
     setError(null);
     setGeneratedImage(null);
     setBeforeImage(null);
+    setCompositeImageUrl(null);
 
     try {
       const response = await fetch("/api/generate", {
@@ -127,11 +129,16 @@ export function GenerateForm() {
       if (result.beforeImage) {
         setBeforeImage(result.beforeImage);
       }
+      if (result.compositeImageUrl) {
+        setCompositeImageUrl(result.compositeImageUrl);
+      }
       setGenerationTime(result.generationTimeMs);
       toast.success(
-        result.beforeImage
-          ? "Before & After images generated!"
-          : "Image generated successfully!"
+        result.compositeImageUrl
+          ? "Before, After & Composite images generated!"
+          : result.beforeImage
+            ? "Before & After images generated!"
+            : "Image generated successfully!"
       );
     } catch {
       setError({
@@ -148,6 +155,7 @@ export function GenerateForm() {
   const handleGenerateAnother = () => {
     setGeneratedImage(null);
     setBeforeImage(null);
+    setCompositeImageUrl(null);
     setError(null);
     setGenerationTime(0);
   };
@@ -184,7 +192,7 @@ export function GenerateForm() {
             />
           )}
 
-          {/* Before/After info banner */}
+          {/* Before/After info banner + composite toggle */}
           {selections.category === "before-after" && (
             <div className="rounded-xl border-2 border-coco-golden/30 bg-coco-golden/5 p-4">
               <p className="text-sm font-semibold text-coco-brown">
@@ -196,6 +204,38 @@ export function GenerateForm() {
                 model, angle, and lighting. Choose your lash style, skin tone,
                 and hair below.
               </p>
+              {/* Composite toggle */}
+              <div className="mt-3 flex items-center justify-between rounded-lg border border-coco-golden/20 bg-white/60 px-3 py-2">
+                <div>
+                  <p className="text-xs font-medium text-coco-brown">
+                    Side-by-side composite
+                  </p>
+                  <p className="text-[10px] text-coco-brown-medium/60">
+                    Also generate a combined comparison image
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  role="switch"
+                  aria-checked={selections.includeComposite ?? false}
+                  onClick={() =>
+                    update("includeComposite", !(selections.includeComposite ?? false))
+                  }
+                  className={`relative inline-flex h-5 w-9 shrink-0 items-center rounded-full transition-colors ${
+                    selections.includeComposite
+                      ? "bg-coco-golden"
+                      : "bg-coco-brown-medium/20"
+                  }`}
+                >
+                  <span
+                    className={`inline-block h-3.5 w-3.5 transform rounded-full bg-white shadow transition-transform ${
+                      selections.includeComposite
+                        ? "translate-x-[18px]"
+                        : "translate-x-[3px]"
+                    }`}
+                  />
+                </button>
+              </div>
             </div>
           )}
 
@@ -337,6 +377,7 @@ export function GenerateForm() {
               generationTimeMs={generationTime}
               onGenerateAnother={handleGenerateAnother}
               beforeImage={beforeImage || undefined}
+              compositeImageUrl={compositeImageUrl || undefined}
             />
           )}
 

@@ -21,6 +21,7 @@ import { GeminiError } from "@/lib/gemini/safety";
 import { composePrompt, composeBeforeAfterPrompts } from "@/lib/prompts/compose";
 import { getRecentDiversityUsage, recordDiversitySelection } from "@/lib/diversity/tracker";
 import { applyLogoOverlay, selectLogoUrl } from "@/lib/image-processing/logo-overlay";
+import { createBeforeAfterComposite } from "@/lib/image-processing/before-after-compositor";
 import type {
   GenerationSelections,
   ContentCategory,
@@ -235,6 +236,9 @@ function validateSelections(body: unknown): GenerationSelections {
     applicationStep = rawStep;
   }
 
+  // [M2] Before/After composite toggle (optional)
+  const includeComposite = category === "before-after" ? Boolean(data.includeComposite) : undefined;
+
   return {
     category,
     productSubCategory,
@@ -250,6 +254,7 @@ function validateSelections(body: unknown): GenerationSelections {
     seasonal,
     groupDiversity,
     applicationStep,
+    includeComposite,
   };
 }
 
@@ -443,9 +448,7 @@ export async function POST(request: NextRequest) {
         }
       }
 
-      const generationTimeMs = Date.now() - startTime;
-
-      // Insert both image records
+      // Insert both image records (time recorded before optional compositor step)
       const baseRecord = {
         brand_id: brandId,
         selections,
@@ -454,7 +457,7 @@ export async function POST(request: NextRequest) {
         composition: selections.composition,
         has_logo_overlay: hasLogoOverlay,
         logo_position: hasLogoOverlay ? selections.logoOverlay.position : null,
-        generation_time_ms: generationTimeMs,
+        generation_time_ms: Date.now() - startTime,
         seasonal_preset_id: seasonalPresetId,
         group_count: 1,
         diversity_selections: null,
@@ -491,12 +494,66 @@ export async function POST(request: NextRequest) {
         composedBA.resolvedSelections.hairStyle
       );
 
-      console.log(`[Generate] Before/After complete in ${generationTimeMs}ms`);
+      // STAGE 3 (optional): Create side-by-side composite if toggle is ON
+      let compositeImageUrl: string | undefined;
+      let insertedComposite: GeneratedImage | null = null;
+
+      if (selections.includeComposite) {
+        try {
+          console.log(`[Generate] Stage 3: Creating side-by-side composite...`);
+
+          // Use the final (logo-overlaid) buffers if available, otherwise raw
+          const beforeBuf = hasLogoOverlay
+            ? (await fetch(beforeFinalUrl).then(r => r.arrayBuffer()).then(ab => Buffer.from(ab)))
+            : beforeResult.buffer;
+          const afterBuf = hasLogoOverlay
+            ? (await fetch(afterFinalUrl).then(r => r.arrayBuffer()).then(ab => Buffer.from(ab)))
+            : afterResult.buffer;
+
+          const compositeResult = await createBeforeAfterComposite(beforeBuf, afterBuf);
+
+          // Upload the composite
+          const compositeUpload = await uploadGeneratedImage(
+            supabase,
+            compositeResult.buffer,
+            brandId,
+            "-composite"
+          );
+
+          compositeImageUrl = compositeUpload.url;
+          console.log(`[Generate] Composite created: ${compositeResult.width}x${compositeResult.height} (${compositeResult.buffer.length} bytes)`);
+
+          // Insert composite as a DB record so it appears in the gallery
+          const compositeRecord = {
+            ...baseRecord,
+            prompt_used: `[COMPOSITE] Before/After side-by-side — ${composedBA.beforePrompt.substring(0, 100)}...`,
+            image_url: compositeUpload.url,
+            raw_image_url: null,
+            storage_path: compositeUpload.path,
+            gemini_model: afterResult.model,
+            is_composite: true,
+          };
+
+          const { data: compData } = await supabase
+            .from("generated_images")
+            .insert(compositeRecord)
+            .select()
+            .single();
+
+          insertedComposite = compData;
+        } catch (compError) {
+          console.warn("[Generate] Composite creation failed, returning B/A without composite:", compError);
+        }
+      }
+
+      const generationTimeMs = Date.now() - startTime;
+      console.log(`[Generate] Before/After complete in ${generationTimeMs}ms${compositeImageUrl ? " (with composite)" : ""}`);
 
       const fallbackBefore = {
         ...beforeRecord,
         id: "temp-before-" + Date.now(),
         is_favorite: false,
+        is_composite: false,
         tags: null,
         created_at: new Date().toISOString(),
       };
@@ -505,6 +562,7 @@ export async function POST(request: NextRequest) {
         ...afterRecord,
         id: "temp-after-" + Date.now(),
         is_favorite: false,
+        is_composite: false,
         tags: null,
         created_at: new Date().toISOString(),
       };
@@ -513,6 +571,8 @@ export async function POST(request: NextRequest) {
         success: true,
         image: insertedAfter || fallbackAfter,
         beforeImage: insertedBefore || fallbackBefore,
+        compositeImageUrl,
+        compositeImage: insertedComposite || undefined,
         generationTimeMs,
       });
     }

@@ -239,6 +239,7 @@ export interface GenerationSelections {
   seasonal?: SeasonalSelection; // [M2] Seasonal/holiday preset
   groupDiversity?: GroupDiversitySelections; // [M2] Group shot diversity config
   applicationStep?: ApplicationStep; // [M2] Application Process step
+  includeComposite?: boolean; // [M2] Before/After side-by-side composite toggle
 }
 
 // ── Generated Image (database record) ─────────────────────────
@@ -262,6 +263,7 @@ export interface GeneratedImage {
   seasonal_preset_id: string | null; // [M2] Reference to seasonal_presets
   group_count: number | null; // [M2] Number of people in group shots
   diversity_selections: GroupDiversitySelections | null; // [M2] Group diversity config
+  is_composite: boolean; // [M2] True for side-by-side composite images
   created_at: string;
 }
 
@@ -294,6 +296,10 @@ export interface GenerateResponse {
   generationTimeMs: number;
   /** Before/After dual-image generation returns a second image */
   beforeImage?: GeneratedImage;
+  /** Before/After composite side-by-side image URL (when includeComposite is true) */
+  compositeImageUrl?: string;
+  /** Full composite image record for gallery display */
+  compositeImage?: GeneratedImage;
 }
 
 export interface GenerateErrorResponse {

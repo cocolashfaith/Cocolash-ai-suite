@@ -9,6 +9,7 @@ import { toast } from "sonner";
 import { GalleryFilters } from "@/components/gallery/GalleryFilters";
 import { ImageCard } from "@/components/gallery/ImageCard";
 import { ImageModal } from "@/components/gallery/ImageModal";
+import { ImageLightbox } from "@/components/ui/image-lightbox";
 
 import type { GeneratedImage, ContentCategory } from "@/lib/types";
 
@@ -33,6 +34,9 @@ export default function GalleryPage() {
   // Modal
   const [selectedImage, setSelectedImage] = useState<GeneratedImage | null>(null);
   const [modalOpen, setModalOpen] = useState(false);
+
+  // Lightbox
+  const [lightboxImage, setLightboxImage] = useState<GeneratedImage | null>(null);
 
   // Fetch images
   const fetchImages = useCallback(
@@ -213,8 +217,9 @@ export default function GalleryPage() {
               <ImageCard
                 key={image.id}
                 image={image}
-                onClick={() => openModal(image)}
+                onClick={() => setLightboxImage(image)}
                 onFavoriteToggle={() => handleFavoriteToggle(image.id)}
+                onDetailsClick={() => openModal(image)}
               />
             ))}
           </div>
@@ -252,6 +257,19 @@ export default function GalleryPage() {
         }}
         onDelete={handleDelete}
         onFavoriteToggle={handleFavoriteToggle}
+      />
+
+      {/* Full-screen lightbox */}
+      <ImageLightbox
+        src={lightboxImage?.image_url ?? null}
+        alt={lightboxImage ? `Generated ${lightboxImage.category} image` : ""}
+        isOpen={!!lightboxImage}
+        onClose={() => setLightboxImage(null)}
+        downloadFilename={
+          lightboxImage
+            ? `cocolash-${lightboxImage.category}-${lightboxImage.aspect_ratio.replace(":", "x")}.png`
+            : undefined
+        }
       />
     </div>
   );

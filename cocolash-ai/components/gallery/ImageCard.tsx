@@ -1,7 +1,7 @@
 "use client";
 
 import Image from "next/image";
-import { Heart, Layers, Clock } from "lucide-react";
+import { Heart, Layers, Clock, Columns2, Info } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import type { GeneratedImage } from "@/lib/types";
 import { cn } from "@/lib/utils";
@@ -10,13 +10,16 @@ interface ImageCardProps {
   image: GeneratedImage;
   onClick: () => void;
   onFavoriteToggle: () => void;
+  onDetailsClick?: () => void;
 }
 
-export function ImageCard({ image, onClick, onFavoriteToggle }: ImageCardProps) {
+export function ImageCard({ image, onClick, onFavoriteToggle, onDetailsClick }: ImageCardProps) {
   const categoryLabels: Record<string, string> = {
     "lash-closeup": "Close-Up",
     lifestyle: "Lifestyle",
     product: "Product",
+    "before-after": "Before/After",
+    "application-process": "Application",
   };
 
   const dateStr = new Date(image.created_at).toLocaleDateString("en-US", {
@@ -32,7 +35,10 @@ export function ImageCard({ image, onClick, onFavoriteToggle }: ImageCardProps) 
         onClick={onClick}
         className="block w-full cursor-pointer"
       >
-        <div className="relative aspect-[4/5] overflow-hidden">
+        <div className={cn(
+          "relative overflow-hidden",
+          image.is_composite ? "aspect-[2/1]" : "aspect-[4/5]"
+        )}>
           <Image
             src={image.image_url}
             alt={`Generated ${image.category} image`}
@@ -48,29 +54,51 @@ export function ImageCard({ image, onClick, onFavoriteToggle }: ImageCardProps) 
 
       {/* Category badge */}
       <Badge className="absolute left-2 top-2 bg-coco-brown/80 text-[10px] text-white backdrop-blur-sm">
-        <Layers className="mr-1 h-3 w-3" />
-        {categoryLabels[image.category] || image.category}
+        {image.is_composite ? (
+          <Columns2 className="mr-1 h-3 w-3" />
+        ) : (
+          <Layers className="mr-1 h-3 w-3" />
+        )}
+        {image.is_composite ? "Composite" : (categoryLabels[image.category] || image.category)}
       </Badge>
 
-      {/* Favorite button */}
-      <button
-        type="button"
-        onClick={(e) => {
-          e.stopPropagation();
-          onFavoriteToggle();
-        }}
-        className={cn(
-          "absolute right-2 top-2 flex h-7 w-7 items-center justify-center rounded-full backdrop-blur-sm transition-all",
-          image.is_favorite
-            ? "bg-red-500/90 text-white"
-            : "bg-white/80 text-coco-brown-medium opacity-0 group-hover:opacity-100 hover:bg-red-50 hover:text-red-500"
+      {/* Top-right action buttons */}
+      <div className="absolute right-2 top-2 flex items-center gap-1">
+        {/* Details button */}
+        {onDetailsClick && (
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              onDetailsClick();
+            }}
+            className="flex h-7 w-7 items-center justify-center rounded-full bg-white/80 text-coco-brown-medium opacity-0 backdrop-blur-sm transition-all group-hover:opacity-100 hover:bg-white hover:text-coco-brown"
+            title="Details"
+          >
+            <Info className="h-3.5 w-3.5" />
+          </button>
         )}
-      >
-        <Heart
-          className="h-3.5 w-3.5"
-          fill={image.is_favorite ? "currentColor" : "none"}
-        />
-      </button>
+
+        {/* Favorite button */}
+        <button
+          type="button"
+          onClick={(e) => {
+            e.stopPropagation();
+            onFavoriteToggle();
+          }}
+          className={cn(
+            "flex h-7 w-7 items-center justify-center rounded-full backdrop-blur-sm transition-all",
+            image.is_favorite
+              ? "bg-red-500/90 text-white"
+              : "bg-white/80 text-coco-brown-medium opacity-0 group-hover:opacity-100 hover:bg-red-50 hover:text-red-500"
+          )}
+        >
+          <Heart
+            className="h-3.5 w-3.5"
+            fill={image.is_favorite ? "currentColor" : "none"}
+          />
+        </button>
+      </div>
 
       {/* Footer info */}
       <div className="flex items-center justify-between px-3 py-2">
