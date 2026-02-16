@@ -24,6 +24,7 @@ import { applyLogoOverlay, selectLogoUrl } from "@/lib/image-processing/logo-ove
 import { createBeforeAfterComposite } from "@/lib/image-processing/before-after-compositor";
 import type {
   GenerationSelections,
+  GeneratedImage,
   ContentCategory,
   ProductCategoryKey,
   ApplicationStep,
