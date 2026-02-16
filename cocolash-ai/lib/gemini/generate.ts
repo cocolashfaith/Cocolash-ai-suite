@@ -36,13 +36,16 @@ export interface ReferenceImage {
  * @param prompt - The full composed prompt (Brand DNA + Category + Negative)
  * @param aspectRatio - Desired aspect ratio
  * @param referenceImages - Optional array of reference images for multimodal generation
+ * @param referenceInstruction - Optional custom instruction for reference images
+ *        (defaults to product reference wording; pass a custom string for Before/After etc.)
  * @returns GenerateImageResult with buffer, mimeType, and model info
  * @throws GeminiError with typed error code on failure
  */
 export async function generateImage(
   prompt: string,
   aspectRatio: AspectRatio = "4:5",
-  referenceImages?: ReferenceImage[]
+  referenceImages?: ReferenceImage[],
+  referenceInstruction?: string
 ): Promise<GenerateImageResult> {
   const client = getGeminiClient();
   const model = GEMINI_IMAGE_MODEL;
@@ -55,10 +58,10 @@ export async function generateImage(
       // Multimodal: reference images + text prompt
       const parts: { text?: string; inlineData?: { mimeType: string; data: string } }[] = [];
 
-      // Add reference image instruction first
-      parts.push({
-        text: `[PRODUCT REFERENCE IMAGES — ${referenceImages.length} image(s) provided below]\nStudy these reference images carefully. They show the EXACT product you must recreate.`,
-      });
+      // Add reference image instruction first (custom or default product wording)
+      const instruction = referenceInstruction
+        ?? `[PRODUCT REFERENCE IMAGES — ${referenceImages.length} image(s) provided below]\nStudy these reference images carefully. They show the EXACT product you must recreate.`;
+      parts.push({ text: instruction });
 
       // Add each reference image
       for (const ref of referenceImages) {

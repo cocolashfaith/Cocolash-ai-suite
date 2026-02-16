@@ -18,13 +18,14 @@ import { createClient } from "@/lib/supabase/server";
 import { uploadGeneratedImage } from "@/lib/supabase/storage";
 import { generateImage, type ReferenceImage } from "@/lib/gemini/generate";
 import { GeminiError } from "@/lib/gemini/safety";
-import { composePrompt } from "@/lib/prompts/compose";
+import { composePrompt, composeBeforeAfterPrompts } from "@/lib/prompts/compose";
 import { getRecentDiversityUsage, recordDiversitySelection } from "@/lib/diversity/tracker";
 import { applyLogoOverlay, selectLogoUrl } from "@/lib/image-processing/logo-overlay";
 import type {
   GenerationSelections,
   ContentCategory,
   ProductCategoryKey,
+  ApplicationStep,
   AspectRatio,
   Composition,
   LashStyle,
@@ -40,11 +41,16 @@ import type {
   GenerateErrorResponse,
 } from "@/lib/types";
 
-// Allow up to 60 seconds for image generation
-export const maxDuration = 60;
+// Allow up to 90 seconds — Before/After generates two images in parallel
+export const maxDuration = 90;
 
 // ── Validation Helpers ───────────────────────────────────────
-const VALID_CATEGORIES: ContentCategory[] = ["lash-closeup", "lifestyle", "product"];
+const VALID_CATEGORIES: ContentCategory[] = [
+  "lash-closeup", "lifestyle", "product", "before-after", "application-process",
+];
+const VALID_APPLICATION_STEPS: ApplicationStep[] = [
+  "preparation", "isolation", "application", "final-check", "reveal",
+];
 const VALID_RATIOS: AspectRatio[] = ["1:1", "4:5", "9:16", "16:9"];
 const VALID_COMPOSITIONS: Composition[] = ["solo", "duo", "group"];
 const VALID_GROUP_ACTIONS: GroupAction[] = ["laughing", "walking", "posing", "brunch", "getting-ready"];
@@ -219,6 +225,16 @@ function validateSelections(body: unknown): GenerationSelections {
     };
   }
 
+  // [M2] Application step (required when category is "application-process")
+  let applicationStep: ApplicationStep | undefined;
+  if (category === "application-process") {
+    const rawStep = (data.applicationStep as ApplicationStep) || "preparation";
+    if (!VALID_APPLICATION_STEPS.includes(rawStep)) {
+      throw new Error(`Invalid application step: ${rawStep}`);
+    }
+    applicationStep = rawStep;
+  }
+
   return {
     category,
     productSubCategory,
@@ -233,6 +249,7 @@ function validateSelections(body: unknown): GenerationSelections {
     contextNote,
     seasonal,
     groupDiversity,
+    applicationStep,
   };
 }
 
@@ -343,6 +360,164 @@ export async function POST(request: NextRequest) {
       console.log(`[Generate] Seasonal preset: "${selections.seasonal.presetSlug}" (ID: ${seasonalPresetId || "not found"}), Props: ${selections.seasonal.selectedProps.join(", ") || "none"}`);
     }
 
+    // ─── BEFORE/AFTER: Sequential Generation with Reference Passing ──
+    if (selections.category === "before-after") {
+      const composeOptions = {
+        customBrandDNA: brandProfile.brand_dna_prompt,
+        customNegativePrompt: brandProfile.negative_prompt,
+        customSkinRealismPrompt: brandProfile.skin_realism_prompt,
+        seasonalSelection: selections.seasonal || null,
+        recentSkinTones,
+        recentHairStyles,
+      };
+
+      const composedBA = composeBeforeAfterPrompts(selections, composeOptions);
+
+      console.log(`[Generate] Before/After (sequential w/ reference) — Aspect: ${selections.aspectRatio}`);
+      console.log(`[Generate] Resolved: skin=${composedBA.resolvedSelections.skinTone}, hair=${composedBA.resolvedSelections.hairStyle}`);
+
+      // STAGE 1: Generate the "BEFORE" image first
+      console.log(`[Generate] Stage 1: Generating "Before" image...`);
+      const beforeResult = await generateImage(
+        composedBA.beforePrompt,
+        selections.aspectRatio
+      );
+      console.log(`[Generate] Before: ${beforeResult.buffer.length} bytes (${beforeResult.mimeType})`);
+
+      // STAGE 2: Pass the "before" image as a REFERENCE to generate "after"
+      // This ensures Gemini maintains the same face, angle, lighting, etc.
+      console.log(`[Generate] Stage 2: Generating "After" image with before-image reference...`);
+      const beforeAsReference: ReferenceImage = {
+        base64Data: beforeResult.buffer.toString("base64"),
+        mimeType: beforeResult.mimeType,
+      };
+
+      const afterResult = await generateImage(
+        composedBA.afterPrompt,
+        selections.aspectRatio,
+        [beforeAsReference],
+        composedBA.afterReferenceInstruction
+      );
+      console.log(`[Generate] After: ${afterResult.buffer.length} bytes (${afterResult.mimeType})`);
+
+      // Upload both raw images
+      const [beforeUpload, afterUpload] = await Promise.all([
+        uploadGeneratedImage(supabase, beforeResult.buffer, brandId, "-before-raw"),
+        uploadGeneratedImage(supabase, afterResult.buffer, brandId, "-after-raw"),
+      ]);
+
+      // Logo overlay (applied to both if enabled)
+      let beforeFinalUrl = beforeUpload.url;
+      let beforeFinalPath = beforeUpload.path;
+      let afterFinalUrl = afterUpload.url;
+      let afterFinalPath = afterUpload.path;
+      let hasLogoOverlay = false;
+
+      if (selections.logoOverlay.enabled) {
+        const logoUrl = selectLogoUrl(selections.logoOverlay.variant, {
+          logo_white_url: brandProfile.logo_white_url,
+          logo_dark_url: brandProfile.logo_dark_url,
+          logo_gold_url: brandProfile.logo_gold_url,
+        });
+
+        if (logoUrl) {
+          try {
+            const [beforeOverlay, afterOverlay] = await Promise.all([
+              applyLogoOverlay(beforeResult.buffer, { ...selections.logoOverlay, logoUrl }),
+              applyLogoOverlay(afterResult.buffer, { ...selections.logoOverlay, logoUrl }),
+            ]);
+
+            const [beforeFinal, afterFinal] = await Promise.all([
+              uploadGeneratedImage(supabase, beforeOverlay.buffer, brandId, "-before-final"),
+              uploadGeneratedImage(supabase, afterOverlay.buffer, brandId, "-after-final"),
+            ]);
+
+            beforeFinalUrl = beforeFinal.url;
+            beforeFinalPath = beforeFinal.path;
+            afterFinalUrl = afterFinal.url;
+            afterFinalPath = afterFinal.path;
+            hasLogoOverlay = true;
+          } catch (logoError) {
+            console.warn("[Generate] Logo overlay failed for B/A, using raw images:", logoError);
+          }
+        }
+      }
+
+      const generationTimeMs = Date.now() - startTime;
+
+      // Insert both image records
+      const baseRecord = {
+        brand_id: brandId,
+        selections,
+        aspect_ratio: selections.aspectRatio,
+        category: selections.category as string,
+        composition: selections.composition,
+        has_logo_overlay: hasLogoOverlay,
+        logo_position: hasLogoOverlay ? selections.logoOverlay.position : null,
+        generation_time_ms: generationTimeMs,
+        seasonal_preset_id: seasonalPresetId,
+        group_count: 1,
+        diversity_selections: null,
+      };
+
+      const beforeRecord = {
+        ...baseRecord,
+        prompt_used: composedBA.beforePrompt,
+        image_url: beforeFinalUrl,
+        raw_image_url: hasLogoOverlay ? beforeUpload.url : null,
+        storage_path: beforeFinalPath,
+        gemini_model: beforeResult.model,
+      };
+
+      const afterRecord = {
+        ...baseRecord,
+        prompt_used: composedBA.afterPrompt,
+        image_url: afterFinalUrl,
+        raw_image_url: hasLogoOverlay ? afterUpload.url : null,
+        storage_path: afterFinalPath,
+        gemini_model: afterResult.model,
+      };
+
+      const [{ data: insertedBefore }, { data: insertedAfter }] = await Promise.all([
+        supabase.from("generated_images").insert(beforeRecord).select().single(),
+        supabase.from("generated_images").insert(afterRecord).select().single(),
+      ]);
+
+      // Record diversity
+      await recordDiversitySelection(
+        supabase,
+        brandId,
+        composedBA.resolvedSelections.skinTone,
+        composedBA.resolvedSelections.hairStyle
+      );
+
+      console.log(`[Generate] Before/After complete in ${generationTimeMs}ms`);
+
+      const fallbackBefore = {
+        ...beforeRecord,
+        id: "temp-before-" + Date.now(),
+        is_favorite: false,
+        tags: null,
+        created_at: new Date().toISOString(),
+      };
+
+      const fallbackAfter = {
+        ...afterRecord,
+        id: "temp-after-" + Date.now(),
+        is_favorite: false,
+        tags: null,
+        created_at: new Date().toISOString(),
+      };
+
+      return NextResponse.json<GenerateResponse>({
+        success: true,
+        image: insertedAfter || fallbackAfter,
+        beforeImage: insertedBefore || fallbackBefore,
+        generationTimeMs,
+      });
+    }
+
+    // ─── STANDARD: Single-Generation Path ─────────────────────────
     // 6. Compose the prompt
     const composed = composePrompt(selections, {
       customBrandDNA: brandProfile.brand_dna_prompt,
@@ -354,11 +529,12 @@ export async function POST(request: NextRequest) {
       productSubCategoryDescription,
       seasonalSelection: selections.seasonal || null,
       groupDiversity: selections.groupDiversity || null,
+      applicationStep: selections.applicationStep,
       recentSkinTones,
       recentHairStyles,
     });
 
-    console.log(`[Generate] Category: ${selections.category}${selections.productSubCategory ? ` (${selections.productSubCategory})` : ""}${selections.seasonal?.presetSlug ? `, Season: ${selections.seasonal.presetSlug}` : ""}, Aspect: ${selections.aspectRatio}`);
+    console.log(`[Generate] Category: ${selections.category}${selections.productSubCategory ? ` (${selections.productSubCategory})` : ""}${selections.applicationStep ? `, Step: ${selections.applicationStep}` : ""}${selections.seasonal?.presetSlug ? `, Season: ${selections.seasonal.presetSlug}` : ""}, Aspect: ${selections.aspectRatio}`);
     console.log(`[Generate] Resolved: skin=${composed.resolvedSelections.skinTone}, hair=${composed.resolvedSelections.hairStyle}, scene=${composed.resolvedSelections.scene}, vibe=${composed.resolvedSelections.vibe}`);
     if (selections.composition === "group" && selections.groupDiversity) {
       console.log(`[Generate] Group: ${selections.groupDiversity.groupCount} people, mode=${selections.groupDiversity.mode}, action=${selections.groupDiversity.groupAction}, age=${selections.groupDiversity.ageRange}`);
@@ -418,7 +594,6 @@ export async function POST(request: NextRequest) {
           console.log(`[Generate] Logo overlay applied (${selections.logoOverlay.position})`);
         } catch (logoError) {
           console.warn("[Generate] Logo overlay failed, using raw image:", logoError);
-          // Continue with the raw image if logo overlay fails
         }
       } else {
         console.warn("[Generate] Logo overlay requested but no logo uploaded for variant:", selections.logoOverlay.variant);
@@ -457,7 +632,6 @@ export async function POST(request: NextRequest) {
 
     if (insertError) {
       console.error("Failed to insert image record:", insertError.message);
-      // Don't fail the request — the image was generated and uploaded
     }
 
     // 11. Record diversity selection for rotation

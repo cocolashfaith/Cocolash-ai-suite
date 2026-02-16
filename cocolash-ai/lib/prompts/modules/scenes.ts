@@ -56,6 +56,8 @@ export const SCENES_BY_CATEGORY: Record<ContentCategory, Scene[]> = {
   "lash-closeup": ["studio", "minimalist-backdrop"],
   lifestyle: ["studio", "bedroom", "cafe", "outdoor-golden-hour", "rooftop", "salon", "bathroom-vanity", "minimalist-backdrop", "random"],
   product: ["studio", "bathroom-vanity", "minimalist-backdrop"],
+  "before-after": ["studio", "minimalist-backdrop"],
+  "application-process": ["salon", "studio"],
 };
 
 /**

@@ -15,6 +15,7 @@ import type {
   Vibe,
   ContentCategory,
   ProductCategoryKey,
+  ApplicationStep,
   SeasonalSelection,
   GroupDiversitySelections,
 } from "@/lib/types";
@@ -24,6 +25,8 @@ import { getNegativePrompt, getSafeNegativePrompt } from "./negative";
 import { buildLashCloseupPrompt } from "./categories/lash-closeup";
 import { buildLifestylePrompt } from "./categories/lifestyle";
 import { buildProductPrompt } from "./categories/product";
+import { buildBeforeAfterPrompts, type BeforeAfterPrompts } from "./categories/before-after";
+import { buildApplicationProcessPrompt } from "./categories/application-process";
 import { getPresetBySlug, buildSeasonalPromptModifier } from "./modules/seasonal";
 import { SKIN_TONE_TIERS } from "./modules/skin-tones";
 import { ALL_HAIR_STYLES } from "./modules/hair-styles";
@@ -43,6 +46,15 @@ export interface ComposedPrompt {
     scene: Exclude<Scene, "random">;
     vibe: Exclude<Vibe, "random">;
   };
+}
+
+/** Result of composing Before/After prompts (two full prompts) */
+export interface ComposedBeforeAfterPrompts {
+  beforePrompt: string;
+  afterPrompt: string;
+  /** Instruction text sent alongside the "before" reference image for the "after" call */
+  afterReferenceInstruction: string;
+  resolvedSelections: ComposedPrompt["resolvedSelections"];
 }
 
 // ── Random Resolution Helpers ─────────────────────────────────
@@ -128,6 +140,7 @@ export function composePrompt(
     productSubCategoryDescription?: string;
     seasonalSelection?: SeasonalSelection | null;
     groupDiversity?: GroupDiversitySelections | null;
+    applicationStep?: ApplicationStep;
     recentSkinTones?: Exclude<SkinTone, "random">[];
     recentHairStyles?: Exclude<HairStyle, "random">[];
   }
@@ -176,6 +189,25 @@ export function composePrompt(
       );
       break;
 
+    case "before-after":
+      // For single-prompt compose, return the "after" prompt
+      // Dual-prompt compose uses composeBeforeAfterPrompts() directly
+      categoryPrompt = buildBeforeAfterPrompts(
+        selections,
+        resolvedSkinTone,
+        resolvedHairStyle
+      ).afterPrompt;
+      break;
+
+    case "application-process":
+      categoryPrompt = buildApplicationProcessPrompt(
+        selections,
+        resolvedSkinTone,
+        resolvedHairStyle,
+        options?.applicationStep ?? selections.applicationStep ?? "preparation"
+      );
+      break;
+
     default:
       throw new Error(`Unknown category: ${selections.category}`);
   }
@@ -184,16 +216,19 @@ export function composePrompt(
   const brandDNA = getBrandDNA(options?.customBrandDNA);
 
   // Skin realism is only injected for human-featuring categories
-  const isHumanCategory = selections.category === "lifestyle" || selections.category === "lash-closeup";
+  const isHumanCategory =
+    selections.category === "lifestyle" ||
+    selections.category === "lash-closeup" ||
+    selections.category === "before-after" ||
+    selections.category === "application-process";
   const skinRealismDNA = isHumanCategory
     ? getSkinRealismDNA(options?.customSkinRealismPrompt)
     : "";
 
-  // Use safe negative prompt for lifestyle (adds safety terms)
-  const negativePrompt =
-    selections.category === "lifestyle"
-      ? getSafeNegativePrompt(options?.customNegativePrompt)
-      : getNegativePrompt(options?.customNegativePrompt);
+  // Use safe negative prompt for human-featuring categories (adds safety terms)
+  const negativePrompt = isHumanCategory
+    ? getSafeNegativePrompt(options?.customNegativePrompt)
+    : getNegativePrompt(options?.customNegativePrompt);
 
   // 4. Build seasonal modifier (if a preset is selected)
   let seasonalModifier = "";
@@ -222,6 +257,73 @@ export function composePrompt(
   return {
     fullPrompt,
     categoryPrompt,
+    resolvedSelections: {
+      skinTone: resolvedSkinTone,
+      hairStyle: resolvedHairStyle,
+      scene: resolvedScene,
+      vibe: resolvedVibe,
+    },
+  };
+}
+
+// ── Before/After Dual-Prompt Composer ─────────────────────────
+
+/**
+ * Composes two full prompts for the Before/After category.
+ * Each prompt gets the full Brand DNA + Skin Realism + Negative treatment,
+ * ensuring both images share the same style framework.
+ */
+export function composeBeforeAfterPrompts(
+  selections: GenerationSelections,
+  options?: Parameters<typeof composePrompt>[1]
+): ComposedBeforeAfterPrompts {
+  // Resolve random values once — shared between both prompts
+  const resolvedSkinTone = resolveSkinTone(
+    selections.skinTone,
+    options?.recentSkinTones
+  );
+  const resolvedHairStyle = resolveHairStyle(
+    selections.hairStyle,
+    options?.recentHairStyles
+  );
+  const resolvedScene = resolveScene(selections.scene, selections.category);
+  const resolvedVibe = resolveVibe(selections.vibe);
+
+  // Build the Before/After category prompts
+  const {
+    beforePrompt: rawBefore,
+    afterPrompt: rawAfter,
+    afterReferenceInstruction,
+  } = buildBeforeAfterPrompts(selections, resolvedSkinTone, resolvedHairStyle);
+
+  // Brand DNA + Skin Realism + Negative — shared wrapper
+  const brandDNA = getBrandDNA(options?.customBrandDNA);
+  const skinRealismDNA = getSkinRealismDNA(options?.customSkinRealismPrompt);
+  const negativePrompt = getSafeNegativePrompt(options?.customNegativePrompt);
+
+  // Seasonal modifier (optional)
+  let seasonalModifier = "";
+  const seasonal = options?.seasonalSelection ?? selections.seasonal;
+  if (seasonal?.presetSlug) {
+    const preset = getPresetBySlug(seasonal.presetSlug);
+    if (preset) {
+      seasonalModifier = buildSeasonalPromptModifier(preset, seasonal.selectedProps);
+    }
+  }
+
+  const wrapPrompt = (categoryPrompt: string) => {
+    const parts = [brandDNA];
+    if (skinRealismDNA) parts.push(skinRealismDNA);
+    parts.push(categoryPrompt);
+    if (seasonalModifier) parts.push(seasonalModifier);
+    parts.push(`[NEGATIVE / AVOID]:\n${negativePrompt}`);
+    return parts.join("\n\n");
+  };
+
+  return {
+    beforePrompt: wrapPrompt(rawBefore),
+    afterPrompt: wrapPrompt(rawAfter),
+    afterReferenceInstruction,
     resolvedSelections: {
       skinTone: resolvedSkinTone,
       hairStyle: resolvedHairStyle,

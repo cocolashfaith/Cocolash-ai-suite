@@ -18,6 +18,7 @@ import { LogoOverlayToggle } from "./LogoOverlayToggle";
 import { ContextNoteInput } from "./ContextNoteInput";
 import { SeasonalSelector } from "./SeasonalSelector";
 import { DiversityControls } from "./DiversityControls";
+import { ApplicationStepSelector } from "./ApplicationStepSelector";
 import { GenerationProgress } from "./GenerationProgress";
 import { ImagePreview } from "./ImagePreview";
 import { ErrorDisplay } from "./ErrorDisplay";
@@ -26,6 +27,7 @@ import type {
   GenerationSelections,
   ContentCategory,
   ProductCategoryKey,
+  ApplicationStep,
   SkinTone,
   LashStyle,
   HairStyle,
@@ -68,6 +70,7 @@ export function GenerateForm() {
     useState<GenerationSelections>(DEFAULT_SELECTIONS);
   const [isGenerating, setIsGenerating] = useState(false);
   const [generatedImage, setGeneratedImage] = useState<GeneratedImage | null>(null);
+  const [beforeImage, setBeforeImage] = useState<GeneratedImage | null>(null);
   const [generationTime, setGenerationTime] = useState(0);
   const [error, setError] = useState<GenerateErrorResponse | null>(null);
 
@@ -87,10 +90,12 @@ export function GenerateForm() {
     setSelections((prev) => ({
       ...prev,
       category,
-      // Auto-select studio for lash close-ups
-      scene: category === "lash-closeup" ? "studio" : prev.scene,
+      // Auto-select studio for lash close-ups and before-after
+      scene: (category === "lash-closeup" || category === "before-after") ? "studio" : prev.scene,
       // Reset composition to solo for non-lifestyle
       composition: category !== "lifestyle" ? "solo" : prev.composition,
+      // Default application step when switching to application-process
+      applicationStep: category === "application-process" ? (prev.applicationStep || "preparation") : prev.applicationStep,
     }));
   }, []);
 
@@ -99,6 +104,7 @@ export function GenerateForm() {
     setIsGenerating(true);
     setError(null);
     setGeneratedImage(null);
+    setBeforeImage(null);
 
     try {
       const response = await fetch("/api/generate", {
@@ -118,8 +124,15 @@ export function GenerateForm() {
 
       const result = data as GenerateResponse;
       setGeneratedImage(result.image);
+      if (result.beforeImage) {
+        setBeforeImage(result.beforeImage);
+      }
       setGenerationTime(result.generationTimeMs);
-      toast.success("Image generated successfully!");
+      toast.success(
+        result.beforeImage
+          ? "Before & After images generated!"
+          : "Image generated successfully!"
+      );
     } catch {
       setError({
         error: "Failed to connect to the server. Please try again.",
@@ -134,6 +147,7 @@ export function GenerateForm() {
   // Reset to generate another
   const handleGenerateAnother = () => {
     setGeneratedImage(null);
+    setBeforeImage(null);
     setError(null);
     setGenerationTime(0);
   };
@@ -162,13 +176,36 @@ export function GenerateForm() {
             />
           )}
 
+          {/* Application Step Selector (only when Application Process) */}
+          {selections.category === "application-process" && (
+            <ApplicationStepSelector
+              value={selections.applicationStep || "preparation"}
+              onChange={(v: ApplicationStep) => update("applicationStep", v)}
+            />
+          )}
+
+          {/* Before/After info banner */}
+          {selections.category === "before-after" && (
+            <div className="rounded-xl border-2 border-coco-golden/30 bg-coco-golden/5 p-4">
+              <p className="text-sm font-semibold text-coco-brown">
+                Two Images Generated
+              </p>
+              <p className="mt-1 text-xs text-coco-brown-medium/70">
+                This will generate a &ldquo;Before&rdquo; (bare lashes) and
+                &ldquo;After&rdquo; (CocoLash extensions) image with the same
+                model, angle, and lighting. Choose your lash style, skin tone,
+                and hair below.
+              </p>
+            </div>
+          )}
+
           {/* Seasonal / Holiday Preset (available for all categories) */}
           <SeasonalSelector
             value={selections.seasonal || { presetSlug: null, selectedProps: [] }}
             onChange={(v: SeasonalSelection) => update("seasonal", v)}
           />
 
-          {/* Skin Tone (for lash-closeup and lifestyle) */}
+          {/* Skin Tone (for human-featuring categories) */}
           {selections.category !== "product" && (
             <SkinToneSelector
               value={selections.skinTone}
@@ -182,34 +219,43 @@ export function GenerateForm() {
             onChange={(v: LashStyle) => update("lashStyle", v)}
           />
 
-          {/* Hair Style (for lifestyle) */}
-          {selections.category === "lifestyle" && (
+          {/* Hair Style (for lifestyle, before-after, application-process) */}
+          {(selections.category === "lifestyle" ||
+            selections.category === "before-after" ||
+            selections.category === "application-process") && (
             <HairStyleSelector
               value={selections.hairStyle}
               onChange={(v: HairStyle) => update("hairStyle", v)}
             />
           )}
 
-          {/* Scene */}
-          <SceneSelector
-            value={selections.scene}
-            onChange={(v: Scene) => update("scene", v)}
-            category={selections.category}
-          />
+          {/* Scene (not shown for before-after — fixed studio setting) */}
+          {selections.category !== "before-after" &&
+            selections.category !== "application-process" && (
+            <SceneSelector
+              value={selections.scene}
+              onChange={(v: Scene) => update("scene", v)}
+              category={selections.category}
+            />
+          )}
 
           {/* Vibe (lifestyle only) */}
-          <VibeSelector
-            value={selections.vibe}
-            onChange={(v: Vibe) => update("vibe", v)}
-            category={selections.category}
-          />
+          {selections.category === "lifestyle" && (
+            <VibeSelector
+              value={selections.vibe}
+              onChange={(v: Vibe) => update("vibe", v)}
+              category={selections.category}
+            />
+          )}
 
           {/* Composition (lifestyle only) */}
-          <CompositionSelector
-            value={selections.composition}
-            onChange={(v: Composition) => update("composition", v)}
-            category={selections.category}
-          />
+          {selections.category === "lifestyle" && (
+            <CompositionSelector
+              value={selections.composition}
+              onChange={(v: Composition) => update("composition", v)}
+              category={selections.category}
+            />
+          )}
 
           {/* Group Diversity Controls (when composition is "group" + lifestyle) */}
           {selections.category === "lifestyle" &&
@@ -290,6 +336,7 @@ export function GenerateForm() {
               image={generatedImage}
               generationTimeMs={generationTime}
               onGenerateAnother={handleGenerateAnother}
+              beforeImage={beforeImage || undefined}
             />
           )}
 

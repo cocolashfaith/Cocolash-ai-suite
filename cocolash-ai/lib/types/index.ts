@@ -6,17 +6,20 @@
  */
 
 // ── Content Categories ────────────────────────────────────────
-/** M1 categories. M2 adds "before-after" and "application-process". */
 export type ContentCategory =
   | "lash-closeup"
   | "lifestyle"
-  | "product";
-
-/** All categories including M2 additions. */
-export type ContentCategoryAll =
-  | ContentCategory
+  | "product"
   | "before-after"
   | "application-process";
+
+// ── Application Process Steps (M2) ───────────────────────────
+export type ApplicationStep =
+  | "preparation"
+  | "isolation"
+  | "application"
+  | "final-check"
+  | "reveal";
 
 // ── Composition ───────────────────────────────────────────────
 export type Composition = "solo" | "duo" | "group";
@@ -235,6 +238,7 @@ export interface GenerationSelections {
   contextNote?: string; // 100-char max optional note
   seasonal?: SeasonalSelection; // [M2] Seasonal/holiday preset
   groupDiversity?: GroupDiversitySelections; // [M2] Group shot diversity config
+  applicationStep?: ApplicationStep; // [M2] Application Process step
 }
 
 // ── Generated Image (database record) ─────────────────────────
@@ -288,6 +292,8 @@ export interface GenerateResponse {
   success: boolean;
   image: GeneratedImage;
   generationTimeMs: number;
+  /** Before/After dual-image generation returns a second image */
+  beforeImage?: GeneratedImage;
 }
 
 export interface GenerateErrorResponse {
