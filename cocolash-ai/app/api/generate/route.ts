@@ -45,7 +45,7 @@ import type {
 } from "@/lib/types";
 
 // Allow up to 300 seconds (5 min) — Before/After at 4K with composite can take 2-3 min.
-// Requires Vercel Pro plan ($20/month). Hobby plan caps at 60s.
+// Requires Fluid Compute enabled (vercel.json "fluid": true). Hobby plan supports up to 300s.
 export const maxDuration = 300;
 
 // ── Validation Helpers ───────────────────────────────────────
