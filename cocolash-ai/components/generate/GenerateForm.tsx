@@ -166,7 +166,13 @@ export function GenerateForm() {
   return (
     <>
       {/* Generation progress overlay */}
-      <GenerationProgress isVisible={isGenerating} />
+      <GenerationProgress
+        isVisible={isGenerating}
+        category={selections.category}
+        includeComposite={selections.includeComposite}
+        resolution={selections.resolution}
+        composition={selections.composition}
+      />
 
       <div className="grid gap-8 lg:grid-cols-[1fr_400px]">
         {/* Left column — Selectors */}

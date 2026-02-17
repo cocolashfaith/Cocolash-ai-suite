@@ -11,6 +11,9 @@ let _client: GoogleGenAI | null = null;
 /**
  * Returns a singleton GoogleGenAI client.
  * Throws if GEMINI_API_KEY is not set.
+ *
+ * Configured with a 180-second timeout (3 min) to accommodate
+ * large 4K image responses (~12MB+ base64 payload).
  */
 export function getGeminiClient(): GoogleGenAI {
   if (!_client) {
@@ -21,7 +24,10 @@ export function getGeminiClient(): GoogleGenAI {
           "Get your key from https://aistudio.google.com/apikey"
       );
     }
-    _client = new GoogleGenAI({ apiKey });
+    _client = new GoogleGenAI({
+      apiKey,
+      httpOptions: { timeout: 180_000 },
+    });
   }
   return _client;
 }

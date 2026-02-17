@@ -1,8 +1,10 @@
 "use client";
 
+import { useState } from "react";
 import Image from "next/image";
 import { Heart, Layers, Clock, Columns2, Info } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
+import { ImageLoader } from "@/components/ui/image-loader";
 import type { GeneratedImage } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
@@ -14,6 +16,8 @@ interface ImageCardProps {
 }
 
 export function ImageCard({ image, onClick, onFavoriteToggle, onDetailsClick }: ImageCardProps) {
+  const [loaded, setLoaded] = useState(false);
+
   const categoryLabels: Record<string, string> = {
     "lash-closeup": "Close-Up",
     lifestyle: "Lifestyle",
@@ -36,15 +40,26 @@ export function ImageCard({ image, onClick, onFavoriteToggle, onDetailsClick }: 
         className="block w-full cursor-pointer"
       >
         <div className={cn(
-          "relative overflow-hidden",
+          "relative overflow-hidden bg-coco-charcoal/90",
           image.is_composite ? "aspect-[2/1]" : "aspect-[4/5]"
         )}>
+          {/* Loading animation while image loads */}
+          {!loaded && (
+            <div className="absolute inset-0 z-[1] flex items-center justify-center">
+              <ImageLoader />
+            </div>
+          )}
+
           <Image
             src={image.image_url}
             alt={`Generated ${image.category} image`}
             fill
             sizes="(max-width: 640px) 100vw, (max-width: 1024px) 50vw, 33vw"
-            className="object-cover transition-transform duration-300 group-hover:scale-105"
+            className={cn(
+              "object-cover transition-all duration-300 group-hover:scale-105",
+              loaded ? "opacity-100" : "opacity-0"
+            )}
+            onLoad={() => setLoaded(true)}
           />
 
           {/* Gradient overlay on hover */}

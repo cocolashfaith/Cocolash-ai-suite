@@ -4,6 +4,7 @@ import { useEffect, useCallback, useState } from "react";
 import Image from "next/image";
 import { X, Download, ZoomIn, ZoomOut } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { ImageLoader } from "@/components/ui/image-loader";
 
 interface ImageLightboxProps {
   /** The image URL to display */
@@ -152,10 +153,10 @@ export function ImageLightbox({
           setZoomed((z) => !z);
         }}
       >
-        {/* Loading shimmer */}
+        {/* Loading animation — 3D scrolling text */}
         {!loaded && (
-          <div className="absolute inset-0 flex items-center justify-center">
-            <div className="h-12 w-12 animate-spin rounded-full border-2 border-white/20 border-t-white/70" />
+          <div className="flex min-h-[200px] min-w-[200px] items-center justify-center">
+            <ImageLoader />
           </div>
         )}
 

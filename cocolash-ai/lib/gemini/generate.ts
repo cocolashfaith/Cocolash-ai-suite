@@ -52,6 +52,45 @@ export async function generateImage(
   const client = getGeminiClient();
   const model = GEMINI_IMAGE_MODEL;
 
+  // Retry config: higher resolutions are more prone to transient fetch failures
+  const maxRetries = resolution === "4K" ? 3 : resolution === "2K" ? 2 : 1;
+
+  for (let attempt = 1; attempt <= maxRetries; attempt++) {
+    try {
+      return await _callGemini(client, model, prompt, aspectRatio, referenceImages, referenceInstruction, resolution);
+    } catch (error) {
+      const isTransientFetch =
+        error instanceof Error &&
+        !(error instanceof GeminiError) &&
+        /fetch failed|ECONNRESET|socket hang up|ETIMEDOUT/i.test(error.message);
+
+      if (isTransientFetch && attempt < maxRetries) {
+        const delay = attempt * 2000;
+        console.warn(`[Gemini] Transient fetch error on attempt ${attempt}/${maxRetries}, retrying in ${delay}ms...`);
+        await new Promise((r) => setTimeout(r, delay));
+        continue;
+      }
+      throw error;
+    }
+  }
+
+  // TypeScript: should never reach here, but satisfies return type
+  throw new GeminiError("All retry attempts exhausted.", "UNKNOWN");
+}
+
+/**
+ * Internal function that performs the actual Gemini API call.
+ * Separated to support the retry wrapper in generateImage().
+ */
+async function _callGemini(
+  client: ReturnType<typeof getGeminiClient>,
+  model: string,
+  prompt: string,
+  aspectRatio: AspectRatio,
+  referenceImages?: ReferenceImage[],
+  referenceInstruction?: string,
+  resolution: ImageResolution = "1K"
+): Promise<GenerateImageResult> {
   try {
     // Build contents: text-only or multimodal (text + reference images)
     let contents: string | { role: string; parts: { text?: string; inlineData?: { mimeType: string; data: string } }[] }[];

@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Sparkles } from "lucide-react";
+import type { ContentCategory, ImageResolution } from "@/lib/types";
 
 const CYCLING_MESSAGES = [
   "Composing your scene...",
@@ -15,9 +15,82 @@ const CYCLING_MESSAGES = [
 interface GenerationProgressProps {
   /** Whether the progress overlay is visible */
   isVisible: boolean;
+  /** Current category for dynamic timing estimate */
+  category?: ContentCategory;
+  /** Whether Before/After composite is enabled */
+  includeComposite?: boolean;
+  /** Current resolution */
+  resolution?: ImageResolution;
+  /** Current composition (for group shots) */
+  composition?: string;
 }
 
-export function GenerationProgress({ isVisible }: GenerationProgressProps) {
+/**
+ * Calculates a dynamic time estimate based on generation settings.
+ */
+function getTimeEstimate(
+  category?: ContentCategory,
+  includeComposite?: boolean,
+  resolution?: ImageResolution,
+  composition?: string
+): string {
+  let minSeconds = 20;
+  let maxSeconds = 40;
+
+  // Category-specific base times
+  if (category === "before-after") {
+    minSeconds = 50;
+    maxSeconds = 80;
+    if (includeComposite) {
+      minSeconds += 10;
+      maxSeconds += 15;
+    }
+  } else if (category === "product") {
+    // Product has reference images to process
+    minSeconds = 40;
+    maxSeconds = 75;
+  } else if (category === "application-process") {
+    minSeconds = 25;
+    maxSeconds = 45;
+  }
+
+  // Group shots take longer
+  if (composition === "group") {
+    minSeconds += 10;
+    maxSeconds += 15;
+  }
+
+  // Resolution multiplier
+  if (resolution === "2K") {
+    minSeconds = Math.round(minSeconds * 1.3);
+    maxSeconds = Math.round(maxSeconds * 1.5);
+  } else if (resolution === "4K") {
+    minSeconds = Math.round(minSeconds * 2);
+    maxSeconds = Math.round(maxSeconds * 2.5);
+  }
+
+  // Format nicely
+  if (maxSeconds >= 60) {
+    const minMin = Math.floor(minSeconds / 60);
+    const maxMin = Math.ceil(maxSeconds / 60);
+    if (minMin === 0) {
+      return `Usually takes up to ${maxMin} min`;
+    }
+    if (minMin === maxMin) {
+      return `Usually takes ~${minMin} min`;
+    }
+    return `Usually takes ${minMin}–${maxMin} min`;
+  }
+  return `Usually takes ${minSeconds}–${maxSeconds}s`;
+}
+
+export function GenerationProgress({
+  isVisible,
+  category,
+  includeComposite,
+  resolution,
+  composition,
+}: GenerationProgressProps) {
   const [messageIndex, setMessageIndex] = useState(0);
   const [elapsed, setElapsed] = useState(0);
 
@@ -28,12 +101,10 @@ export function GenerationProgress({ isVisible }: GenerationProgressProps) {
       return;
     }
 
-    // Cycle messages every 3 seconds
     const msgInterval = setInterval(() => {
       setMessageIndex((prev) => (prev + 1) % CYCLING_MESSAGES.length);
     }, 3000);
 
-    // Track elapsed time
     const timerInterval = setInterval(() => {
       setElapsed((prev) => prev + 1);
     }, 1000);
@@ -46,16 +117,13 @@ export function GenerationProgress({ isVisible }: GenerationProgressProps) {
 
   if (!isVisible) return null;
 
+  const timeEstimate = getTimeEstimate(category, includeComposite, resolution, composition);
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-coco-brown/60 backdrop-blur-sm">
       <div className="mx-4 flex max-w-sm flex-col items-center gap-6 rounded-2xl bg-white p-8 shadow-2xl">
-        {/* Pulsing logo icon */}
-        <div className="relative">
-          <div className="absolute inset-0 animate-ping rounded-full bg-coco-golden/20" />
-          <div className="relative flex h-16 w-16 items-center justify-center rounded-full bg-coco-golden/10">
-            <Sparkles className="h-8 w-8 animate-pulse text-coco-golden" />
-          </div>
-        </div>
+        {/* Animated eyes loader */}
+        <div className="coco-eyes-loader" />
 
         {/* Cycling message */}
         <div className="text-center">
@@ -63,7 +131,7 @@ export function GenerationProgress({ isVisible }: GenerationProgressProps) {
             {CYCLING_MESSAGES[messageIndex]}
           </p>
           <p className="mt-2 text-sm text-coco-brown-medium">
-            Usually takes 5–15 seconds
+            {timeEstimate}
           </p>
         </div>
 
@@ -73,11 +141,11 @@ export function GenerationProgress({ isVisible }: GenerationProgressProps) {
           {elapsed}s elapsed
         </div>
 
-        {/* Progress bar */}
-        <div className="h-1 w-full overflow-hidden rounded-full bg-coco-beige">
+        {/* Progress bar — striped animated */}
+        <div className="h-2 w-full overflow-hidden rounded-full bg-coco-beige-dark/30">
           <div
-            className="h-full animate-pulse rounded-full bg-gradient-to-r from-coco-golden to-coco-pink transition-all duration-1000"
-            style={{ width: `${Math.min(95, elapsed * 4)}%` }}
+            className="coco-progress-bar h-full rounded-full transition-all duration-1000 ease-out"
+            style={{ width: `${Math.min(95, elapsed * 3)}%` }}
           />
         </div>
       </div>
