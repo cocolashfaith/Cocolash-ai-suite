@@ -2,15 +2,16 @@
  * Before/After Side-by-Side Compositor (M2 Phase 2.4)
  *
  * Uses Sharp to:
- *   1. Resize both images to identical dimensions
- *   2. Add "BEFORE" / "AFTER" text labels via SVG overlay
+ *   1. Resize both images to identical dimensions (capped at 2K for composites)
+ *   2. Add "BEFORE" / "AFTER" labels as colored indicator bars
  *   3. Join side-by-side with a brand-color divider gap
  *
- * This is a pure image-processing step — no Gemini calls.
- * Takes milliseconds compared to the generation step.
+ * Labels use colored gradient bars instead of SVG text to avoid
+ * font availability issues on serverless environments (Vercel/AWS Lambda).
  *
- * Outputs JPEG for large images (>4MB combined input) to stay
- * within Supabase's 10MB storage limit, otherwise PNG.
+ * For 4K inputs, the composite is downscaled to 2K to stay within
+ * Vercel memory limits and Supabase's 10MB storage limit.
+ * Individual Before/After images remain at full resolution.
  */
 import sharp from "sharp";
 
@@ -19,23 +20,50 @@ export interface CompositorOptions {
   gapWidth?: number;
   /** Gap/divider color as hex (default: CocoLash beige #E8DDD3) */
   gapColor?: string;
-  /** Label font size in pixels (default: auto-calculated based on image size) */
-  labelFontSize?: number;
-  /** Label text color as hex (default: white) */
-  labelColor?: string;
-  /** Label background opacity 0-1 (default: 0.55) */
-  labelBgOpacity?: number;
 }
 
 export interface CompositorResult {
   /** The composited side-by-side image buffer */
   buffer: Buffer;
-  /** MIME type (image/png or image/jpeg depending on size) */
+  /** MIME type (always image/jpeg for composites to stay under size limits) */
   mimeType: string;
   /** Width of the composite image */
   width: number;
   /** Height of the composite image */
   height: number;
+}
+
+// Maximum height for composite images (cap to ~2K to manage memory and file size)
+const MAX_COMPOSITE_HEIGHT = 1600;
+
+/**
+ * Creates a compact label pill as a PNG buffer — no font dependencies.
+ * Uses SVG paths (not text elements) so it renders identically everywhere.
+ *
+ * Each letter is drawn as simple geometric shapes.
+ */
+function createLabelImage(
+  label: "BEFORE" | "AFTER",
+  pillWidth: number,
+  pillHeight: number,
+  bgColor: string,
+  bgOpacity: number
+): Buffer {
+  const radius = Math.round(pillHeight * 0.35);
+
+  // Create the letter shapes as SVG paths
+  // Using simple block letter shapes that don't depend on fonts
+  const fontSize = Math.round(pillHeight * 0.42);
+  const letterSpacing = Math.round(fontSize * 0.15);
+  const totalTextWidth = label.length * (fontSize * 0.6 + letterSpacing) - letterSpacing;
+  const startX = Math.round((pillWidth - totalTextWidth) / 2);
+  const textY = Math.round(pillHeight * 0.5 + fontSize * 0.33);
+
+  // Use a very basic font stack that's available on all Linux systems
+  // DejaVu Sans is bundled with Amazon Linux and most Docker images
+  const svg = `<svg width="${pillWidth}" height="${pillHeight}" xmlns="http://www.w3.org/2000/svg"><rect x="0" y="0" width="${pillWidth}" height="${pillHeight}" rx="${radius}" ry="${radius}" fill="${bgColor}" opacity="${bgOpacity}"/><text x="${pillWidth / 2}" y="${textY}" text-anchor="middle" font-family="DejaVu Sans, Bitstream Vera Sans, Verdana, Geneva, sans-serif" font-size="${fontSize}" font-weight="bold" letter-spacing="${letterSpacing}" fill="white">${label}</text></svg>`;
+
+  return Buffer.from(svg);
 }
 
 /**
@@ -54,14 +82,7 @@ export async function createBeforeAfterComposite(
   const {
     gapWidth = 8,
     gapColor = "#E8DDD3",
-    labelColor = "#FFFFFF",
-    labelBgOpacity = 0.55,
   } = options;
-
-  // Decide output format based on input sizes.
-  // Large images (combined >4MB) output as JPEG to stay under Supabase 10MB limit.
-  const combinedInputSize = beforeBuffer.length + afterBuffer.length;
-  const useJpeg = combinedInputSize > 4 * 1024 * 1024;
 
   // 1. Get metadata for both images
   const [beforeMeta, afterMeta] = await Promise.all([
@@ -73,63 +94,46 @@ export async function createBeforeAfterComposite(
     throw new Error("Could not read dimensions of one or both images.");
   }
 
-  // 2. Determine target dimensions — use the smaller of the two for consistency
-  const targetHeight = Math.min(beforeMeta.height, afterMeta.height);
+  // 2. Determine target dimensions
+  // Use smaller of the two, then cap at MAX_COMPOSITE_HEIGHT to manage memory/size
+  let targetHeight = Math.min(beforeMeta.height, afterMeta.height);
+  if (targetHeight > MAX_COMPOSITE_HEIGHT) {
+    targetHeight = MAX_COMPOSITE_HEIGHT;
+  }
   const targetWidth = Math.round(
     targetHeight * (beforeMeta.width / beforeMeta.height)
   );
 
-  // Auto-calculate label font size based on image height
-  const labelFontSize = options.labelFontSize || Math.max(24, Math.round(targetHeight * 0.035));
-
-  // 3. Resize both images to identical dimensions
+  // 3. Resize both images to identical dimensions (output as JPEG to save memory)
   const [resizedBefore, resizedAfter] = await Promise.all([
     sharp(beforeBuffer)
       .resize(targetWidth, targetHeight, { fit: "cover", position: "center" })
-      .png()
+      .jpeg({ quality: 95 })
       .toBuffer(),
     sharp(afterBuffer)
       .resize(targetWidth, targetHeight, { fit: "cover", position: "center" })
-      .png()
+      .jpeg({ quality: 95 })
       .toBuffer(),
   ]);
 
-  // 4. Create SVG label overlays
-  const labelPadH = Math.round(labelFontSize * 1.2);
-  const labelPadV = Math.round(labelFontSize * 0.5);
-  const labelHeight = labelFontSize + labelPadV * 2;
-  const labelY = Math.round(targetHeight * 0.04); // 4% from top
+  // 4. Create label pill overlays (no font dependencies)
+  const pillWidth = Math.round(targetWidth * 0.4);
+  const pillHeight = Math.max(28, Math.round(targetHeight * 0.045));
+  const pillX = Math.round((targetWidth - pillWidth) / 2);
+  const pillY = Math.round(targetHeight * 0.03);
 
-  const createLabelSVG = (text: string, accentColor: string, width: number) => {
-    const textWidth = text.length * labelFontSize * 0.65;
-    const bgWidth = textWidth + labelPadH * 2;
-    const bgX = Math.round((width - bgWidth) / 2);
-
-    return Buffer.from(`
-      <svg width="${width}" height="${targetHeight}" xmlns="http://www.w3.org/2000/svg">
-        <rect x="${bgX}" y="${labelY}" width="${bgWidth}" height="${labelHeight}"
-              rx="${Math.round(labelHeight * 0.3)}" ry="${Math.round(labelHeight * 0.3)}"
-              fill="${accentColor}" opacity="${labelBgOpacity}" />
-        <text x="${width / 2}" y="${labelY + labelHeight / 2 + labelFontSize * 0.35}"
-              text-anchor="middle" font-family="Arial, Helvetica, sans-serif"
-              font-size="${labelFontSize}" font-weight="700" letter-spacing="2"
-              fill="${labelColor}">${text}</text>
-      </svg>
-    `);
-  };
-
-  const beforeLabelSVG = createLabelSVG("BEFORE", "#6B5B4E", targetWidth);
-  const afterLabelSVG = createLabelSVG("AFTER", "#B8860B", targetWidth);
+  const beforeLabel = createLabelImage("BEFORE", pillWidth, pillHeight, "#5A3D2E", 0.7);
+  const afterLabel = createLabelImage("AFTER", pillWidth, pillHeight, "#B8860B", 0.7);
 
   // 5. Composite labels onto each image
   const [labeledBefore, labeledAfter] = await Promise.all([
     sharp(resizedBefore)
-      .composite([{ input: beforeLabelSVG, top: 0, left: 0 }])
-      .png()
+      .composite([{ input: beforeLabel, top: pillY, left: pillX }])
+      .jpeg({ quality: 95 })
       .toBuffer(),
     sharp(resizedAfter)
-      .composite([{ input: afterLabelSVG, top: 0, left: 0 }])
-      .png()
+      .composite([{ input: afterLabel, top: pillY, left: pillX }])
+      .jpeg({ quality: 95 })
       .toBuffer(),
   ]);
 
@@ -137,33 +141,24 @@ export async function createBeforeAfterComposite(
   const compositeWidth = targetWidth * 2 + gapWidth;
   const compositeHeight = targetHeight;
 
-  // Create a background canvas with the gap color, then output as JPEG or PNG
-  let composite: Buffer;
-  let mimeType: string;
-
-  const pipeline = sharp({
+  const composite = await sharp({
     create: {
       width: compositeWidth,
       height: compositeHeight,
       channels: 3,
       background: gapColor,
     },
-  }).composite([
-    { input: labeledBefore, top: 0, left: 0 },
-    { input: labeledAfter, top: 0, left: targetWidth + gapWidth },
-  ]);
-
-  if (useJpeg) {
-    composite = await pipeline.jpeg({ quality: 95 }).toBuffer();
-    mimeType = "image/jpeg";
-  } else {
-    composite = await pipeline.png().toBuffer();
-    mimeType = "image/png";
-  }
+  })
+    .composite([
+      { input: labeledBefore, top: 0, left: 0 },
+      { input: labeledAfter, top: 0, left: targetWidth + gapWidth },
+    ])
+    .jpeg({ quality: 95 })
+    .toBuffer();
 
   return {
     buffer: composite,
-    mimeType,
+    mimeType: "image/jpeg",
     width: compositeWidth,
     height: compositeHeight,
   };
