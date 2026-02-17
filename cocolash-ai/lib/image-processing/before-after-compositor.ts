@@ -8,6 +8,9 @@
  *
  * This is a pure image-processing step — no Gemini calls.
  * Takes milliseconds compared to the generation step.
+ *
+ * Outputs JPEG for large images (>4MB combined input) to stay
+ * within Supabase's 10MB storage limit, otherwise PNG.
  */
 import sharp from "sharp";
 
@@ -27,7 +30,7 @@ export interface CompositorOptions {
 export interface CompositorResult {
   /** The composited side-by-side image buffer */
   buffer: Buffer;
-  /** MIME type (always image/png) */
+  /** MIME type (image/png or image/jpeg depending on size) */
   mimeType: string;
   /** Width of the composite image */
   width: number;
@@ -54,6 +57,11 @@ export async function createBeforeAfterComposite(
     labelColor = "#FFFFFF",
     labelBgOpacity = 0.55,
   } = options;
+
+  // Decide output format based on input sizes.
+  // Large images (combined >4MB) output as JPEG to stay under Supabase 10MB limit.
+  const combinedInputSize = beforeBuffer.length + afterBuffer.length;
+  const useJpeg = combinedInputSize > 4 * 1024 * 1024;
 
   // 1. Get metadata for both images
   const [beforeMeta, afterMeta] = await Promise.all([
@@ -129,25 +137,33 @@ export async function createBeforeAfterComposite(
   const compositeWidth = targetWidth * 2 + gapWidth;
   const compositeHeight = targetHeight;
 
-  // Create a background canvas with the gap color
-  const composite = await sharp({
+  // Create a background canvas with the gap color, then output as JPEG or PNG
+  let composite: Buffer;
+  let mimeType: string;
+
+  const pipeline = sharp({
     create: {
       width: compositeWidth,
       height: compositeHeight,
       channels: 3,
       background: gapColor,
     },
-  })
-    .composite([
-      { input: labeledBefore, top: 0, left: 0 },
-      { input: labeledAfter, top: 0, left: targetWidth + gapWidth },
-    ])
-    .png({ quality: 95 })
-    .toBuffer();
+  }).composite([
+    { input: labeledBefore, top: 0, left: 0 },
+    { input: labeledAfter, top: 0, left: targetWidth + gapWidth },
+  ]);
+
+  if (useJpeg) {
+    composite = await pipeline.jpeg({ quality: 95 }).toBuffer();
+    mimeType = "image/jpeg";
+  } else {
+    composite = await pipeline.png().toBuffer();
+    mimeType = "image/png";
+  }
 
   return {
     buffer: composite,
-    mimeType: "image/png",
+    mimeType,
     width: compositeWidth,
     height: compositeHeight,
   };

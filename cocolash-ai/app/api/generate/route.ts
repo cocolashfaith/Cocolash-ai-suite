@@ -527,16 +527,17 @@ export async function POST(request: NextRequest) {
           // This avoids re-fetching from Supabase which can fail due to rate limits
           const compositeResult = await createBeforeAfterComposite(beforeFinalBuffer, afterFinalBuffer);
 
-          // Upload the composite
+          // Upload the composite (pass mimeType — JPEG for large images, PNG for small)
           const compositeUpload = await uploadGeneratedImage(
             supabase,
             compositeResult.buffer,
             brandId,
-            "-composite"
+            "-composite",
+            compositeResult.mimeType
           );
 
           compositeImageUrl = compositeUpload.url;
-          console.log(`[Generate] Composite created: ${compositeResult.width}x${compositeResult.height} (${compositeResult.buffer.length} bytes)`);
+          console.log(`[Generate] Composite created: ${compositeResult.width}x${compositeResult.height} (${compositeResult.buffer.length} bytes, ${compositeResult.mimeType})`);
 
           // Insert composite as a DB record so it appears in the gallery
           const compositeRecord = {
