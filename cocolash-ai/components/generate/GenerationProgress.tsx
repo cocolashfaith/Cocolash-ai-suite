@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useMemo } from "react";
 import type { ContentCategory, ImageResolution } from "@/lib/types";
 
 const CYCLING_MESSAGES = [
@@ -26,18 +26,17 @@ interface GenerationProgressProps {
 }
 
 /**
- * Calculates a dynamic time estimate based on generation settings.
+ * Returns estimated min/max seconds and a formatted label string.
  */
 function getTimeEstimate(
   category?: ContentCategory,
   includeComposite?: boolean,
   resolution?: ImageResolution,
   composition?: string
-): string {
+): { minSeconds: number; maxSeconds: number; label: string } {
   let minSeconds = 20;
   let maxSeconds = 40;
 
-  // Category-specific base times
   if (category === "before-after") {
     minSeconds = 50;
     maxSeconds = 80;
@@ -46,7 +45,6 @@ function getTimeEstimate(
       maxSeconds += 15;
     }
   } else if (category === "product") {
-    // Product has reference images to process
     minSeconds = 40;
     maxSeconds = 75;
   } else if (category === "application-process") {
@@ -54,13 +52,11 @@ function getTimeEstimate(
     maxSeconds = 45;
   }
 
-  // Group shots take longer
   if (composition === "group") {
     minSeconds += 10;
     maxSeconds += 15;
   }
 
-  // Resolution multiplier
   if (resolution === "2K") {
     minSeconds = Math.round(minSeconds * 1.3);
     maxSeconds = Math.round(maxSeconds * 1.5);
@@ -69,19 +65,22 @@ function getTimeEstimate(
     maxSeconds = Math.round(maxSeconds * 2.5);
   }
 
-  // Format nicely
+  let label: string;
   if (maxSeconds >= 60) {
     const minMin = Math.floor(minSeconds / 60);
     const maxMin = Math.ceil(maxSeconds / 60);
     if (minMin === 0) {
-      return `Usually takes up to ${maxMin} min`;
+      label = `Usually takes up to ${maxMin} min`;
+    } else if (minMin === maxMin) {
+      label = `Usually takes ~${minMin} min`;
+    } else {
+      label = `Usually takes ${minMin}–${maxMin} min`;
     }
-    if (minMin === maxMin) {
-      return `Usually takes ~${minMin} min`;
-    }
-    return `Usually takes ${minMin}–${maxMin} min`;
+  } else {
+    label = `Usually takes ${minSeconds}–${maxSeconds}s`;
   }
-  return `Usually takes ${minSeconds}–${maxSeconds}s`;
+
+  return { minSeconds, maxSeconds, label };
 }
 
 export function GenerationProgress({
@@ -93,6 +92,12 @@ export function GenerationProgress({
 }: GenerationProgressProps) {
   const [messageIndex, setMessageIndex] = useState(0);
   const [elapsed, setElapsed] = useState(0);
+
+  // Compute estimate once when overlay appears (memoized on settings)
+  const estimate = useMemo(
+    () => getTimeEstimate(category, includeComposite, resolution, composition),
+    [category, includeComposite, resolution, composition]
+  );
 
   useEffect(() => {
     if (!isVisible) {
@@ -117,36 +122,74 @@ export function GenerationProgress({
 
   if (!isVisible) return null;
 
-  const timeEstimate = getTimeEstimate(category, includeComposite, resolution, composition);
+  // Progress calculation based on estimated midpoint time.
+  // Uses the average of min/max as the "expected" completion time.
+  // Fills to ~90% at expected time, then slows down asymptotically toward 98%.
+  const expectedTime = (estimate.minSeconds + estimate.maxSeconds) / 2;
+  let progress: number;
+  if (elapsed <= expectedTime) {
+    // Linear ramp to 90% at expected time
+    progress = (elapsed / expectedTime) * 90;
+  } else {
+    // Asymptotic slowdown: 90% → 98% over the remaining time
+    const overtime = elapsed - expectedTime;
+    const extraProgress = 8 * (1 - Math.exp(-overtime / (expectedTime * 0.5)));
+    progress = 90 + extraProgress;
+  }
+  progress = Math.min(progress, 98);
+
+  // Format remaining time estimate
+  const remainingSeconds = Math.max(0, Math.round(expectedTime - elapsed));
+  let remainingLabel: string;
+  if (elapsed >= expectedTime) {
+    remainingLabel = "Finishing up...";
+  } else if (remainingSeconds >= 60) {
+    const mins = Math.floor(remainingSeconds / 60);
+    const secs = remainingSeconds % 60;
+    remainingLabel = secs > 0 ? `~${mins}m ${secs}s remaining` : `~${mins}m remaining`;
+  } else {
+    remainingLabel = `~${remainingSeconds}s remaining`;
+  }
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-coco-brown/60 backdrop-blur-sm">
-      <div className="mx-4 flex max-w-sm flex-col items-center gap-6 rounded-2xl bg-white p-8 shadow-2xl">
+      {/* Fixed-width card — prevents layout shift from varying message lengths */}
+      <div className="mx-4 flex w-[340px] flex-col items-center gap-5 rounded-2xl bg-white p-8 shadow-2xl">
         {/* Animated eyes loader */}
         <div className="coco-eyes-loader" />
 
-        {/* Cycling message */}
-        <div className="text-center">
-          <p className="text-lg font-semibold text-coco-brown transition-all duration-500">
+        {/* Cycling message — fixed height to prevent layout shift */}
+        <div className="flex h-[52px] w-full items-center justify-center text-center">
+          <p className="text-lg font-semibold text-coco-brown transition-opacity duration-500">
             {CYCLING_MESSAGES[messageIndex]}
           </p>
-          <p className="mt-2 text-sm text-coco-brown-medium">
-            {timeEstimate}
-          </p>
         </div>
 
-        {/* Elapsed timer */}
-        <div className="flex items-center gap-2 text-xs text-coco-brown-medium/60">
-          <div className="h-1.5 w-1.5 animate-pulse rounded-full bg-coco-golden" />
-          {elapsed}s elapsed
-        </div>
+        {/* Time estimate label */}
+        <p className="text-sm text-coco-brown-medium">
+          {estimate.label}
+        </p>
 
-        {/* Progress bar — striped animated */}
-        <div className="h-2 w-full overflow-hidden rounded-full bg-coco-beige-dark/30">
-          <div
-            className="coco-progress-bar h-full rounded-full transition-all duration-1000 ease-out"
-            style={{ width: `${Math.min(95, elapsed * 3)}%` }}
-          />
+        {/* Progress bar — reflects real estimated progress */}
+        <div className="w-full space-y-2">
+          <div className="h-2 w-full overflow-hidden rounded-full bg-coco-beige-dark/30">
+            <div
+              className="coco-progress-bar h-full rounded-full"
+              style={{
+                width: `${progress}%`,
+                transition: "width 1s ease-out",
+              }}
+            />
+          </div>
+
+          {/* Elapsed + remaining */}
+          <div className="flex items-center justify-between text-xs text-coco-brown-medium/60">
+            <div className="flex items-center gap-1.5">
+              <div className="h-1.5 w-1.5 animate-pulse rounded-full bg-coco-golden" />
+              {elapsed}s elapsed
+            </div>
+            <span>{remainingLabel}</span>
+          </div>
         </div>
       </div>
     </div>
