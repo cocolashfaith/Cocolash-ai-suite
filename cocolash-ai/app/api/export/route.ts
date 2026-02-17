@@ -27,7 +27,9 @@ import type {
   GenerateErrorResponse,
 } from "@/lib/types";
 
-export const maxDuration = 60;
+// Allow up to 300 seconds — 4K exports with reference-based reframing + logo overlay can take 1-2 min.
+// Requires Vercel Pro plan ($20/month). Hobby plan caps at 60s.
+export const maxDuration = 300;
 
 const VALID_RATIOS: AspectRatio[] = ["1:1", "4:5", "9:16", "16:9"];
 

@@ -44,8 +44,9 @@ import type {
   GenerateErrorResponse,
 } from "@/lib/types";
 
-// Allow up to 90 seconds — Before/After generates two images in parallel
-export const maxDuration = 90;
+// Allow up to 300 seconds (5 min) — Before/After at 4K with composite can take 2-3 min.
+// Requires Vercel Pro plan ($20/month). Hobby plan caps at 60s.
+export const maxDuration = 300;
 
 // ── Validation Helpers ───────────────────────────────────────
 const VALID_CATEGORIES: ContentCategory[] = [
