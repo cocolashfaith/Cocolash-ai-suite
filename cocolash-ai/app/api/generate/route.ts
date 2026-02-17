@@ -431,6 +431,9 @@ export async function POST(request: NextRequest) {
       let afterFinalUrl = afterUpload.url;
       let afterFinalPath = afterUpload.path;
       let hasLogoOverlay = false;
+      // Keep overlay buffers for composite (avoids re-fetching from Supabase)
+      let beforeFinalBuffer: Buffer = beforeResult.buffer;
+      let afterFinalBuffer: Buffer = afterResult.buffer;
 
       if (selections.logoOverlay.enabled) {
         const logoUrl = selectLogoUrl(selections.logoOverlay.variant, {
@@ -445,6 +448,10 @@ export async function POST(request: NextRequest) {
               applyLogoOverlay(beforeResult.buffer, { ...selections.logoOverlay, logoUrl }),
               applyLogoOverlay(afterResult.buffer, { ...selections.logoOverlay, logoUrl }),
             ]);
+
+            // Preserve overlay buffers for composite creation
+            beforeFinalBuffer = beforeOverlay.buffer;
+            afterFinalBuffer = afterOverlay.buffer;
 
             const [beforeFinal, afterFinal] = await Promise.all([
               uploadGeneratedImage(supabase, beforeOverlay.buffer, brandId, "-before-final", beforeOverlay.mimeType),
@@ -516,15 +523,9 @@ export async function POST(request: NextRequest) {
         try {
           console.log(`[Generate] Stage 3: Creating side-by-side composite...`);
 
-          // Use the final (logo-overlaid) buffers if available, otherwise raw
-          const beforeBuf = hasLogoOverlay
-            ? (await fetch(beforeFinalUrl).then(r => r.arrayBuffer()).then(ab => Buffer.from(ab)))
-            : beforeResult.buffer;
-          const afterBuf = hasLogoOverlay
-            ? (await fetch(afterFinalUrl).then(r => r.arrayBuffer()).then(ab => Buffer.from(ab)))
-            : afterResult.buffer;
-
-          const compositeResult = await createBeforeAfterComposite(beforeBuf, afterBuf);
+          // Use locally preserved buffers (logo-overlaid if available, otherwise raw)
+          // This avoids re-fetching from Supabase which can fail due to rate limits
+          const compositeResult = await createBeforeAfterComposite(beforeFinalBuffer, afterFinalBuffer);
 
           // Upload the composite
           const compositeUpload = await uploadGeneratedImage(
