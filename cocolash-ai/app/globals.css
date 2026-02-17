@@ -237,7 +237,7 @@
    Shown while images are loading in lightbox/preview/gallery
    ─────────────────────────────────────────────────────── */
 .coco-image-loader {
-  --coco-loader-size: 2.2em;
+  --coco-loader-size: 4.5em;
   --coco-text-color: #ce9765;
   --coco-shine-color: rgba(206, 151, 101, 0.25);
   --coco-shadow-color: #5a3d2e;
