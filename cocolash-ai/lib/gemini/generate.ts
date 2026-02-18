@@ -59,14 +59,20 @@ export async function generateImage(
     try {
       return await _callGemini(client, model, prompt, aspectRatio, referenceImages, referenceInstruction, resolution);
     } catch (error) {
+      const msg = error instanceof Error ? error.message : "";
+      const causeMsg =
+        error instanceof Error && error.cause instanceof Error
+          ? error.cause.message
+          : "";
+      const combined = `${msg} ${causeMsg}`;
+
       const isTransientFetch =
         error instanceof Error &&
-        !(error instanceof GeminiError) &&
-        /fetch failed|ECONNRESET|socket hang up|ETIMEDOUT/i.test(error.message);
+        /fetch failed|ECONNRESET|socket hang up|ETIMEDOUT|AbortError|operation was aborted/i.test(combined);
 
       if (isTransientFetch && attempt < maxRetries) {
-        const delay = attempt * 2000;
-        console.warn(`[Gemini] Transient fetch error on attempt ${attempt}/${maxRetries}, retrying in ${delay}ms...`);
+        const delay = attempt * 3000;
+        console.warn(`[Gemini] Transient error on attempt ${attempt}/${maxRetries}: ${msg.substring(0, 120)}. Retrying in ${delay}ms...`);
         await new Promise((r) => setTimeout(r, delay));
         continue;
       }

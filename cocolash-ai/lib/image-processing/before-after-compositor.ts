@@ -37,10 +37,119 @@ export interface CompositorResult {
 const MAX_COMPOSITE_HEIGHT = 1600;
 
 /**
- * Creates a compact label pill as a PNG buffer — no font dependencies.
- * Uses SVG paths (not text elements) so it renders identically everywhere.
- *
- * Each letter is drawn as simple geometric shapes.
+ * 5x7 bitmap patterns for the limited label alphabet we need.
+ * This avoids runtime font dependencies in serverless environments.
+ */
+const LETTER_PATTERNS: Record<string, string[]> = {
+  A: [
+    "01110",
+    "10001",
+    "10001",
+    "11111",
+    "10001",
+    "10001",
+    "10001",
+  ],
+  B: [
+    "11110",
+    "10001",
+    "10001",
+    "11110",
+    "10001",
+    "10001",
+    "11110",
+  ],
+  E: [
+    "11111",
+    "10000",
+    "10000",
+    "11110",
+    "10000",
+    "10000",
+    "11111",
+  ],
+  F: [
+    "11111",
+    "10000",
+    "10000",
+    "11110",
+    "10000",
+    "10000",
+    "10000",
+  ],
+  O: [
+    "01110",
+    "10001",
+    "10001",
+    "10001",
+    "10001",
+    "10001",
+    "01110",
+  ],
+  R: [
+    "11110",
+    "10001",
+    "10001",
+    "11110",
+    "10100",
+    "10010",
+    "10001",
+  ],
+  T: [
+    "11111",
+    "00100",
+    "00100",
+    "00100",
+    "00100",
+    "00100",
+    "00100",
+  ],
+};
+
+function buildBitmapRects(text: string, width: number, height: number): string {
+  const colsPerLetter = 5;
+  const rows = 7;
+  const letterGapCols = 1;
+
+  const totalCols =
+    text.length * colsPerLetter + (text.length - 1) * letterGapCols;
+  const pixelSize = Math.max(1, Math.floor(Math.min(width / totalCols, height / rows)));
+
+  const textWidthPx = totalCols * pixelSize;
+  const textHeightPx = rows * pixelSize;
+  const offsetX = Math.floor((width - textWidthPx) / 2);
+  const offsetY = Math.floor((height - textHeightPx) / 2);
+
+  let xCursorCols = 0;
+  const rects: string[] = [];
+
+  for (const ch of text) {
+    const pattern = LETTER_PATTERNS[ch];
+    if (!pattern) {
+      xCursorCols += colsPerLetter + letterGapCols;
+      continue;
+    }
+
+    for (let row = 0; row < rows; row++) {
+      for (let col = 0; col < colsPerLetter; col++) {
+        if (pattern[row][col] === "1") {
+          const x = offsetX + (xCursorCols + col) * pixelSize;
+          const y = offsetY + row * pixelSize;
+          rects.push(
+            `<rect x="${x}" y="${y}" width="${pixelSize}" height="${pixelSize}" fill="#FFFFFF" />`
+          );
+        }
+      }
+    }
+
+    xCursorCols += colsPerLetter + letterGapCols;
+  }
+
+  return rects.join("");
+}
+
+/**
+ * Creates a compact label pill as a PNG buffer — fully font-independent.
  */
 function createLabelImage(
   label: "BEFORE" | "AFTER",
@@ -50,18 +159,17 @@ function createLabelImage(
   bgOpacity: number
 ): Buffer {
   const radius = Math.round(pillHeight * 0.35);
+  const bitmapAreaWidth = Math.round(pillWidth * 0.78);
+  const bitmapAreaHeight = Math.round(pillHeight * 0.62);
+  const bitmapX = Math.floor((pillWidth - bitmapAreaWidth) / 2);
+  const bitmapY = Math.floor((pillHeight - bitmapAreaHeight) / 2);
+  const bitmapRects = buildBitmapRects(label, bitmapAreaWidth, bitmapAreaHeight);
 
-  // Create the letter shapes as SVG paths
-  // Using simple block letter shapes that don't depend on fonts
-  const fontSize = Math.round(pillHeight * 0.42);
-  const letterSpacing = Math.round(fontSize * 0.15);
-  const totalTextWidth = label.length * (fontSize * 0.6 + letterSpacing) - letterSpacing;
-  const startX = Math.round((pillWidth - totalTextWidth) / 2);
-  const textY = Math.round(pillHeight * 0.5 + fontSize * 0.33);
-
-  // Use a very basic font stack that's available on all Linux systems
-  // DejaVu Sans is bundled with Amazon Linux and most Docker images
-  const svg = `<svg width="${pillWidth}" height="${pillHeight}" xmlns="http://www.w3.org/2000/svg"><rect x="0" y="0" width="${pillWidth}" height="${pillHeight}" rx="${radius}" ry="${radius}" fill="${bgColor}" opacity="${bgOpacity}"/><text x="${pillWidth / 2}" y="${textY}" text-anchor="middle" font-family="DejaVu Sans, Bitstream Vera Sans, Verdana, Geneva, sans-serif" font-size="${fontSize}" font-weight="bold" letter-spacing="${letterSpacing}" fill="white">${label}</text></svg>`;
+  const svg =
+    `<svg width="${pillWidth}" height="${pillHeight}" xmlns="http://www.w3.org/2000/svg">` +
+    `<rect x="0" y="0" width="${pillWidth}" height="${pillHeight}" rx="${radius}" ry="${radius}" fill="${bgColor}" opacity="${bgOpacity}"/>` +
+    `<g transform="translate(${bitmapX}, ${bitmapY})">${bitmapRects}</g>` +
+    `</svg>`;
 
   return Buffer.from(svg);
 }
