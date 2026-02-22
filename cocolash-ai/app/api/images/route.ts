@@ -32,7 +32,7 @@ export async function GET(request: NextRequest) {
       .select("*", { count: "exact" });
 
     // Apply filters
-    if (category && ["lash-closeup", "lifestyle", "product"].includes(category)) {
+    if (category && ["lash-closeup", "lifestyle", "product", "before-after", "application-process"].includes(category)) {
       query = query.eq("category", category);
     }
 

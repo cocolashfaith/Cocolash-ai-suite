@@ -17,7 +17,8 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { ImageLightbox } from "@/components/ui/image-lightbox";
 import { ExportForPlatform } from "./ExportForPlatform";
-import type { GeneratedImage } from "@/lib/types";
+import { SaveTemplateDialog } from "./SaveTemplateDialog";
+import type { GeneratedImage, GenerationSelections } from "@/lib/types";
 
 interface ImagePreviewProps {
   image: GeneratedImage;
@@ -29,6 +30,10 @@ interface ImagePreviewProps {
   beforeImage?: GeneratedImage;
   /** The side-by-side composite image URL (Phase 2.4) */
   compositeImageUrl?: string;
+  /** Current form selections, for saving as a template */
+  selections?: GenerationSelections;
+  /** Callback after a template is saved */
+  onTemplateSaved?: () => void;
 }
 
 export function ImagePreview({
@@ -38,6 +43,8 @@ export function ImagePreview({
   onRegenerate,
   beforeImage,
   compositeImageUrl,
+  selections,
+  onTemplateSaved,
 }: ImagePreviewProps) {
   const [showPrompt, setShowPrompt] = useState(false);
   const [lightboxSrc, setLightboxSrc] = useState<string | null>(null);
@@ -331,6 +338,17 @@ export function ImagePreview({
           New Settings
         </Button>
       </div>
+
+      {/* Save template button */}
+      {selections && (
+        <div className="flex justify-center">
+          <SaveTemplateDialog
+            selections={selections}
+            thumbnailUrl={image.image_url}
+            onSaved={onTemplateSaved}
+          />
+        </div>
+      )}
 
       {/* Export for platform */}
       {!image.is_composite && (

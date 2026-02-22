@@ -5,6 +5,7 @@ import { Sparkles } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
 
+import { SavedTemplatesRow } from "./SavedTemplatesRow";
 import { CategorySelector } from "./CategorySelector";
 import { ProductSubCategorySelector } from "./ProductSubCategorySelector";
 import { SkinToneSelector } from "./SkinToneSelector";
@@ -77,6 +78,7 @@ export function GenerateForm() {
   const [compositeImageUrl, setCompositeImageUrl] = useState<string | null>(null);
   const [generationTime, setGenerationTime] = useState(0);
   const [error, setError] = useState<GenerateErrorResponse | null>(null);
+  const [templateRefreshKey, setTemplateRefreshKey] = useState(0);
 
   // Update individual fields
   const update = useCallback(
@@ -163,6 +165,24 @@ export function GenerateForm() {
     setGenerationTime(0);
   };
 
+  // Load a saved template into the form
+  const handleLoadTemplate = useCallback(
+    (templateSelections: GenerationSelections) => {
+      setSelections(templateSelections);
+      setGeneratedImage(null);
+      setBeforeImage(null);
+      setCompositeImageUrl(null);
+      setError(null);
+      setGenerationTime(0);
+    },
+    []
+  );
+
+  // Refresh the templates row after saving
+  const handleTemplateSaved = useCallback(() => {
+    setTemplateRefreshKey((k) => k + 1);
+  }, []);
+
   return (
     <>
       {/* Generation progress overlay */}
@@ -172,6 +192,12 @@ export function GenerateForm() {
         includeComposite={selections.includeComposite}
         resolution={selections.resolution}
         composition={selections.composition}
+      />
+
+      {/* Saved templates quick-select row */}
+      <SavedTemplatesRow
+        onSelect={handleLoadTemplate}
+        refreshKey={templateRefreshKey}
       />
 
       <div className="grid gap-8 lg:grid-cols-[1fr_400px]">
@@ -394,6 +420,8 @@ export function GenerateForm() {
               onRegenerate={handleGenerate}
               beforeImage={beforeImage || undefined}
               compositeImageUrl={compositeImageUrl || undefined}
+              selections={selections}
+              onTemplateSaved={handleTemplateSaved}
             />
           )}
 

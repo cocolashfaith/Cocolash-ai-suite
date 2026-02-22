@@ -2,16 +2,17 @@
 
 import { useState } from "react";
 import Image from "next/image";
-import { Heart, Layers, Clock, Columns2, Info } from "lucide-react";
+import { Layers, Clock, Columns2, Info } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { ImageLoader } from "@/components/ui/image-loader";
+import { FavoriteButton } from "@/components/gallery/FavoriteButton";
 import type { GeneratedImage } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
 interface ImageCardProps {
   image: GeneratedImage;
   onClick: () => void;
-  onFavoriteToggle: () => void;
+  onFavoriteToggle: (id: string, newValue: boolean) => void;
   onDetailsClick?: () => void;
 }
 
@@ -95,24 +96,16 @@ export function ImageCard({ image, onClick, onFavoriteToggle, onDetailsClick }: 
         )}
 
         {/* Favorite button */}
-        <button
-          type="button"
-          onClick={(e) => {
-            e.stopPropagation();
-            onFavoriteToggle();
-          }}
-          className={cn(
-            "flex h-7 w-7 items-center justify-center rounded-full backdrop-blur-sm transition-all",
-            image.is_favorite
-              ? "bg-red-500/90 text-white"
-              : "bg-white/80 text-coco-brown-medium opacity-0 group-hover:opacity-100 hover:bg-red-50 hover:text-red-500"
-          )}
-        >
-          <Heart
-            className="h-3.5 w-3.5"
-            fill={image.is_favorite ? "currentColor" : "none"}
+        <div className={cn(
+          image.is_favorite ? "" : "opacity-0 group-hover:opacity-100 transition-opacity"
+        )}>
+          <FavoriteButton
+            imageId={image.id}
+            isFavorite={image.is_favorite}
+            onToggle={onFavoriteToggle}
+            size="sm"
           />
-        </button>
+        </div>
       </div>
 
       {/* Footer info */}

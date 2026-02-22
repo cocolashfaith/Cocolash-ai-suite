@@ -8,7 +8,6 @@ import {
   X,
   ChevronDown,
   ChevronUp,
-  Heart,
   Clock,
   Layers,
   Ratio,
@@ -22,6 +21,7 @@ import {
 } from "@/components/ui/dialog";
 import { ImageLightbox } from "@/components/ui/image-lightbox";
 import { ExportForPlatform } from "@/components/generate/ExportForPlatform";
+import { FavoriteButton } from "@/components/gallery/FavoriteButton";
 import type { GeneratedImage } from "@/lib/types";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
@@ -31,7 +31,7 @@ interface ImageModalProps {
   isOpen: boolean;
   onClose: () => void;
   onDelete: (id: string) => void;
-  onFavoriteToggle: (id: string) => void;
+  onFavoriteToggle: (id: string, newValue?: boolean) => void;
 }
 
 export function ImageModal({
@@ -169,20 +169,13 @@ export function ImageModal({
               <Download className="h-4 w-4" />
               Download
             </Button>
-            <Button
-              variant="outline"
-              onClick={() => onFavoriteToggle(image.id)}
-              className={cn(
-                "gap-2 border-coco-brown-medium/20",
-                image.is_favorite && "text-red-500"
-              )}
-            >
-              <Heart
-                className="h-4 w-4"
-                fill={image.is_favorite ? "currentColor" : "none"}
-              />
-              {image.is_favorite ? "Favorited" : "Favorite"}
-            </Button>
+            <FavoriteButton
+              imageId={image.id}
+              isFavorite={image.is_favorite}
+              onToggle={(id, newVal) => onFavoriteToggle(id, newVal)}
+              size="md"
+              variant="button"
+            />
             <Button
               variant="outline"
               onClick={handleDelete}

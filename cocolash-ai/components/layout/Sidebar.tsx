@@ -6,6 +6,7 @@ import { cn } from "@/lib/utils";
 import {
   Sparkles,
   Images,
+  Heart,
   Settings,
   LogOut,
   Loader2,
@@ -35,6 +36,12 @@ const navItems = [
     href: "/gallery",
     icon: Images,
     description: "View generated images",
+  },
+  {
+    label: "Favorites",
+    href: "/favorites",
+    icon: Heart,
+    description: "Your saved favorite images",
   },
   {
     label: "Settings",
