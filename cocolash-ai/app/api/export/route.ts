@@ -209,6 +209,7 @@ OUTPUT: A single clean image at ${targetAspectRatio} aspect ratio that preserves
     // 9. Insert the export record into the database
     const exportRecord = {
       brand_id: original.brand_id,
+      user_id: original.user_id || null,
       prompt_used: `[EXPORT ${original.aspect_ratio} → ${targetAspectRatio}] ${reformatPrompt}`,
       selections: {
         ...original.selections,

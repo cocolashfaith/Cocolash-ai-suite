@@ -277,8 +277,10 @@ export async function POST(request: NextRequest) {
     const body = await request.json();
     const selections = validateSelections(body);
 
-    // 2. Get Supabase client
+    // 2. Get Supabase client + resolve user_id (null for legacy cookie auth)
     const supabase = await createClient();
+    const { data: { user: supabaseUser } } = await supabase.auth.getUser();
+    const userId = supabaseUser?.id || null;
 
     // 3. Fetch brand profile for prompt overrides and logo URLs
     const { data: brandProfile, error: brandError } = await supabase
@@ -472,6 +474,7 @@ export async function POST(request: NextRequest) {
       // Insert both image records (time recorded before optional compositor step)
       const baseRecord = {
         brand_id: brandId,
+        user_id: userId,
         selections,
         aspect_ratio: selections.aspectRatio,
         category: selections.category as string,
@@ -685,6 +688,7 @@ export async function POST(request: NextRequest) {
 
     const imageRecord = {
       brand_id: brandId,
+      user_id: userId,
       prompt_used: composed.fullPrompt,
       selections: selections,
       image_url: finalImageUrl,

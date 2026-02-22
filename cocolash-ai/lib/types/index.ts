@@ -262,6 +262,7 @@ export interface GenerationSelections {
 export interface GeneratedImage {
   id: string;
   brand_id: string;
+  user_id: string | null;
   prompt_used: string;
   selections: GenerationSelections;
   image_url: string;
@@ -276,10 +277,10 @@ export interface GeneratedImage {
   gemini_model: string;
   is_favorite: boolean;
   tags: string[] | null;
-  seasonal_preset_id: string | null; // [M2] Reference to seasonal_presets
-  group_count: number | null; // [M2] Number of people in group shots
-  diversity_selections: GroupDiversitySelections | null; // [M2] Group diversity config
-  is_composite: boolean; // [M2] True for side-by-side composite images
+  seasonal_preset_id: string | null;
+  group_count: number | null;
+  diversity_selections: GroupDiversitySelections | null;
+  is_composite: boolean;
   created_at: string;
 }
 
@@ -301,6 +302,20 @@ export interface BrandProfile {
   logo_dark_url: string | null;
   logo_gold_url: string | null;
   product_image_urls: string[];
+  created_at: string;
+  updated_at: string;
+}
+
+// ── Saved Prompt Template (database record) ───────────────────
+export interface SavedPrompt {
+  id: string;
+  brand_id: string;
+  user_id: string | null;
+  name: string;
+  selections: GenerationSelections;
+  category: ContentCategory;
+  thumbnail_url: string | null;
+  use_count: number;
   created_at: string;
   updated_at: string;
 }

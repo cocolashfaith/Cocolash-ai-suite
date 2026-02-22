@@ -1,11 +1,15 @@
 import { NextRequest, NextResponse } from "next/server";
+import { createClient } from "@/lib/supabase/server";
 
 /**
- * POST /api/auth — Password-based authentication
+ * POST /api/auth — Legacy password-based authentication
  *
  * Validates the provided password against AUTH_PASSWORD env var.
  * On success, sets a httpOnly `cocolash-auth` cookie (30-day expiry).
  * On failure, returns 401.
+ *
+ * Note: Supabase email auth uses signInWithPassword on the client
+ * and doesn't hit this route.
  */
 export async function POST(request: NextRequest) {
   try {
@@ -36,7 +40,6 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Password correct — set auth cookie
     const authToken = process.env.AUTH_TOKEN;
 
     if (!authToken) {
@@ -52,13 +55,12 @@ export async function POST(request: NextRequest) {
       { status: 200 }
     );
 
-    // Set httpOnly cookie with 30-day expiry
     response.cookies.set("cocolash-auth", authToken, {
       httpOnly: true,
       secure: process.env.NODE_ENV === "production",
       sameSite: "lax",
       path: "/",
-      maxAge: 60 * 60 * 24 * 30, // 30 days
+      maxAge: 60 * 60 * 24 * 30,
     });
 
     return response;
@@ -73,9 +75,16 @@ export async function POST(request: NextRequest) {
 /**
  * DELETE /api/auth — Logout
  *
- * Clears the auth cookie and returns success.
+ * Signs out of both Supabase Auth AND clears the legacy cookie.
  */
 export async function DELETE() {
+  try {
+    const supabase = await createClient();
+    await supabase.auth.signOut();
+  } catch {
+    // Supabase signout may fail if no session — that's fine
+  }
+
   const response = NextResponse.json(
     { success: true, message: "Logged out" },
     { status: 200 }
@@ -86,7 +95,7 @@ export async function DELETE() {
     secure: process.env.NODE_ENV === "production",
     sameSite: "lax",
     path: "/",
-    maxAge: 0, // Expire immediately
+    maxAge: 0,
   });
 
   return response;

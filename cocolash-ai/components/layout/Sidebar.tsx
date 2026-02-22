@@ -11,6 +11,7 @@ import {
   Loader2,
 } from "lucide-react";
 import { useState } from "react";
+import { createClient } from "@/lib/supabase/client";
 import {
   Tooltip,
   TooltipContent,
@@ -51,6 +52,8 @@ export function Sidebar() {
   const handleLogout = async () => {
     setIsLoggingOut(true);
     try {
+      const supabase = createClient();
+      await supabase.auth.signOut();
       await fetch("/api/auth", { method: "DELETE" });
       router.push("/login");
       router.refresh();

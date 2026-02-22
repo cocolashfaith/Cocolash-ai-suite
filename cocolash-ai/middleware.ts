@@ -1,55 +1,52 @@
 import { NextResponse, type NextRequest } from "next/server";
+import { updateSession } from "@/lib/supabase/middleware";
 
 /**
  * CocoLash AI — Auth Middleware
  *
- * Simple cookie-based authentication for M1-M2.
- * Checks for a valid `cocolash-auth` cookie on every request.
- * If missing or invalid, redirects to /login.
+ * Dual-auth strategy (M3 upgrade):
+ *   1. Supabase Auth — checks for a valid Supabase session via @supabase/ssr
+ *   2. Cookie fallback — checks `cocolash-auth` cookie (password-based, M1-M2 legacy)
  *
- * Excluded paths: /login, /api/auth, _next/*, favicon, public assets
+ * A user is considered authenticated if EITHER method succeeds.
+ * This allows the existing password login to keep working while
+ * transitioning to Supabase Auth (email/password).
  */
-export function middleware(request: NextRequest) {
+export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
-  // Allow these paths without auth
-  const publicPaths = ["/login", "/api/auth"];
+  const publicPaths = ["/login", "/api/auth", "/auth"];
   const isPublicPath = publicPaths.some((path) => pathname.startsWith(path));
 
-  if (isPublicPath) {
-    // If user is already authenticated and tries to visit /login, redirect to /generate
-    if (pathname.startsWith("/login")) {
-      const authCookie = request.cookies.get("cocolash-auth")?.value;
-      const expectedToken = process.env.AUTH_TOKEN;
+  // Refresh Supabase session on every request (keeps tokens fresh)
+  const { supabaseResponse, user: supabaseUser } =
+    await updateSession(request);
 
-      if (authCookie && expectedToken && authCookie === expectedToken) {
-        return NextResponse.redirect(new URL("/generate", request.url));
-      }
-    }
-    return NextResponse.next();
-  }
-
-  // Check auth cookie
+  // Check legacy cookie auth
   const authCookie = request.cookies.get("cocolash-auth")?.value;
   const expectedToken = process.env.AUTH_TOKEN;
+  const hasLegacyCookie =
+    !!authCookie && !!expectedToken && authCookie === expectedToken;
 
-  if (!authCookie || !expectedToken || authCookie !== expectedToken) {
+  const isAuthenticated = !!supabaseUser || hasLegacyCookie;
+
+  if (isPublicPath) {
+    if (pathname.startsWith("/login") && isAuthenticated) {
+      return NextResponse.redirect(new URL("/generate", request.url));
+    }
+    return supabaseResponse;
+  }
+
+  if (!isAuthenticated) {
     const loginUrl = new URL("/login", request.url);
     return NextResponse.redirect(loginUrl);
   }
 
-  return NextResponse.next();
+  return supabaseResponse;
 }
 
 export const config = {
   matcher: [
-    /*
-     * Match all request paths EXCEPT:
-     * - _next/static (static files)
-     * - _next/image (image optimization)
-     * - favicon.ico
-     * - public assets (svg, png, jpg, jpeg, gif, webp, ico)
-     */
     "/((?!_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp|ico)$).*)",
   ],
 };
