@@ -6,16 +6,17 @@
  * Example:
  *   node scripts/upload-category-images.mjs single-black-tray /path/to/img1.png /path/to/img2.png
  */
+import { config } from "dotenv";
+config({ path: ".env.local" });
 import { createClient } from "@supabase/supabase-js";
 import fs from "fs";
 import path from "path";
 import crypto from "crypto";
 
-const SUPABASE_URL = "https://exkdmmxbrsgefpciyqkz.supabase.co";
-const SUPABASE_ANON_KEY =
-  "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImV4a2RtbXhicnNnZWZwY2l5cWt6Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzA4MDMxOTUsImV4cCI6MjA4NjM3OTE5NX0.kkB0K-IdTqcsCww4x8XOavL801kzZ2KwU7BQyVRNdf0";
-
-const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+const supabase = createClient(
+  process.env.NEXT_PUBLIC_SUPABASE_URL,
+  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
+);
 
 const categoryKey = process.argv[2];
 const imagePaths = process.argv.slice(3);

@@ -4,14 +4,16 @@
  *
  * Usage: node scripts/upload-products.mjs
  */
+import { config } from "dotenv";
+config({ path: ".env.local" });
 import { createClient } from "@supabase/supabase-js";
 import fs from "fs";
 import path from "path";
 
-const SUPABASE_URL = "https://exkdmmxbrsgefpciyqkz.supabase.co";
-const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImV4a2RtbXhicnNnZWZwY2l5cWt6Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzA4MDMxOTUsImV4cCI6MjA4NjM3OTE5NX0.kkB0K-IdTqcsCww4x8XOavL801kzZ2KwU7BQyVRNdf0";
-
-const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+const supabase = createClient(
+  process.env.NEXT_PUBLIC_SUPABASE_URL,
+  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
+);
 
 const ASSETS_DIR = "/Users/harry/.cursor/projects/Users-harry-Documents-Working-Projects-Faith-Project-CODE/assets";
 
