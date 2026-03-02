@@ -92,6 +92,34 @@ function calculatePosition(
   }
 }
 
+// ── Pre-multiply Alpha ──────────────────────────────────────
+/**
+ * Zeroes out RGB channels on fully-transparent pixels to prevent
+ * colour fringing when the logo is downscaled. Without this, sharp's
+ * resize interpolation blends the hidden RGB values of transparent
+ * pixels into visible edges, creating a grey/white halo around text.
+ */
+async function cleanTransparentPixels(logoBuffer: Buffer): Promise<Buffer> {
+  const { data, info } = await sharp(logoBuffer)
+    .ensureAlpha()
+    .raw()
+    .toBuffer({ resolveWithObject: true });
+
+  for (let i = 0; i < data.length; i += 4) {
+    if (data[i + 3] === 0) {
+      data[i] = 0;
+      data[i + 1] = 0;
+      data[i + 2] = 0;
+    }
+  }
+
+  return sharp(data, {
+    raw: { width: info.width, height: info.height, channels: 4 },
+  })
+    .png()
+    .toBuffer();
+}
+
 // ── Main Overlay Function ────────────────────────────────────
 /**
  * Applies a logo overlay to the generated image.
@@ -109,7 +137,7 @@ export async function applyLogoOverlay(
     position = "bottom-right",
     opacity = 0.9,
     paddingPercent = 3,
-    sizePercent = 22,
+    sizePercent = 15,
   } = options;
 
   // 1. Get the base image metadata
@@ -123,22 +151,23 @@ export async function applyLogoOverlay(
   const imageWidth = metadata.width;
   const imageHeight = metadata.height;
 
-  // 2. Download and process the logo
-  const logoBuffer = await fetchLogoBuffer(logoUrl);
+  // 2. Download, clean, and process the logo
+  const rawLogoBuffer = await fetchLogoBuffer(logoUrl);
+  const logoBuffer = await cleanTransparentPixels(rawLogoBuffer);
 
-  // Calculate logo size as percentage of image width
   const targetLogoWidth = Math.round(imageWidth * (sizePercent / 100));
 
-  // Resize logo maintaining aspect ratio
+  // Resize with lanczos3 for crisp text, then sharpen to recover detail
   const resizedLogo = await sharp(logoBuffer)
     .resize(targetLogoWidth, null, {
       fit: "inside",
       withoutEnlargement: false,
+      kernel: sharp.kernel.lanczos3,
     })
-    .ensureAlpha() // Ensure logo has alpha channel
+    .sharpen({ sigma: 0.5 })
+    .ensureAlpha()
     .toBuffer();
 
-  // Get resized logo dimensions
   const logoMeta = await sharp(resizedLogo).metadata();
   const logoWidth = logoMeta.width || targetLogoWidth;
   const logoHeight = logoMeta.height || targetLogoWidth;
@@ -146,7 +175,6 @@ export async function applyLogoOverlay(
   // 3. Apply opacity to the logo
   let processedLogo: Buffer;
   if (opacity < 1) {
-    // Multiply the alpha channel by opacity
     processedLogo = await sharp(resizedLogo)
       .ensureAlpha()
       .composite([
@@ -175,11 +203,9 @@ export async function applyLogoOverlay(
   );
 
   // 5. Composite logo onto base image
-  // Use JPEG for large images (>4MB input) to avoid exceeding storage limits.
-  // PNG is lossless but massive for high-res images; JPEG at quality 95 is visually identical.
   const usePng = imageBuffer.length < 4 * 1024 * 1024;
 
-  let resultPipeline = sharp(imageBuffer)
+  const resultPipeline = sharp(imageBuffer)
     .composite([
       {
         input: processedLogo,

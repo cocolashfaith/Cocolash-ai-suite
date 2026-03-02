@@ -3,7 +3,6 @@
  *
  * Generates medium-shot portrait / lifestyle photography.
  * Persona-driven, considers scene, vibe, composition, and outfit.
- * Includes negative space instruction for logo overlay.
  *
  * M2: Added group composition support with per-person diversity descriptions.
  */
@@ -49,8 +48,8 @@ export function buildLifestylePrompt(
   ];
   const outfit = outfitSuggestions[Math.floor(Math.random() * outfitSuggestions.length)];
 
-  const logoSpaceInstruction = selections.logoOverlay.enabled
-    ? `\n\nLOGO SPACE: Leave intentional negative space in the ${selections.logoOverlay.position?.replace("-", " ") || "bottom right"} area of the image for logo overlay. Keep this area clean — no important subject elements there.`
+  const negativeSpaceHint = selections.logoOverlay.enabled
+    ? `\n\nCOMPOSITION NOTE: Keep the ${selections.logoOverlay.position?.replace("-", " ") || "bottom right"} corner relatively clear — avoid placing important subject elements there.`
     : "";
 
   // ── Group Composition ─────────────────────────────────────
@@ -73,7 +72,7 @@ FRAMING: Wide to medium group shot. All ${groupDiversity.groupCount} women clear
 
 STYLING: CocoLash brand colors present in the scene — warm pinks, beiges, browns, and golden accents woven naturally into wardrobe, props, or environment.
 
-LIGHTING: Warm diffused lighting (3500K-4200K), soft and flattering. Even illumination on ALL faces — no one in shadow.${logoSpaceInstruction}${selections.contextNote ? `\n\nCONTEXT NOTE: ${selections.contextNote}` : ""}`;
+LIGHTING: Warm diffused lighting (3500K-4200K), soft and flattering. Even illumination on ALL faces — no one in shadow.${negativeSpaceHint}${selections.contextNote ? `\n\nCONTEXT NOTE: ${selections.contextNote}` : ""}`;
   }
 
   // ── Solo / Duo Composition ────────────────────────────────
@@ -97,5 +96,5 @@ FRAMING: Medium shot from waist up. Rule of thirds composition. Sharp focus on t
 
 STYLING: CocoLash brand colors present in the scene — warm pinks, beiges, browns, and golden accents woven naturally into wardrobe, props, or environment.
 
-LIGHTING: Warm diffused lighting (3500K-4200K), soft and flattering. Natural-looking with gentle directional light creating depth.${logoSpaceInstruction}${selections.contextNote ? `\n\nCONTEXT NOTE: ${selections.contextNote}` : ""}`;
+LIGHTING: Warm diffused lighting (3500K-4200K), soft and flattering. Natural-looking with gentle directional light creating depth.${negativeSpaceHint}${selections.contextNote ? `\n\nCONTEXT NOTE: ${selections.contextNote}` : ""}`;
 }

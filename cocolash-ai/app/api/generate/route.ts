@@ -145,7 +145,7 @@ function validateSelections(body: unknown): GenerationSelections {
     variant: (logoData.variant as string) || "white",
     opacity: typeof logoData.opacity === "number" ? logoData.opacity : 0.9,
     paddingPercent: typeof logoData.paddingPercent === "number" ? logoData.paddingPercent : 3,
-    sizePercent: typeof logoData.sizePercent === "number" ? logoData.sizePercent : 22,
+    sizePercent: typeof logoData.sizePercent === "number" ? logoData.sizePercent : 15,
   } as GenerationSelections["logoOverlay"];
 
   // Product sub-category (required when category is "product")

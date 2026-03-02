@@ -164,8 +164,8 @@ export function buildProductPrompt(
   ];
   const props = propSuggestions[Math.floor(Math.random() * propSuggestions.length)];
 
-  const logoSpaceInstruction = selections.logoOverlay.enabled
-    ? `\n\nLOGO SPACE: Leave intentional negative space in the ${selections.logoOverlay.position?.replace("-", " ") || "bottom right"} area of the image for logo overlay.`
+  const negativeSpaceHint = selections.logoOverlay.enabled
+    ? `\n\nCOMPOSITION NOTE: Keep the ${selections.logoOverlay.position?.replace("-", " ") || "bottom right"} corner relatively clear — avoid placing important product elements there.`
     : "";
 
   // ── Category-Specific Prompt ────────────────────────────────
@@ -199,5 +199,5 @@ COLOR PALETTE: Warm brand colors throughout — soft pinks (#ead1c1), creamy bei
 
 QUALITY: 8K commercial product photography quality. Ultra-sharp product detail. Professional color grading. Clean, magazine-worthy composition.
 
-STYLE: Aspirational luxury — the kind of product image that makes you want to own it. Think Glossier meets Tom Ford meets Black-owned luxury brand.${logoSpaceInstruction}${selections.contextNote ? `\n\nCONTEXT NOTE: ${selections.contextNote}` : ""}`;
+STYLE: Aspirational luxury — the kind of product image that makes you want to own it. Think Glossier meets Tom Ford meets Black-owned luxury brand.${negativeSpaceHint}${selections.contextNote ? `\n\nCONTEXT NOTE: ${selections.contextNote}` : ""}`;
 }
