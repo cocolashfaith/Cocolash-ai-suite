@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback } from "react";
 import { BrandProfileForm } from "@/components/settings/BrandProfileForm";
 import { LogoUploader } from "@/components/settings/LogoUploader";
 import { ProductCategoryManager } from "@/components/settings/ProductCategoryManager";
+import { HashtagManager } from "@/components/settings/HashtagManager";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Settings, AlertCircle } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -150,6 +151,9 @@ export default function SettingsPage() {
 
       {/* Product Reference Images — Category-based */}
       <ProductCategoryManager />
+
+      {/* Hashtag Database — Upgrade 1 */}
+      <HashtagManager />
 
       {/* Brand Profile Form */}
       <BrandProfileForm

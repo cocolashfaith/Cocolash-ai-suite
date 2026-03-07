@@ -351,3 +351,131 @@ export interface DiversityRecord {
   age_range: string | null;
   used_at: string;
 }
+
+// ═══════════════════════════════════════════════════════════════
+// UPGRADE 1 — System 1: AI Caption & Publishing Engine
+// ═══════════════════════════════════════════════════════════════
+
+// ── Caption Styles ────────────────────────────────────────────
+export type CaptionStyle =
+  | "casual"
+  | "professional"
+  | "promotional"
+  | "storytelling"
+  | "question";
+
+// ── Social Platforms ──────────────────────────────────────────
+export type Platform =
+  | "instagram"
+  | "tiktok"
+  | "twitter"
+  | "facebook"
+  | "linkedin";
+
+// ── Post Status ───────────────────────────────────────────────
+export type PostStatus = "draft" | "scheduled" | "published" | "failed";
+
+// ── Hashtag (database record) ─────────────────────────────────
+export interface Hashtag {
+  id: string;
+  tag: string;
+  category: string;
+  sub_category: string | null;
+  platform: Platform[];
+  popularity_score: number;
+  is_branded: boolean;
+  is_active: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+// ── Caption (database record) ─────────────────────────────────
+export interface Caption {
+  id: string;
+  image_id: string;
+  platform: Platform;
+  caption_text: string;
+  caption_style: CaptionStyle;
+  hashtags: string[];
+  character_count: number;
+  generated_at: string;
+  is_selected: boolean;
+}
+
+// ── Scheduled Post (database record) ──────────────────────────
+export interface ScheduledPost {
+  id: string;
+  image_id: string;
+  caption_id: string | null;
+  platform: Platform;
+  blotato_post_id: string | null;
+  blotato_account_id: string | null;
+  status: PostStatus;
+  scheduled_time: string | null;
+  published_time: string | null;
+  error_message: string | null;
+  created_at: string;
+}
+
+// ── Social Account (database record) ──────────────────────────
+export interface SocialAccount {
+  id: string;
+  blotato_account_id: string;
+  platform: Platform;
+  account_name: string | null;
+  account_handle: string | null;
+  profile_image_url: string | null;
+  is_active: boolean;
+  last_synced_at: string;
+}
+
+// ── Caption Settings (database record) ────────────────────────
+export interface CaptionSettings {
+  id: string;
+  brand_voice_prompt: string | null;
+  default_style: CaptionStyle;
+  always_include_hashtags: string[];
+  never_include_hashtags: string[];
+  default_cta: string | null;
+  blotato_api_key: string | null;
+  updated_at: string;
+}
+
+// ── Caption Generation API Types ──────────────────────────────
+
+export interface CaptionGenerateRequest {
+  imageId: string;
+  style: CaptionStyle;
+  platforms: Platform[];
+  customNote?: string;
+}
+
+export interface CaptionVariation {
+  text: string;
+  style_match: number;
+  hashtags: string[];
+  character_count: number;
+  is_within_limit: boolean;
+}
+
+export interface CaptionPlatformResult {
+  platform: Platform;
+  captions: CaptionVariation[];
+}
+
+export interface CaptionGenerateResponse {
+  success: boolean;
+  results: CaptionPlatformResult[];
+}
+
+/** Context derived from a generated image's selections, used for caption/hashtag generation */
+export interface ImageContext {
+  category: ContentCategory;
+  lashStyle: LashStyle;
+  vibe: Vibe;
+  scene: Scene;
+  skinTone: SkinTone;
+  seasonal: string | null;
+  composition: Composition;
+  productSubCategory?: ProductCategoryKey;
+}
