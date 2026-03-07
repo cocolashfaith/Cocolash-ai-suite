@@ -23,6 +23,7 @@ import { DiversityControls } from "./DiversityControls";
 import { ApplicationStepSelector } from "./ApplicationStepSelector";
 import { GenerationProgress } from "./GenerationProgress";
 import { ImagePreview } from "./ImagePreview";
+import { CaptionGenerator } from "./CaptionGenerator";
 import { ErrorDisplay } from "./ErrorDisplay";
 
 import type {
@@ -413,16 +414,25 @@ export function GenerateForm() {
           )}
 
           {generatedImage && (
-            <ImagePreview
-              image={generatedImage}
-              generationTimeMs={generationTime}
-              onGenerateAnother={handleGenerateAnother}
-              onRegenerate={handleGenerate}
-              beforeImage={beforeImage || undefined}
-              compositeImageUrl={compositeImageUrl || undefined}
-              selections={selections}
-              onTemplateSaved={handleTemplateSaved}
-            />
+            <>
+              <ImagePreview
+                image={generatedImage}
+                generationTimeMs={generationTime}
+                onGenerateAnother={handleGenerateAnother}
+                onRegenerate={handleGenerate}
+                beforeImage={beforeImage || undefined}
+                compositeImageUrl={compositeImageUrl || undefined}
+                selections={selections}
+                onTemplateSaved={handleTemplateSaved}
+              />
+
+              <div className="mt-4">
+                <CaptionGenerator
+                  imageId={generatedImage.id}
+                  imageUrl={generatedImage.image_url}
+                />
+              </div>
+            </>
           )}
 
           {!generatedImage && !error && (
