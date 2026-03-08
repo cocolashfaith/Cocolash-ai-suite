@@ -6,6 +6,7 @@ import { LogoUploader } from "@/components/settings/LogoUploader";
 import { ProductCategoryManager } from "@/components/settings/ProductCategoryManager";
 import { HashtagManager } from "@/components/settings/HashtagManager";
 import { SocialAccountsManager } from "@/components/settings/SocialAccountsManager";
+import { CaptionSettingsForm } from "@/components/settings/CaptionSettingsForm";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Settings, AlertCircle } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -152,6 +153,9 @@ export default function SettingsPage() {
 
       {/* Social Publishing — Blotato Connection + Accounts (Upgrade 1) */}
       <SocialAccountsManager />
+
+      {/* Caption Settings — Brand Voice & Preferences (Upgrade 1) */}
+      <CaptionSettingsForm />
 
       {/* Product Reference Images — Category-based */}
       <ProductCategoryManager />
