@@ -6,7 +6,7 @@
  * to rotate through underrepresented combinations.
  */
 import { SupabaseClient } from "@supabase/supabase-js";
-import type { SkinTone, HairStyle } from "@/lib/types";
+import type { SkinTone, HairStyle, Ethnicity } from "@/lib/types";
 
 /** Number of recent records to consider for rotation. */
 const RECENT_WINDOW = 20;
@@ -47,13 +47,15 @@ export async function recordDiversitySelection(
   brandId: string,
   skinTone: Exclude<SkinTone, "random">,
   hairStyle: Exclude<HairStyle, "random">,
-  ageRange?: string
+  ageRange?: string,
+  ethnicity?: Exclude<Ethnicity, "random">
 ): Promise<void> {
   const { error } = await supabase.from("diversity_tracker").insert({
     brand_id: brandId,
     skin_tone: skinTone,
     hair_style: hairStyle,
     age_range: ageRange || null,
+    ethnicity: ethnicity || null,
   });
 
   if (error) {

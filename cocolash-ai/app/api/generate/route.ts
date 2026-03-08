@@ -515,7 +515,9 @@ export async function POST(request: NextRequest) {
         supabase,
         brandId,
         composedBA.resolvedSelections.skinTone,
-        composedBA.resolvedSelections.hairStyle
+        composedBA.resolvedSelections.hairStyle,
+        undefined,
+        composedBA.resolvedSelections.ethnicity
       );
 
       // STAGE 3 (optional): Create side-by-side composite if toggle is ON
@@ -723,7 +725,9 @@ export async function POST(request: NextRequest) {
       supabase,
       brandId,
       composed.resolvedSelections.skinTone,
-      composed.resolvedSelections.hairStyle
+      composed.resolvedSelections.hairStyle,
+      undefined,
+      composed.resolvedSelections.ethnicity
     );
 
     console.log(`[Generate] Complete in ${generationTimeMs}ms`);

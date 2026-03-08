@@ -9,6 +9,8 @@ import { SavedTemplatesRow } from "./SavedTemplatesRow";
 import { CategorySelector } from "./CategorySelector";
 import { ProductSubCategorySelector } from "./ProductSubCategorySelector";
 import { SkinToneSelector } from "./SkinToneSelector";
+import { EthnicitySelector } from "./EthnicitySelector";
+import { AgeRangeSelector } from "./AgeRangeSelector";
 import { LashStyleSelector } from "./LashStyleSelector";
 import { HairStyleSelector } from "./HairStyleSelector";
 import { SceneSelector } from "./SceneSelector";
@@ -32,6 +34,8 @@ import type {
   ProductCategoryKey,
   ApplicationStep,
   SkinTone,
+  Ethnicity,
+  SoloDuoAgeRange,
   LashStyle,
   HairStyle,
   Scene,
@@ -281,13 +285,30 @@ export function GenerateForm() {
             onChange={(v: SeasonalSelection) => update("seasonal", v)}
           />
 
-          {/* Skin Tone (for human-featuring categories) */}
+          {/* Ethnicity (for human-featuring categories) */}
+          {selections.category !== "product" && (
+            <EthnicitySelector
+              value={selections.ethnicity ?? "random"}
+              onChange={(v: Ethnicity) => update("ethnicity", v)}
+            />
+          )}
+
+          {/* Skin Tone (for human-featuring categories — most relevant for African American) */}
           {selections.category !== "product" && (
             <SkinToneSelector
               value={selections.skinTone}
               onChange={(v: SkinTone) => update("skinTone", v)}
             />
           )}
+
+          {/* Age Range (solo/duo only, for human-featuring categories) */}
+          {selections.category !== "product" &&
+            selections.composition !== "group" && (
+              <AgeRangeSelector
+                value={selections.ageRange ?? "random"}
+                onChange={(v: SoloDuoAgeRange) => update("ageRange", v)}
+              />
+            )}
 
           {/* Lash Style */}
           <LashStyleSelector

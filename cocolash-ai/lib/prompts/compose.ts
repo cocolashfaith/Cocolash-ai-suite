@@ -18,6 +18,8 @@ import type {
   ApplicationStep,
   SeasonalSelection,
   GroupDiversitySelections,
+  Ethnicity,
+  SoloDuoAgeRange,
 } from "@/lib/types";
 import { getBrandDNA } from "./brand-dna";
 import { getSkinRealismDNA } from "./skin-realism";
@@ -32,6 +34,8 @@ import { SKIN_TONE_TIERS } from "./modules/skin-tones";
 import { ALL_HAIR_STYLES } from "./modules/hair-styles";
 import { ALL_SCENES, SCENES_BY_CATEGORY } from "./modules/scenes";
 import { ALL_VIBES } from "./modules/vibes";
+import { getEthnicityDescriptor, ALL_ETHNICITIES } from "./modules/ethnicity";
+import { getAgeRangeDescriptor, ALL_AGE_RANGES } from "./modules/age-range";
 
 // ── Types for the compose result ──────────────────────────────
 export interface ComposedPrompt {
@@ -45,6 +49,8 @@ export interface ComposedPrompt {
     hairStyle: Exclude<HairStyle, "random">;
     scene: Exclude<Scene, "random">;
     vibe: Exclude<Vibe, "random">;
+    ethnicity?: Exclude<Ethnicity, "random">;
+    ageRange?: Exclude<SoloDuoAgeRange, "random">;
   };
 }
 
@@ -119,6 +125,22 @@ function resolveVibe(selected: Vibe): Exclude<Vibe, "random"> {
   return pickRandom(ALL_VIBES);
 }
 
+function resolveEthnicity(
+  selected: Ethnicity | undefined
+): Exclude<Ethnicity, "random"> | undefined {
+  if (!selected) return undefined;
+  if (selected !== "random") return selected;
+  return pickRandom(ALL_ETHNICITIES);
+}
+
+function resolveAgeRange(
+  selected: SoloDuoAgeRange | undefined
+): Exclude<SoloDuoAgeRange, "random"> | undefined {
+  if (!selected) return undefined;
+  if (selected !== "random") return selected;
+  return pickRandom(ALL_AGE_RANGES);
+}
+
 // ── Master Compose Function ───────────────────────────────────
 
 /**
@@ -156,6 +178,8 @@ export function composePrompt(
   );
   const resolvedScene = resolveScene(selections.scene, selections.category);
   const resolvedVibe = resolveVibe(selections.vibe);
+  const resolvedEthnicity = resolveEthnicity(selections.ethnicity);
+  const resolvedAgeRange = resolveAgeRange(selections.ageRange);
 
   // 2. Build category-specific prompt
   let categoryPrompt: string;
@@ -240,13 +264,34 @@ export function composePrompt(
     }
   }
 
-  // 5. Assemble the final prompt
-  //    BRAND_DNA + [SKIN_REALISM] + CATEGORY_TEMPLATE + [SEASONAL_MODIFIER] + NEGATIVE
+  // 5. Build ethnicity and age range modifiers
+  let ethnicityModifier = "";
+  if (
+    resolvedEthnicity &&
+    resolvedEthnicity !== "african-american" &&
+    isHumanCategory
+  ) {
+    ethnicityModifier = `[ETHNICITY DIRECTIVE]: ${getEthnicityDescriptor(resolvedEthnicity)}`;
+  }
+
+  let ageRangeModifier = "";
+  if (resolvedAgeRange && isHumanCategory) {
+    ageRangeModifier = `[AGE RANGE]: Woman ${getAgeRangeDescriptor(resolvedAgeRange)}`;
+  }
+
+  // 6. Assemble the final prompt
+  //    BRAND_DNA + [SKIN_REALISM] + CATEGORY_TEMPLATE + [ETHNICITY] + [AGE] + [SEASONAL] + NEGATIVE
   const promptParts = [brandDNA];
   if (skinRealismDNA) {
     promptParts.push(skinRealismDNA);
   }
   promptParts.push(categoryPrompt);
+  if (ethnicityModifier) {
+    promptParts.push(ethnicityModifier);
+  }
+  if (ageRangeModifier) {
+    promptParts.push(ageRangeModifier);
+  }
   if (seasonalModifier) {
     promptParts.push(seasonalModifier);
   }
@@ -262,6 +307,8 @@ export function composePrompt(
       hairStyle: resolvedHairStyle,
       scene: resolvedScene,
       vibe: resolvedVibe,
+      ethnicity: resolvedEthnicity,
+      ageRange: resolvedAgeRange,
     },
   };
 }
@@ -288,6 +335,8 @@ export function composeBeforeAfterPrompts(
   );
   const resolvedScene = resolveScene(selections.scene, selections.category);
   const resolvedVibe = resolveVibe(selections.vibe);
+  const resolvedEthnicity = resolveEthnicity(selections.ethnicity);
+  const resolvedAgeRange = resolveAgeRange(selections.ageRange);
 
   // Build the Before/After category prompts
   const {
@@ -300,6 +349,16 @@ export function composeBeforeAfterPrompts(
   const brandDNA = getBrandDNA(options?.customBrandDNA);
   const skinRealismDNA = getSkinRealismDNA(options?.customSkinRealismPrompt);
   const negativePrompt = getSafeNegativePrompt(options?.customNegativePrompt);
+
+  // Ethnicity and age range modifiers
+  let ethnicityModifier = "";
+  if (resolvedEthnicity && resolvedEthnicity !== "african-american") {
+    ethnicityModifier = `[ETHNICITY DIRECTIVE]: ${getEthnicityDescriptor(resolvedEthnicity)}`;
+  }
+  let ageRangeModifier = "";
+  if (resolvedAgeRange) {
+    ageRangeModifier = `[AGE RANGE]: Woman ${getAgeRangeDescriptor(resolvedAgeRange)}`;
+  }
 
   // Seasonal modifier (optional)
   let seasonalModifier = "";
@@ -315,6 +374,8 @@ export function composeBeforeAfterPrompts(
     const parts = [brandDNA];
     if (skinRealismDNA) parts.push(skinRealismDNA);
     parts.push(categoryPrompt);
+    if (ethnicityModifier) parts.push(ethnicityModifier);
+    if (ageRangeModifier) parts.push(ageRangeModifier);
     if (seasonalModifier) parts.push(seasonalModifier);
     parts.push(`[NEGATIVE / AVOID]:\n${negativePrompt}`);
     return parts.join("\n\n");
@@ -329,6 +390,8 @@ export function composeBeforeAfterPrompts(
       hairStyle: resolvedHairStyle,
       scene: resolvedScene,
       vibe: resolvedVibe,
+      ethnicity: resolvedEthnicity,
+      ageRange: resolvedAgeRange,
     },
   };
 }

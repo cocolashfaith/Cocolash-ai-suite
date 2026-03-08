@@ -49,6 +49,21 @@ export interface GroupDiversitySelections {
   groupAction: GroupAction;
 }
 
+// ── Ethnicity (Upgrade 1 — Phase 1.10) ───────────────────────
+export type Ethnicity =
+  | "african-american"
+  | "east-asian"
+  | "south-asian"
+  | "indian"
+  | "latina"
+  | "middle-eastern"
+  | "caucasian"
+  | "mixed"
+  | "random";
+
+// ── Solo/Duo Age Range (Upgrade 1 — Phase 1.10) ─────────────
+export type SoloDuoAgeRange = "20s" | "30s" | "40s" | "50s-plus" | "random";
+
 // ── Image Resolution ──────────────────────────────────────────
 export type ImageResolution = "1K" | "2K" | "4K";
 
@@ -256,6 +271,8 @@ export interface GenerationSelections {
   groupDiversity?: GroupDiversitySelections; // [M2] Group shot diversity config
   applicationStep?: ApplicationStep; // [M2] Application Process step
   includeComposite?: boolean; // [M2] Before/After side-by-side composite toggle
+  ethnicity?: Ethnicity; // [U1] Ethnicity selector
+  ageRange?: SoloDuoAgeRange; // [U1] Age range for solo/duo
 }
 
 // ── Generated Image (database record) ─────────────────────────
