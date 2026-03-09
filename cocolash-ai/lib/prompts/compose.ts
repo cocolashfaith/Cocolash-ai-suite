@@ -181,12 +181,35 @@ export function composePrompt(
   const resolvedEthnicity = resolveEthnicity(selections.ethnicity);
   const resolvedAgeRange = resolveAgeRange(selections.ageRange);
 
-  // 2. Build category-specific prompt
+  // 2. Build ethnicity and age range descriptors for category builders
+  const isHumanCat =
+    selections.category === "lifestyle" ||
+    selections.category === "lash-closeup" ||
+    selections.category === "before-after" ||
+    selections.category === "application-process";
+
+  let ethnicityDesc: string | undefined;
+  if (resolvedEthnicity && isHumanCat) {
+    ethnicityDesc = getEthnicityDescriptor(resolvedEthnicity);
+  }
+
+  let ageRangeDesc: string | undefined;
+  if (resolvedAgeRange && isHumanCat) {
+    ageRangeDesc = getAgeRangeDescriptor(resolvedAgeRange);
+  }
+
+  // 3. Build category-specific prompt
   let categoryPrompt: string;
 
   switch (selections.category) {
     case "lash-closeup":
-      categoryPrompt = buildLashCloseupPrompt(selections, resolvedSkinTone);
+      categoryPrompt = buildLashCloseupPrompt(
+        selections,
+        resolvedSkinTone,
+        resolvedEthnicity,
+        ethnicityDesc,
+        ageRangeDesc
+      );
       break;
 
     case "lifestyle":
@@ -196,7 +219,10 @@ export function composePrompt(
         resolvedScene,
         resolvedVibe,
         resolvedHairStyle,
-        options?.groupDiversity ?? selections.groupDiversity ?? null
+        options?.groupDiversity ?? selections.groupDiversity ?? null,
+        resolvedEthnicity,
+        ethnicityDesc,
+        ageRangeDesc
       );
       break;
 
@@ -214,12 +240,13 @@ export function composePrompt(
       break;
 
     case "before-after":
-      // For single-prompt compose, return the "after" prompt
-      // Dual-prompt compose uses composeBeforeAfterPrompts() directly
       categoryPrompt = buildBeforeAfterPrompts(
         selections,
         resolvedSkinTone,
-        resolvedHairStyle
+        resolvedHairStyle,
+        resolvedEthnicity,
+        ethnicityDesc,
+        ageRangeDesc
       ).afterPrompt;
       break;
 
@@ -228,7 +255,10 @@ export function composePrompt(
         selections,
         resolvedSkinTone,
         resolvedHairStyle,
-        options?.applicationStep ?? selections.applicationStep ?? "preparation"
+        options?.applicationStep ?? selections.applicationStep ?? "preparation",
+        resolvedEthnicity,
+        ethnicityDesc,
+        ageRangeDesc
       );
       break;
 
@@ -236,25 +266,18 @@ export function composePrompt(
       throw new Error(`Unknown category: ${selections.category}`);
   }
 
-  // 3. Get Brand DNA, Skin Realism DNA, and Negative Prompt
+  // 4. Get Brand DNA, Skin Realism DNA, and Negative Prompt
   const brandDNA = getBrandDNA(options?.customBrandDNA);
 
-  // Skin realism is only injected for human-featuring categories
-  const isHumanCategory =
-    selections.category === "lifestyle" ||
-    selections.category === "lash-closeup" ||
-    selections.category === "before-after" ||
-    selections.category === "application-process";
-  const skinRealismDNA = isHumanCategory
+  const skinRealismDNA = isHumanCat
     ? getSkinRealismDNA(options?.customSkinRealismPrompt)
     : "";
 
-  // Use safe negative prompt for human-featuring categories (adds safety terms)
-  const negativePrompt = isHumanCategory
+  const negativePrompt = isHumanCat
     ? getSafeNegativePrompt(options?.customNegativePrompt)
     : getNegativePrompt(options?.customNegativePrompt);
 
-  // 4. Build seasonal modifier (if a preset is selected)
+  // 5. Build seasonal modifier (if a preset is selected)
   let seasonalModifier = "";
   const seasonal = options?.seasonalSelection ?? selections.seasonal;
   if (seasonal?.presetSlug) {
@@ -264,34 +287,14 @@ export function composePrompt(
     }
   }
 
-  // 5. Build ethnicity and age range modifiers
-  let ethnicityModifier = "";
-  if (
-    resolvedEthnicity &&
-    resolvedEthnicity !== "african-american" &&
-    isHumanCategory
-  ) {
-    ethnicityModifier = `[ETHNICITY DIRECTIVE]: ${getEthnicityDescriptor(resolvedEthnicity)}`;
-  }
-
-  let ageRangeModifier = "";
-  if (resolvedAgeRange && isHumanCategory) {
-    ageRangeModifier = `[AGE RANGE]: Woman ${getAgeRangeDescriptor(resolvedAgeRange)}`;
-  }
-
   // 6. Assemble the final prompt
-  //    BRAND_DNA + [SKIN_REALISM] + CATEGORY_TEMPLATE + [ETHNICITY] + [AGE] + [SEASONAL] + NEGATIVE
+  //    Ethnicity + age range are now integrated directly into category prompts
+  //    BRAND_DNA + [SKIN_REALISM] + CATEGORY_TEMPLATE + [SEASONAL] + NEGATIVE
   const promptParts = [brandDNA];
   if (skinRealismDNA) {
     promptParts.push(skinRealismDNA);
   }
   promptParts.push(categoryPrompt);
-  if (ethnicityModifier) {
-    promptParts.push(ethnicityModifier);
-  }
-  if (ageRangeModifier) {
-    promptParts.push(ageRangeModifier);
-  }
   if (seasonalModifier) {
     promptParts.push(seasonalModifier);
   }
@@ -338,27 +341,34 @@ export function composeBeforeAfterPrompts(
   const resolvedEthnicity = resolveEthnicity(selections.ethnicity);
   const resolvedAgeRange = resolveAgeRange(selections.ageRange);
 
-  // Build the Before/After category prompts
+  // Build ethnicity/age descriptors
+  let ethnicityDesc: string | undefined;
+  if (resolvedEthnicity) {
+    ethnicityDesc = getEthnicityDescriptor(resolvedEthnicity);
+  }
+  let ageRangeDesc: string | undefined;
+  if (resolvedAgeRange) {
+    ageRangeDesc = getAgeRangeDescriptor(resolvedAgeRange);
+  }
+
+  // Build the Before/After category prompts (ethnicity + age now integrated)
   const {
     beforePrompt: rawBefore,
     afterPrompt: rawAfter,
     afterReferenceInstruction,
-  } = buildBeforeAfterPrompts(selections, resolvedSkinTone, resolvedHairStyle);
+  } = buildBeforeAfterPrompts(
+    selections,
+    resolvedSkinTone,
+    resolvedHairStyle,
+    resolvedEthnicity,
+    ethnicityDesc,
+    ageRangeDesc
+  );
 
   // Brand DNA + Skin Realism + Negative — shared wrapper
   const brandDNA = getBrandDNA(options?.customBrandDNA);
   const skinRealismDNA = getSkinRealismDNA(options?.customSkinRealismPrompt);
   const negativePrompt = getSafeNegativePrompt(options?.customNegativePrompt);
-
-  // Ethnicity and age range modifiers
-  let ethnicityModifier = "";
-  if (resolvedEthnicity && resolvedEthnicity !== "african-american") {
-    ethnicityModifier = `[ETHNICITY DIRECTIVE]: ${getEthnicityDescriptor(resolvedEthnicity)}`;
-  }
-  let ageRangeModifier = "";
-  if (resolvedAgeRange) {
-    ageRangeModifier = `[AGE RANGE]: Woman ${getAgeRangeDescriptor(resolvedAgeRange)}`;
-  }
 
   // Seasonal modifier (optional)
   let seasonalModifier = "";
@@ -374,8 +384,6 @@ export function composeBeforeAfterPrompts(
     const parts = [brandDNA];
     if (skinRealismDNA) parts.push(skinRealismDNA);
     parts.push(categoryPrompt);
-    if (ethnicityModifier) parts.push(ethnicityModifier);
-    if (ageRangeModifier) parts.push(ageRangeModifier);
     if (seasonalModifier) parts.push(seasonalModifier);
     parts.push(`[NEGATIVE / AVOID]:\n${negativePrompt}`);
     return parts.join("\n\n");

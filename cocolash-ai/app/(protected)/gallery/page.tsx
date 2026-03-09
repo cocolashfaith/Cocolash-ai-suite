@@ -10,6 +10,7 @@ import { GalleryFilters } from "@/components/gallery/GalleryFilters";
 import { ImageCard } from "@/components/gallery/ImageCard";
 import { ImageModal } from "@/components/gallery/ImageModal";
 import { ImageLightbox } from "@/components/ui/image-lightbox";
+import { CaptionModal } from "@/components/generate/CaptionModal";
 
 import type { GeneratedImage, ContentCategory } from "@/lib/types";
 
@@ -37,6 +38,9 @@ export default function GalleryPage() {
 
   // Lightbox
   const [lightboxImage, setLightboxImage] = useState<GeneratedImage | null>(null);
+
+  // Caption modal
+  const [captionImage, setCaptionImage] = useState<GeneratedImage | null>(null);
 
   // Fetch images
   const fetchImages = useCallback(
@@ -201,6 +205,7 @@ export default function GalleryPage() {
                 onClick={() => setLightboxImage(image)}
                 onFavoriteToggle={handleFavoriteToggle}
                 onDetailsClick={() => openModal(image)}
+                onCaptionClick={() => setCaptionImage(image)}
               />
             ))}
           </div>
@@ -252,6 +257,16 @@ export default function GalleryPage() {
             : undefined
         }
       />
+
+      {/* Caption & Publish modal */}
+      {captionImage && (
+        <CaptionModal
+          open={!!captionImage}
+          onClose={() => setCaptionImage(null)}
+          imageId={captionImage.id}
+          imageUrl={captionImage.image_url}
+        />
+      )}
     </div>
   );
 }

@@ -257,7 +257,8 @@ export function CaptionGenerator({
       {publishTarget && (
         <PublishModal
           open={!!publishTarget}
-          onClose={() => setPublishTarget(null)}
+          onBack={() => setPublishTarget(null)}
+          onCloseAll={() => setPublishTarget(null)}
           imageUrl={imageUrl}
           imageId={imageId}
           captionId={publishTarget.captionId}

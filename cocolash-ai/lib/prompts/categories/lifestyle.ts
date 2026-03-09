@@ -11,6 +11,7 @@ import type {
   SkinTone,
   Composition,
   GroupDiversitySelections,
+  Ethnicity,
 } from "@/lib/types";
 import { getSkinToneDescriptor } from "../modules/skin-tones";
 import { getLashStyleDescriptor } from "../modules/lash-styles";
@@ -29,7 +30,10 @@ export function buildLifestylePrompt(
   resolvedScene: Exclude<Scene, "random">,
   resolvedVibe: Exclude<Vibe, "random">,
   resolvedHairStyle: Exclude<HairStyle, "random">,
-  groupDiversity?: GroupDiversitySelections | null
+  groupDiversity?: GroupDiversitySelections | null,
+  resolvedEthnicity?: Exclude<Ethnicity, "random">,
+  ethnicityDesc?: string,
+  ageRangeDesc?: string
 ): string {
   const lashDesc = getLashStyleDescriptor(selections.lashStyle);
   const sceneDesc = getSceneDescriptor(resolvedScene);
@@ -80,15 +84,26 @@ LIGHTING: Warm diffused lighting (3500K-4200K), soft and flattering. Even illumi
   const hairDesc = getHairStyleDescriptor(resolvedHairStyle);
   const compDesc = getCompositionDescriptor(selections.composition as Composition);
 
+  // Determine subject description from ethnicity (or default to African American)
+  const isAfricanAmerican = !resolvedEthnicity || resolvedEthnicity === "african-american";
+  const subjectDesc = ethnicityDesc
+    ? `${ethnicityDesc}`
+    : `Beautiful African American woman, ${skinDesc}`;
+  const skinClause = isAfricanAmerican ? `, ${skinDesc}` : "";
+  const ageClause = ageRangeDesc ? `, ${ageRangeDesc}` : "";
+  const vibeEnergy = isAfricanAmerican
+    ? `"She's Black & Proud" energy — authentic confidence without aggression.`
+    : "Authentic, empowered confidence — glowing and self-assured.";
+
   return `CATEGORY: LIFESTYLE / EDITORIAL — Medium-shot portrait photography.
 
 COMPOSITION: ${compDesc}.
 
-SUBJECT: Beautiful African American woman, ${skinDesc}. ${hairDesc}. ${outfit}. ${persona}.
+SUBJECT: ${subjectDesc}${skinClause}${ageClause}. ${hairDesc}. ${outfit}. ${persona}.
 
 LASHES: Wearing stunning ${lashDesc}. Lashes should be clearly visible and a standout feature even in the wider shot.
 
-EXPRESSION & VIBE: ${vibeDesc}. "She's Black & Proud" energy — authentic confidence without aggression.
+EXPRESSION & VIBE: ${vibeDesc}. ${vibeEnergy}
 
 SCENE: ${sceneDesc}.
 

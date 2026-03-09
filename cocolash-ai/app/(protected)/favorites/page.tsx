@@ -9,6 +9,7 @@ import { toast } from "sonner";
 import { ImageCard } from "@/components/gallery/ImageCard";
 import { ImageModal } from "@/components/gallery/ImageModal";
 import { ImageLightbox } from "@/components/ui/image-lightbox";
+import { CaptionModal } from "@/components/generate/CaptionModal";
 
 import type { GeneratedImage } from "@/lib/types";
 
@@ -29,6 +30,7 @@ export default function FavoritesPage() {
   const [selectedImage, setSelectedImage] = useState<GeneratedImage | null>(null);
   const [modalOpen, setModalOpen] = useState(false);
   const [lightboxImage, setLightboxImage] = useState<GeneratedImage | null>(null);
+  const [captionImage, setCaptionImage] = useState<GeneratedImage | null>(null);
 
   const fetchFavorites = useCallback(async (page = 1, append = false) => {
     if (page === 1) setLoading(true);
@@ -187,6 +189,7 @@ export default function FavoritesPage() {
                 onClick={() => setLightboxImage(image)}
                 onFavoriteToggle={() => handleFavoriteToggle(image.id)}
                 onDetailsClick={() => openModal(image)}
+                onCaptionClick={() => setCaptionImage(image)}
               />
             ))}
           </div>
@@ -235,6 +238,15 @@ export default function FavoritesPage() {
             : undefined
         }
       />
+
+      {captionImage && (
+        <CaptionModal
+          open={!!captionImage}
+          onClose={() => setCaptionImage(null)}
+          imageId={captionImage.id}
+          imageUrl={captionImage.image_url}
+        />
+      )}
     </div>
   );
 }

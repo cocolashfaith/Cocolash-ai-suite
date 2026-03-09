@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import Image from "next/image";
-import { Layers, Clock, Columns2, Info } from "lucide-react";
+import { Layers, Clock, Columns2, Info, MessageSquareText } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { ImageLoader } from "@/components/ui/image-loader";
 import { FavoriteButton } from "@/components/gallery/FavoriteButton";
@@ -14,9 +14,10 @@ interface ImageCardProps {
   onClick: () => void;
   onFavoriteToggle: (id: string, newValue: boolean) => void;
   onDetailsClick?: () => void;
+  onCaptionClick?: () => void;
 }
 
-export function ImageCard({ image, onClick, onFavoriteToggle, onDetailsClick }: ImageCardProps) {
+export function ImageCard({ image, onClick, onFavoriteToggle, onDetailsClick, onCaptionClick }: ImageCardProps) {
   const [loaded, setLoaded] = useState(false);
 
   const categoryLabels: Record<string, string> = {
@@ -92,6 +93,21 @@ export function ImageCard({ image, onClick, onFavoriteToggle, onDetailsClick }: 
             title="Details"
           >
             <Info className="h-3.5 w-3.5" />
+          </button>
+        )}
+
+        {/* Caption & Publish button */}
+        {onCaptionClick && (
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              onCaptionClick();
+            }}
+            className="flex h-7 w-7 items-center justify-center rounded-full bg-white/80 text-coco-brown-medium opacity-0 backdrop-blur-sm transition-all group-hover:opacity-100 hover:bg-white hover:text-coco-golden-dark"
+            title="Create Captions & Publish"
+          >
+            <MessageSquareText className="h-3.5 w-3.5" />
           </button>
         )}
 

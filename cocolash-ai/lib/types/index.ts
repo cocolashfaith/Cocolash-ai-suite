@@ -183,7 +183,7 @@ export interface LogoOverlaySettings {
   variant: LogoVariant;
   opacity?: number;       // 0-1, default 0.9
   paddingPercent?: number; // % from edge, default 4
-  sizePercent?: number;    // % of image width, default 15
+  sizePercent?: number;    // % of image width, default 22
 }
 
 // ── Seasonal / Holiday Presets ────────────────────────────────

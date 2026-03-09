@@ -137,7 +137,7 @@ export async function applyLogoOverlay(
     position = "bottom-right",
     opacity = 0.9,
     paddingPercent = 3,
-    sizePercent = 15,
+    sizePercent = 22,
   } = options;
 
   // 1. Get the base image metadata

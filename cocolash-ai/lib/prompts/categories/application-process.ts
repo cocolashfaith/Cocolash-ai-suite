@@ -11,7 +11,7 @@
  * Each step has tutorial-quality detail for educational/social content.
  * All images should feel like they come from the same session.
  */
-import type { ApplicationStep, GenerationSelections, SkinTone, HairStyle } from "@/lib/types";
+import type { ApplicationStep, GenerationSelections, SkinTone, HairStyle, Ethnicity } from "@/lib/types";
 import { getSkinToneDescriptor } from "../modules/skin-tones";
 import { getLashStyleDescriptor } from "../modules/lash-styles";
 import { getHairStyleDescriptor } from "../modules/hair-styles";
@@ -32,7 +32,7 @@ const STEP_DEFINITIONS: Record<ApplicationStep, StepDefinition> = {
     prompt: `STEP 1 — PREPARATION & CONSULTATION
 
 SCENE DESCRIPTION:
-Clean, professional lash salon workstation. The lash technician (an elegant African American woman
+Clean, professional lash salon workstation. The lash technician (an elegant woman
 in a branded CocoLash polo/apron) is preparing her workspace for the client.
 
 KEY ELEMENTS TO SHOW:
@@ -157,18 +157,28 @@ export function buildApplicationProcessPrompt(
   selections: GenerationSelections,
   resolvedSkinTone: Exclude<SkinTone, "random">,
   resolvedHairStyle: Exclude<HairStyle, "random">,
-  step: ApplicationStep
+  step: ApplicationStep,
+  resolvedEthnicity?: Exclude<Ethnicity, "random">,
+  ethnicityDesc?: string,
+  ageRangeDesc?: string
 ): string {
   const stepDef = STEP_DEFINITIONS[step];
   const skinDesc = getSkinToneDescriptor(resolvedSkinTone);
   const hairDesc = getHairStyleDescriptor(resolvedHairStyle);
   const lashDesc = getLashStyleDescriptor(selections.lashStyle);
 
+  const isAfricanAmerican = !resolvedEthnicity || resolvedEthnicity === "african-american";
+  const subjectDesc = ethnicityDesc
+    ? ethnicityDesc
+    : "Beautiful African American woman";
+  const skinClause = isAfricanAmerican ? ` ${skinDesc}.` : "";
+  const ageClause = ageRangeDesc ? ` ${ageRangeDesc}.` : "";
+
   return `CATEGORY: LASH APPLICATION PROCESS — STEP ${stepDef.stepNumber} OF 5: "${stepDef.title.toUpperCase()}"
 
 [TUTORIAL / EDUCATIONAL CONTENT — Behind-the-scenes of a professional lash extension appointment]
 
-SUBJECT(S): Beautiful African American woman(women). ${skinDesc}. ${hairDesc}.
+SUBJECT(S): ${subjectDesc}.${skinClause}${ageClause} ${hairDesc}.
 Target lash style for the completed look: ${lashDesc} extensions.
 
 ${stepDef.prompt}

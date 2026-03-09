@@ -145,7 +145,7 @@ function validateSelections(body: unknown): GenerationSelections {
     variant: (logoData.variant as string) || "white",
     opacity: typeof logoData.opacity === "number" ? logoData.opacity : 0.9,
     paddingPercent: typeof logoData.paddingPercent === "number" ? logoData.paddingPercent : 3,
-    sizePercent: typeof logoData.sizePercent === "number" ? logoData.sizePercent : 15,
+    sizePercent: typeof logoData.sizePercent === "number" ? logoData.sizePercent : 22,
   } as GenerationSelections["logoOverlay"];
 
   // Product sub-category (required when category is "product")
@@ -248,6 +248,10 @@ function validateSelections(body: unknown): GenerationSelections {
   // [M2] Before/After composite toggle (optional)
   const includeComposite = category === "before-after" ? Boolean(data.includeComposite) : undefined;
 
+  // [U1] Ethnicity + age range (optional, default to "random")
+  const ethnicity = (data.ethnicity as string) || "random";
+  const ageRange = (data.ageRange as string) || "random";
+
   return {
     category,
     productSubCategory,
@@ -265,6 +269,8 @@ function validateSelections(body: unknown): GenerationSelections {
     groupDiversity,
     applicationStep,
     includeComposite,
+    ethnicity: ethnicity as GenerationSelections["ethnicity"],
+    ageRange: ageRange as GenerationSelections["ageRange"],
   };
 }
 
@@ -616,7 +622,7 @@ export async function POST(request: NextRequest) {
     });
 
     console.log(`[Generate] Category: ${selections.category}${selections.productSubCategory ? ` (${selections.productSubCategory})` : ""}${selections.applicationStep ? `, Step: ${selections.applicationStep}` : ""}${selections.seasonal?.presetSlug ? `, Season: ${selections.seasonal.presetSlug}` : ""}, Aspect: ${selections.aspectRatio}, Resolution: ${selections.resolution}`);
-    console.log(`[Generate] Resolved: skin=${composed.resolvedSelections.skinTone}, hair=${composed.resolvedSelections.hairStyle}, scene=${composed.resolvedSelections.scene}, vibe=${composed.resolvedSelections.vibe}`);
+    console.log(`[Generate] Resolved: skin=${composed.resolvedSelections.skinTone}, hair=${composed.resolvedSelections.hairStyle}, scene=${composed.resolvedSelections.scene}, vibe=${composed.resolvedSelections.vibe}, ethnicity=${composed.resolvedSelections.ethnicity || "default"}, age=${composed.resolvedSelections.ageRange || "default"}`);
     if (selections.composition === "group" && selections.groupDiversity) {
       console.log(`[Generate] Group: ${selections.groupDiversity.groupCount} people, mode=${selections.groupDiversity.mode}, action=${selections.groupDiversity.groupAction}, age=${selections.groupDiversity.ageRange}`);
     }

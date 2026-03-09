@@ -25,7 +25,7 @@ import { DiversityControls } from "./DiversityControls";
 import { ApplicationStepSelector } from "./ApplicationStepSelector";
 import { GenerationProgress } from "./GenerationProgress";
 import { ImagePreview } from "./ImagePreview";
-import { CaptionGenerator } from "./CaptionGenerator";
+import { CaptionModal } from "./CaptionModal";
 import { ErrorDisplay } from "./ErrorDisplay";
 
 import type {
@@ -68,7 +68,7 @@ const DEFAULT_SELECTIONS: GenerationSelections = {
     variant: "white",
     opacity: 0.9,
     paddingPercent: 4,
-    sizePercent: 15,
+    sizePercent: 22,
   },
   contextNote: "",
 };
@@ -84,6 +84,7 @@ export function GenerateForm() {
   const [generationTime, setGenerationTime] = useState(0);
   const [error, setError] = useState<GenerateErrorResponse | null>(null);
   const [templateRefreshKey, setTemplateRefreshKey] = useState(0);
+  const [captionModalOpen, setCaptionModalOpen] = useState(false);
 
   // Update individual fields
   const update = useCallback(
@@ -447,12 +448,21 @@ export function GenerateForm() {
                 onTemplateSaved={handleTemplateSaved}
               />
 
-              <div className="mt-4">
-                <CaptionGenerator
-                  imageId={generatedImage.id}
-                  imageUrl={generatedImage.image_url}
-                />
-              </div>
+              <Button
+                onClick={() => setCaptionModalOpen(true)}
+                className="mt-4 w-full gap-2 bg-coco-brown py-5 text-sm font-semibold text-white shadow-md transition-all hover:bg-coco-brown-light hover:shadow-lg"
+                size="lg"
+              >
+                <Sparkles className="h-4 w-4" />
+                Create Captions & Publish
+              </Button>
+
+              <CaptionModal
+                open={captionModalOpen}
+                onClose={() => setCaptionModalOpen(false)}
+                imageId={generatedImage.id}
+                imageUrl={generatedImage.image_url}
+              />
             </>
           )}
 

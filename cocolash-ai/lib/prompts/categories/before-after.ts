@@ -9,41 +9,44 @@
  * The reference-passing approach ensures Gemini maintains the EXACT same face,
  * angle, skin tone, lighting, and setting — the only change is the lashes.
  */
-import type { GenerationSelections, SkinTone, HairStyle } from "@/lib/types";
+import type { GenerationSelections, SkinTone, HairStyle, Ethnicity } from "@/lib/types";
 import { getSkinToneDescriptor } from "../modules/skin-tones";
 import { getLashStyleDescriptor } from "../modules/lash-styles";
 import { getHairStyleDescriptor } from "../modules/hair-styles";
 
 export interface BeforeAfterPrompts {
   beforePrompt: string;
-  /** The "after" prompt — designed to be used WITH the "before" image as a reference */
   afterPrompt: string;
-  /** The instruction text sent alongside the reference image to Gemini */
   afterReferenceInstruction: string;
 }
 
-/**
- * Builds two prompts:
- *   - "before": standalone prompt for the bare-lash image
- *   - "after": prompt that assumes the "before" image is attached as a reference
- */
 export function buildBeforeAfterPrompts(
   selections: GenerationSelections,
   resolvedSkinTone: Exclude<SkinTone, "random">,
-  resolvedHairStyle: Exclude<HairStyle, "random">
+  resolvedHairStyle: Exclude<HairStyle, "random">,
+  resolvedEthnicity?: Exclude<Ethnicity, "random">,
+  ethnicityDesc?: string,
+  ageRangeDesc?: string
 ): BeforeAfterPrompts {
   const skinDesc = getSkinToneDescriptor(resolvedSkinTone);
   const hairDesc = getHairStyleDescriptor(resolvedHairStyle);
   const lashDesc = getLashStyleDescriptor(selections.lashStyle);
 
+  const isAfricanAmerican = !resolvedEthnicity || resolvedEthnicity === "african-american";
+  const subjectDesc = ethnicityDesc
+    ? ethnicityDesc
+    : `beautiful African American woman`;
+  const skinClause = isAfricanAmerican ? ` ${skinDesc}.` : "";
+  const ageClause = ageRangeDesc ? `, ${ageRangeDesc}` : ", mid-20s to early 30s";
+
   // ── Stage 1: BEFORE prompt (standalone, no reference needed) ──
 
   const beforePrompt = `CATEGORY: BEFORE/AFTER LASH TRANSFORMATION — "BEFORE" IMAGE
 
-Generate a single, ultra-close beauty portrait of a beautiful African American woman.
+Generate a single, ultra-close beauty portrait of a ${subjectDesc}.
 
-SUBJECT: ${skinDesc}. ${hairDesc}.
-Age: mid-20s to early 30s. Flawless makeup base — warm-toned foundation perfectly matched to skin,
+SUBJECT:${skinClause} ${hairDesc}.
+Age: ${ageRangeDesc || "mid-20s to early 30s"}. Flawless makeup base — warm-toned foundation perfectly matched to skin,
 subtle contour, warm bronzer, well-shaped brows filled in naturally.
 
 SETTING: Professional beauty studio, clean neutral background in soft warm beige/pink tones.
