@@ -10,8 +10,9 @@ import {
   Settings,
   LogOut,
   Loader2,
+  Shield,
 } from "lucide-react";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { createClient } from "@/lib/supabase/client";
 import {
   Tooltip,
@@ -51,10 +52,32 @@ const navItems = [
   },
 ];
 
+interface UserInfo {
+  email: string;
+  fullName: string | null;
+  isAdmin: boolean;
+}
+
 export function Sidebar() {
   const pathname = usePathname();
   const router = useRouter();
   const [isLoggingOut, setIsLoggingOut] = useState(false);
+  const [userInfo, setUserInfo] = useState<UserInfo | null>(null);
+
+  useEffect(() => {
+    fetch("/api/auth/me")
+      .then((r) => r.json())
+      .then((d) => {
+        if (d.user) {
+          setUserInfo({
+            email: d.user.email,
+            fullName: d.user.fullName,
+            isAdmin: d.isAdmin,
+          });
+        }
+      })
+      .catch(() => {});
+  }, []);
 
   const handleLogout = async () => {
     setIsLoggingOut(true);
@@ -133,6 +156,28 @@ export function Sidebar() {
         {/* Bottom section */}
         <div className="p-3">
           <Separator className="mb-3 bg-coco-brown-light/50" />
+
+          {userInfo && (
+            <div className="mb-2 flex items-center gap-2.5 rounded-lg px-3 py-2">
+              <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-coco-golden/20 text-xs font-bold text-coco-golden">
+                {(userInfo.fullName || userInfo.email)[0].toUpperCase()}
+              </div>
+              <div className="min-w-0 flex-1">
+                <p className="truncate text-xs font-medium text-coco-beige">
+                  {userInfo.fullName || userInfo.email.split("@")[0]}
+                </p>
+                <div className="flex items-center gap-1">
+                  {userInfo.isAdmin && (
+                    <Shield className="h-2.5 w-2.5 text-coco-golden" />
+                  )}
+                  <p className="truncate text-[10px] text-coco-beige/40">
+                    {userInfo.email}
+                  </p>
+                </div>
+              </div>
+            </div>
+          )}
+
           <button
             onClick={handleLogout}
             disabled={isLoggingOut}

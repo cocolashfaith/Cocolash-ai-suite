@@ -2,7 +2,7 @@
  * GET /api/images/[id] — Single image detail
  */
 import { NextRequest, NextResponse } from "next/server";
-import { createClient } from "@/lib/supabase/server";
+import { createClient, getCurrentUserId } from "@/lib/supabase/server";
 import type { GeneratedImage } from "@/lib/types";
 
 export async function GET(
@@ -12,12 +12,15 @@ export async function GET(
   try {
     const { id } = await params;
     const supabase = await createClient();
+    const userId = await getCurrentUserId(supabase);
 
-    const { data, error } = await supabase
+    let query = supabase
       .from("generated_images")
       .select("*")
-      .eq("id", id)
-      .single();
+      .eq("id", id);
+    if (userId) query = query.eq("user_id", userId);
+
+    const { data, error } = await query.single();
 
     if (error || !data) {
       return NextResponse.json(

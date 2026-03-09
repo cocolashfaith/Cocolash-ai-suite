@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createClient } from "@/lib/supabase/server";
+import { createClient, getCurrentUserId } from "@/lib/supabase/server";
 
 /**
  * PATCH /api/images/[id]/favorite — Toggle favorite status
@@ -22,12 +22,15 @@ export async function PATCH(
     }
 
     const supabase = await createClient();
+    const userId = await getCurrentUserId(supabase);
 
-    const { data: existing, error: fetchError } = await supabase
+    let query = supabase
       .from("generated_images")
       .select("id, is_favorite")
-      .eq("id", id)
-      .single();
+      .eq("id", id);
+    if (userId) query = query.eq("user_id", userId);
+
+    const { data: existing, error: fetchError } = await query.single();
 
     if (fetchError || !existing) {
       return NextResponse.json(

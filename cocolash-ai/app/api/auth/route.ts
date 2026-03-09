@@ -1,16 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 
-/**
- * POST /api/auth — Legacy password-based authentication
- *
- * Validates the provided password against AUTH_PASSWORD env var.
- * On success, sets a httpOnly `cocolash-auth` cookie (30-day expiry).
- * On failure, returns 401.
- *
- * Note: Supabase email auth uses signInWithPassword on the client
- * and doesn't hit this route.
- */
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
@@ -51,7 +41,12 @@ export async function POST(request: NextRequest) {
     }
 
     const response = NextResponse.json(
-      { success: true, message: "Welcome to CocoLash AI" },
+      {
+        success: true,
+        message: "Welcome to CocoLash AI",
+        role: "admin",
+        adminEmail: "admin@cocolash.com",
+      },
       { status: 200 }
     );
 

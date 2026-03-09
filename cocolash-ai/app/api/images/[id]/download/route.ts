@@ -5,7 +5,7 @@
  * attachment with a descriptive filename.
  */
 import { NextRequest, NextResponse } from "next/server";
-import { createClient } from "@/lib/supabase/server";
+import { createClient, getCurrentUserId } from "@/lib/supabase/server";
 
 export async function GET(
   _request: NextRequest,
@@ -14,13 +14,15 @@ export async function GET(
   try {
     const { id } = await params;
     const supabase = await createClient();
+    const userId = await getCurrentUserId(supabase);
 
-    // Fetch image record for metadata
-    const { data: image, error } = await supabase
+    let query = supabase
       .from("generated_images")
       .select("id, image_url, category, aspect_ratio, created_at, storage_path")
-      .eq("id", id)
-      .single();
+      .eq("id", id);
+    if (userId) query = query.eq("user_id", userId);
+
+    const { data: image, error } = await query.single();
 
     if (error || !image) {
       return NextResponse.json(

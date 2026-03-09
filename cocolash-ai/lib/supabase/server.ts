@@ -1,12 +1,16 @@
 import { createServerClient } from "@supabase/ssr";
+import { type SupabaseClient } from "@supabase/supabase-js";
 import { cookies } from "next/headers";
 
-/**
- * Supabase Server Client
- *
- * Used in Server Components, API Routes, and Server Actions.
- * Handles cookie-based session management for SSR.
- */
+export async function getCurrentUserId(
+  supabase: SupabaseClient
+): Promise<string | null> {
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  return user?.id ?? null;
+}
+
 export async function createClient() {
   const cookieStore = await cookies();
 

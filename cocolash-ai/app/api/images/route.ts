@@ -3,7 +3,7 @@
  * DELETE /api/images — Delete an image by ID (DB record + Storage file)
  */
 import { NextRequest, NextResponse } from "next/server";
-import { createClient } from "@/lib/supabase/server";
+import { createClient, getCurrentUserId } from "@/lib/supabase/server";
 import { deleteStorageFile, BUCKETS } from "@/lib/supabase/storage";
 import type { ContentCategory, GeneratedImage } from "@/lib/types";
 
@@ -26,12 +26,16 @@ export async function GET(request: NextRequest) {
     const sortBy = searchParams.get("sortBy") || "created_at";
     const sortOrder = searchParams.get("sortOrder") === "asc" ? true : false;
 
-    // Build query
+    const userId = await getCurrentUserId(supabase);
+
     let query = supabase
       .from("generated_images")
       .select("*", { count: "exact" });
 
-    // Apply filters
+    if (userId) {
+      query = query.eq("user_id", userId);
+    }
+
     if (category && ["lash-closeup", "lifestyle", "product", "before-after", "application-process"].includes(category)) {
       query = query.eq("category", category);
     }
@@ -99,12 +103,18 @@ export async function DELETE(request: NextRequest) {
       );
     }
 
-    // Fetch the image record to get storage paths
-    const { data: image, error: fetchError } = await supabase
+    const userId = await getCurrentUserId(supabase);
+
+    let fetchQuery = supabase
       .from("generated_images")
-      .select("id, storage_path, raw_image_url, image_url")
-      .eq("id", imageId)
-      .single();
+      .select("id, storage_path, raw_image_url, image_url, user_id")
+      .eq("id", imageId);
+
+    if (userId) {
+      fetchQuery = fetchQuery.eq("user_id", userId);
+    }
+
+    const { data: image, error: fetchError } = await fetchQuery.single();
 
     if (fetchError || !image) {
       return NextResponse.json(

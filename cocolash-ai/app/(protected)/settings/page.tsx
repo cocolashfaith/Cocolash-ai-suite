@@ -7,6 +7,7 @@ import { ProductCategoryManager } from "@/components/settings/ProductCategoryMan
 import { HashtagManager } from "@/components/settings/HashtagManager";
 import { SocialAccountsManager } from "@/components/settings/SocialAccountsManager";
 import { CaptionSettingsForm } from "@/components/settings/CaptionSettingsForm";
+import { UserManager } from "@/components/settings/UserManager";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Settings, AlertCircle } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -31,6 +32,7 @@ export default function SettingsPage() {
   const [profile, setProfile] = useState<BrandProfile | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [isAdmin, setIsAdmin] = useState(false);
 
   const fetchProfile = useCallback(async () => {
     try {
@@ -56,6 +58,10 @@ export default function SettingsPage() {
 
   useEffect(() => {
     fetchProfile();
+    fetch("/api/auth/me")
+      .then((r) => r.json())
+      .then((d) => setIsAdmin(!!d.isAdmin))
+      .catch(() => {});
   }, [fetchProfile]);
 
   const handleProfileUpdated = (updated: BrandProfile) => {
@@ -147,6 +153,9 @@ export default function SettingsPage() {
           minute: "2-digit",
         })}
       </p>
+
+      {/* Team Members — Admin only */}
+      {isAdmin && <UserManager />}
 
       {/* Logo Uploader */}
       <LogoUploader logos={profile} onLogosUpdated={handleLogosUpdated} />

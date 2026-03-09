@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createClient } from "@/lib/supabase/server";
+import { createClient, getCurrentUserId } from "@/lib/supabase/server";
 
 export async function GET(
   _request: NextRequest,
@@ -13,6 +13,20 @@ export async function GET(
     }
 
     const supabase = await createClient();
+    const userId = await getCurrentUserId(supabase);
+
+    if (userId) {
+      let ownerCheck = supabase
+        .from("generated_images")
+        .select("id")
+        .eq("id", imageId);
+      ownerCheck = ownerCheck.eq("user_id", userId);
+
+      const { data: ownerImage, error: ownerError } = await ownerCheck.single();
+      if (ownerError || !ownerImage) {
+        return NextResponse.json({ error: "Image not found" }, { status: 404 });
+      }
+    }
 
     const { data, error } = await supabase
       .from("captions")

@@ -66,6 +66,14 @@ export default function LoginPage() {
         return;
       }
 
+      if (data.adminEmail) {
+        const supabase = createClient();
+        await supabase.auth.signInWithPassword({
+          email: data.adminEmail,
+          password,
+        });
+      }
+
       router.push("/generate");
       router.refresh();
     } catch {

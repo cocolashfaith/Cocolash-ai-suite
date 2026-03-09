@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createClient } from "@/lib/supabase/server";
+import { createClient, getCurrentUserId } from "@/lib/supabase/server";
 import { generateCaptions } from "@/lib/openrouter/captions";
 import { selectHashtags } from "@/lib/hashtags/selector";
 import { PLATFORM_LIMITS } from "@/lib/constants/posting-times";
@@ -65,12 +65,15 @@ export async function POST(request: NextRequest) {
     }
 
     const supabase = await createClient();
+    const userId = await getCurrentUserId(supabase);
 
-    const { data: image, error: imageError } = await supabase
+    let imageQuery = supabase
       .from("generated_images")
       .select("*")
-      .eq("id", imageId)
-      .single();
+      .eq("id", imageId);
+    if (userId) imageQuery = imageQuery.eq("user_id", userId);
+
+    const { data: image, error: imageError } = await imageQuery.single();
 
     if (imageError || !image) {
       return NextResponse.json(
