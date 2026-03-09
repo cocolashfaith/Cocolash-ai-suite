@@ -42,3 +42,9 @@ next-env.d.ts
 
 # plan documents (private, not for public repo)
 /Plan/
+
+# supabase temp files
+supabase/.temp/
+
+# test scripts
+scripts/test-*

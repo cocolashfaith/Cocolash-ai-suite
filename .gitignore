@@ -1,0 +1,12 @@
+# OS files
+.DS_Store
+Thumbs.db
+
+# Test screenshots
+test-*.png
+
+# Playwright MCP logs
+.playwright-mcp/
+
+# Cursor / IDE
+.cursor/
