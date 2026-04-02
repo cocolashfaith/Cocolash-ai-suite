@@ -637,3 +637,17 @@ export interface ScriptResult {
   estimated_duration: number;
   style_match: number;
 }
+
+// ── Processed Video (post-pipeline result) ───────────────────
+export interface ProcessedVideo {
+  cloudinaryPublicId: string;
+  videoUrl: string;
+  thumbnailUrl: string;
+  watermarkedUrl: string | null;
+  captionedUrl: string | null;
+  srtPublicId: string | null;
+  duration: number;
+  width: number;
+  height: number;
+  format: string;
+}
