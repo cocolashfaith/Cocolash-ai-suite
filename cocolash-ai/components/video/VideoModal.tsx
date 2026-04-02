@@ -11,6 +11,7 @@ import {
   Ratio,
   MessageSquare,
   Stamp,
+  DollarSign,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -148,6 +149,15 @@ export function VideoModal({
               icon={Stamp}
               label="Watermark"
               value={video.has_watermark ? "Yes" : "No"}
+            />
+            <MetaItem
+              icon={DollarSign}
+              label="Cost"
+              value={
+                video.processing_cost
+                  ? `$${Number(video.processing_cost).toFixed(2)}`
+                  : "—"
+              }
             />
             <MetaItem
               icon={Film}

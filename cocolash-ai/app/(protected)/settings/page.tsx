@@ -8,6 +8,7 @@ import { HashtagManager } from "@/components/settings/HashtagManager";
 import { SocialAccountsManager } from "@/components/settings/SocialAccountsManager";
 import { CaptionSettingsForm } from "@/components/settings/CaptionSettingsForm";
 import { UserManager } from "@/components/settings/UserManager";
+import { CostSummary } from "@/components/settings/CostSummary";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Settings, AlertCircle } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -168,6 +169,9 @@ export default function SettingsPage() {
 
       {/* Product Reference Images — Category-based */}
       <ProductCategoryManager />
+
+      {/* API Cost Tracker — Upgrade 1 Phase 2.9 */}
+      <CostSummary />
 
       {/* Hashtag Database — Upgrade 1 */}
       <HashtagManager />

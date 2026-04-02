@@ -12,7 +12,9 @@ import {
   RefreshCw,
   Clock,
   Film,
+  DollarSign,
 } from "lucide-react";
+import { calculateVideoCost, type VideoCostEstimate } from "@/lib/costs/tracker";
 import type {
   ScriptResult,
   CompositionPose,
@@ -229,18 +231,12 @@ export function GenerateVideo(props: GenerateVideoProps) {
             </div>
           </div>
 
-          {/* Cost Estimate */}
-          <div className="rounded-xl border-2 border-coco-golden/30 bg-coco-golden/5 p-4">
-            <div className="flex items-center gap-2">
-              <Clock className="h-4 w-4 text-coco-golden" />
-              <p className="text-sm font-semibold text-coco-brown">
-                Estimated Time: 3–5 minutes
-              </p>
-            </div>
-            <p className="mt-1 text-xs text-coco-brown-medium/60">
-              Includes image composition, avatar creation, video generation, and post-processing
-            </p>
-          </div>
+          {/* Cost & Time Estimate */}
+          <CostEstimateCard
+            duration={duration}
+            addCaptions={addCaptions}
+            addWatermark={addWatermark}
+          />
 
           <Button
             onClick={handleGenerate}
@@ -407,6 +403,65 @@ function SummaryRow({
           />
         )}
         {isColor ? "" : value}
+      </span>
+    </div>
+  );
+}
+
+function CostEstimateCard({
+  duration,
+  addCaptions,
+  addWatermark,
+}: {
+  duration: number;
+  addCaptions: boolean;
+  addWatermark: boolean;
+}) {
+  const estimate: VideoCostEstimate = calculateVideoCost({
+    duration,
+    addCaptions,
+    addWatermark,
+    needsScriptGeneration: true,
+  });
+
+  return (
+    <div className="rounded-xl border-2 border-coco-golden/30 bg-coco-golden/5 p-4">
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-2">
+          <DollarSign className="h-4 w-4 text-coco-golden" />
+          <p className="text-sm font-semibold text-coco-brown">
+            Estimated Cost
+          </p>
+        </div>
+        <span className="text-lg font-bold text-coco-golden">
+          ${estimate.total.toFixed(2)}
+        </span>
+      </div>
+
+      <div className="mt-3 space-y-1.5">
+        <CostRow label="Script Generation" value={estimate.scriptGeneration} />
+        <CostRow label="Image Composition" value={estimate.imageComposition} />
+        <CostRow label="Video Generation (HeyGen)" value={estimate.videoGeneration} />
+        <CostRow label="Post-Processing" value={estimate.postProcessing} />
+      </div>
+
+      <div className="mt-3 flex items-center gap-2 border-t border-coco-golden/20 pt-3">
+        <Clock className="h-3.5 w-3.5 text-coco-brown-medium/40" />
+        <p className="text-xs text-coco-brown-medium/60">
+          Estimated time: 3–5 minutes
+        </p>
+      </div>
+    </div>
+  );
+}
+
+function CostRow({ label, value }: { label: string; value: number }) {
+  if (value === 0) return null;
+  return (
+    <div className="flex items-center justify-between">
+      <span className="text-[11px] text-coco-brown-medium/50">{label}</span>
+      <span className="text-[11px] font-medium text-coco-brown-medium">
+        ${value.toFixed(4)}
       </span>
     </div>
   );

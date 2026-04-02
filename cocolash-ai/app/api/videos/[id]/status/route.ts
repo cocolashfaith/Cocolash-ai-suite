@@ -3,6 +3,7 @@ import { createAdminClient } from "@/lib/supabase/server";
 import { getVideoStatus } from "@/lib/heygen/client";
 import { HeyGenError } from "@/lib/heygen/types";
 import { processVideo } from "@/lib/video/processor";
+import { calculateVideoCost, recordActualCost } from "@/lib/costs/tracker";
 import type { GeneratedVideo, VideoStatusResponse } from "@/lib/types";
 
 /**
@@ -143,6 +144,14 @@ export async function GET(
       if (updateError) {
         console.error("[videos/status] DB update error:", updateError);
       }
+
+      const costEstimate = calculateVideoCost({
+        duration: heygenDuration ?? 30,
+        addCaptions: typedVideo.has_captions,
+        addWatermark: typedVideo.has_watermark,
+        needsScriptGeneration: !!typedVideo.script_id,
+      });
+      await recordActualCost(id, costEstimate.total);
 
       const updatedVideo: GeneratedVideo = {
         ...typedVideo,
