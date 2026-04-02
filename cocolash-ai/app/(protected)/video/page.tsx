@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import Link from "next/link";
 import { cn } from "@/lib/utils";
 import {
   FileText,
@@ -8,6 +9,7 @@ import {
   Palette,
   Film,
   Check,
+  Images,
 } from "lucide-react";
 import { ScriptGenerator } from "@/components/video/ScriptGenerator";
 import { AvatarSetup } from "@/components/video/AvatarSetup";
@@ -126,12 +128,23 @@ export default function VideoPage() {
     <div>
       {/* Page Header */}
       <div className="mb-6">
-        <h1 className="text-2xl font-bold text-coco-brown">
-          Create Video
-        </h1>
-        <p className="mt-1 text-sm text-coco-brown-medium">
-          Generate AI avatar videos with custom scripts, voices & branding
-        </p>
+        <div className="flex items-end justify-between">
+          <div>
+            <h1 className="text-2xl font-bold text-coco-brown">
+              Create Video
+            </h1>
+            <p className="mt-1 text-sm text-coco-brown-medium">
+              Generate AI avatar videos with custom scripts, voices & branding
+            </p>
+          </div>
+          <Link
+            href="/video/gallery"
+            className="flex items-center gap-1.5 rounded-lg bg-white px-3 py-2 text-xs font-medium text-coco-brown-medium shadow-sm transition-all hover:bg-coco-beige-light hover:text-coco-brown"
+          >
+            <Images className="h-3.5 w-3.5" />
+            View Gallery
+          </Link>
+        </div>
       </div>
 
       {/* Progress Steps */}
