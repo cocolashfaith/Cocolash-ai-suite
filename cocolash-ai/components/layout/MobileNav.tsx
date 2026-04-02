@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { cn } from "@/lib/utils";
-import { Sparkles, Images, Heart, Settings } from "lucide-react";
+import { Sparkles, Images, Heart, Settings, Video } from "lucide-react";
 
 /**
  * MobileNav — Bottom navigation bar for mobile/tablet screens.
@@ -12,6 +12,7 @@ import { Sparkles, Images, Heart, Settings } from "lucide-react";
 const navItems = [
   { label: "Generate", href: "/generate", icon: Sparkles },
   { label: "Gallery", href: "/gallery", icon: Images },
+  { label: "Video", href: "/video", icon: Video },
   { label: "Favorites", href: "/favorites", icon: Heart },
   { label: "Settings", href: "/settings", icon: Settings },
 ];

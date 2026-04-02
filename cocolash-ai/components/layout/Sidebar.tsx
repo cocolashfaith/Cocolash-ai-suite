@@ -11,6 +11,7 @@ import {
   LogOut,
   Loader2,
   Shield,
+  Video,
 } from "lucide-react";
 import { useState, useEffect } from "react";
 import { createClient } from "@/lib/supabase/client";
@@ -37,6 +38,12 @@ const navItems = [
     href: "/gallery",
     icon: Images,
     description: "View generated images",
+  },
+  {
+    label: "Video",
+    href: "/video",
+    icon: Video,
+    description: "Create AI avatar videos",
   },
   {
     label: "Favorites",
