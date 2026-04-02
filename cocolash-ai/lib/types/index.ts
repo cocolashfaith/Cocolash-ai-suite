@@ -496,3 +496,144 @@ export interface ImageContext {
   composition: Composition;
   productSubCategory?: ProductCategoryKey;
 }
+
+// ═══════════════════════════════════════════════════════════════
+// UPGRADE 1 — System 2: AI UGC Video Creator
+// ═══════════════════════════════════════════════════════════════
+
+// ── Campaign Types ────────────────────────────────────────────
+export type CampaignType =
+  | "product-showcase"
+  | "testimonial"
+  | "promo"
+  | "educational"
+  | "unboxing"
+  | "before-after";
+
+// ── Script Tone ───────────────────────────────────────────────
+export type ScriptTone = "casual" | "energetic" | "calm" | "professional";
+
+// ── Video Duration (seconds) ──────────────────────────────────
+export type VideoDuration = 15 | 30 | 60;
+
+// ── Video Aspect Ratio ────────────────────────────────────────
+export type VideoAspectRatio = "9:16" | "1:1" | "16:9";
+
+// ── Composition Pose (person + product) ───────────────────────
+export type CompositionPose = "holding" | "applying" | "selfie" | "testimonial";
+
+// ── HeyGen Video Status ──────────────────────────────────────
+export type HeyGenVideoStatus =
+  | "pending"
+  | "processing"
+  | "completed"
+  | "failed";
+
+// ── Video Background Type ────────────────────────────────────
+export type VideoBackgroundType = "solid" | "gradient" | "image";
+
+// ── Video Script (database record) ────────────────────────────
+export interface VideoScript {
+  id: string;
+  title: string | null;
+  campaign_type: CampaignType;
+  tone: ScriptTone;
+  duration_seconds: number;
+  script_text: string;
+  hook_text: string | null;
+  cta_text: string | null;
+  is_template: boolean;
+  created_at: string;
+}
+
+// ── Generated Video (database record) ─────────────────────────
+export interface GeneratedVideo {
+  id: string;
+  script_id: string | null;
+  person_image_id: string | null;
+  person_image_url: string | null;
+  product_image_url: string;
+  composed_image_url: string | null;
+  avatar_image_url: string | null;
+  heygen_video_id: string | null;
+  heygen_status: HeyGenVideoStatus | null;
+  raw_video_url: string | null;
+  final_video_url: string | null;
+  thumbnail_url: string | null;
+  duration_seconds: number | null;
+  aspect_ratio: VideoAspectRatio | null;
+  has_captions: boolean;
+  has_watermark: boolean;
+  has_background_music: boolean;
+  voice_id: string | null;
+  background_type: VideoBackgroundType | null;
+  background_value: string | null;
+  processing_cost: number | null;
+  created_at: string;
+  completed_at: string | null;
+}
+
+// ── Voice Option (database record — cached from HeyGen) ───────
+export interface VoiceOption {
+  id: string;
+  name: string | null;
+  gender: string | null;
+  accent: string | null;
+  tone: string | null;
+  preview_url: string | null;
+  is_active: boolean;
+}
+
+// ── Background Music (database record) ────────────────────────
+export interface BackgroundMusic {
+  id: string;
+  name: string | null;
+  category: string | null;
+  duration_seconds: number | null;
+  file_url: string;
+  is_active: boolean;
+}
+
+// ── Video Generation API Types ────────────────────────────────
+
+export interface VideoGenerateRequest {
+  scriptId?: string;
+  campaignType: CampaignType;
+  tone: ScriptTone;
+  duration: VideoDuration;
+  personImageId?: string;
+  personImageUrl?: string;
+  productImageUrl: string;
+  pose: CompositionPose;
+  voiceId: string;
+  aspectRatio: VideoAspectRatio;
+  backgroundType: VideoBackgroundType;
+  backgroundValue: string;
+  addCaptions: boolean;
+  addWatermark: boolean;
+}
+
+export interface VideoGenerateResponse {
+  success: boolean;
+  videoId: string;
+  status: HeyGenVideoStatus;
+  estimatedTime: string;
+}
+
+export interface VideoStatusResponse {
+  videoId: string;
+  status: HeyGenVideoStatus;
+  progress?: number;
+  finalVideoUrl?: string;
+  thumbnailUrl?: string;
+  error?: string;
+}
+
+export interface ScriptResult {
+  hook: string;
+  body: string;
+  cta: string;
+  full_script: string;
+  estimated_duration: number;
+  style_match: number;
+}
