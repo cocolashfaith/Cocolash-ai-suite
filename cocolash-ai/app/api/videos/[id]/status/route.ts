@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/server";
 import { getVideoStatus } from "@/lib/heygen/client";
 import { HeyGenError } from "@/lib/heygen/types";
+import { processVideo } from "@/lib/video/processor";
 import type { GeneratedVideo, VideoStatusResponse } from "@/lib/types";
 
 /**
@@ -80,21 +81,58 @@ export async function GET(
     }
 
     if (heygenStatus.status === "completed") {
+      const rawVideoUrl = heygenStatus.video_url ?? null;
+      const heygenCaptionUrl = heygenStatus.video_url_caption ?? null;
+      const heygenDuration = heygenStatus.duration
+        ? Math.round(heygenStatus.duration)
+        : typedVideo.duration_seconds;
+
       const updateData: Record<string, unknown> = {
         heygen_status: "completed",
-        raw_video_url: heygenStatus.video_url ?? null,
-        thumbnail_url: heygenStatus.thumbnail_url ?? null,
-        duration_seconds: heygenStatus.duration
-          ? Math.round(heygenStatus.duration)
-          : typedVideo.duration_seconds,
+        raw_video_url: rawVideoUrl,
+        duration_seconds: heygenDuration,
         completed_at: new Date().toISOString(),
       };
 
-      if (heygenStatus.video_url_caption) {
-        updateData.final_video_url = heygenStatus.video_url_caption;
-        updateData.has_captions = true;
+      // Run Cloudinary post-processing if we have a raw video URL
+      if (rawVideoUrl) {
+        try {
+          // Fetch script text for SRT generation if needed
+          let scriptText: string | undefined;
+          if (typedVideo.script_id) {
+            const { data: script } = await supabase
+              .from("video_scripts")
+              .select("script_text")
+              .eq("id", typedVideo.script_id)
+              .single();
+            scriptText = script?.script_text ?? undefined;
+          }
+
+          const processed = await processVideo({
+            rawVideoUrl,
+            title: `CocoLash Video`,
+            scriptText,
+            durationSeconds: heygenDuration ?? undefined,
+            addWatermark: typedVideo.has_watermark,
+            addCaptions: typedVideo.has_captions,
+            heygenCaptionUrl,
+          });
+
+          updateData.final_video_url = processed.videoUrl;
+          updateData.thumbnail_url = processed.thumbnailUrl;
+
+          if (heygenCaptionUrl || processed.captionedUrl) {
+            updateData.has_captions = true;
+          }
+        } catch (processError) {
+          console.error("[videos/status] Post-processing error:", processError);
+          // Fall back to HeyGen URLs if Cloudinary fails
+          updateData.final_video_url = heygenCaptionUrl ?? rawVideoUrl;
+          updateData.thumbnail_url = heygenStatus.thumbnail_url ?? null;
+        }
       } else {
-        updateData.final_video_url = heygenStatus.video_url ?? null;
+        updateData.final_video_url = heygenCaptionUrl ?? null;
+        updateData.thumbnail_url = heygenStatus.thumbnail_url ?? null;
       }
 
       const { error: updateError } = await supabase
@@ -113,6 +151,7 @@ export async function GET(
         final_video_url: (updateData.final_video_url as string) ?? null,
         thumbnail_url: (updateData.thumbnail_url as string) ?? null,
         duration_seconds: (updateData.duration_seconds as number) ?? null,
+        has_captions: (updateData.has_captions as boolean) ?? typedVideo.has_captions,
         completed_at: updateData.completed_at as string,
       };
 
