@@ -36,6 +36,7 @@ interface GenerateVideoProps {
   backgroundValue: string;
   addCaptions: boolean;
   addWatermark: boolean;
+  musicTrackId: string | null;
   campaignType: string;
   tone: string;
   duration: number;
@@ -70,6 +71,7 @@ export function GenerateVideo(props: GenerateVideoProps) {
     backgroundValue,
     addCaptions,
     addWatermark,
+    musicTrackId,
     campaignType,
     tone,
     duration,
@@ -218,6 +220,7 @@ export function GenerateVideo(props: GenerateVideoProps) {
               <SummaryRow label="Background" value={backgroundValue} isColor />
               <SummaryRow label="Captions" value={addCaptions ? "Yes" : "No"} />
               <SummaryRow label="Watermark" value={addWatermark ? "Yes" : "No"} />
+              <SummaryRow label="Music" value={musicTrackId ? "Selected" : "None"} />
             </div>
           </div>
 

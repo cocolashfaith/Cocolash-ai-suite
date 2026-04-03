@@ -13,6 +13,7 @@ import {
   Square,
   Smartphone,
 } from "lucide-react";
+import { MusicSelector } from "@/components/video/MusicSelector";
 import type {
   VideoAspectRatio,
   VideoBackgroundType,
@@ -27,6 +28,7 @@ interface VoiceAndStyleProps {
     backgroundValue: string;
     addCaptions: boolean;
     addWatermark: boolean;
+    musicTrackId: string | null;
   }) => void;
 }
 
@@ -62,6 +64,7 @@ export function VoiceAndStyle({ onStyleReady }: VoiceAndStyleProps) {
   const [selectedColor, setSelectedColor] = useState("#ede5d6");
   const [addCaptions, setAddCaptions] = useState(true);
   const [addWatermark, setAddWatermark] = useState(true);
+  const [musicTrackId, setMusicTrackId] = useState<string | null>(null);
 
   useEffect(() => {
     fetchVoices();
@@ -118,6 +121,7 @@ export function VoiceAndStyle({ onStyleReady }: VoiceAndStyleProps) {
       backgroundValue: selectedColor,
       addCaptions,
       addWatermark,
+      musicTrackId,
     });
   };
 
@@ -272,6 +276,12 @@ export function VoiceAndStyle({ onStyleReady }: VoiceAndStyleProps) {
           onChange={setAddWatermark}
         />
       </div>
+
+      {/* Background Music */}
+      <MusicSelector
+        selectedTrackId={musicTrackId}
+        onSelect={setMusicTrackId}
+      />
 
       {/* Continue */}
       <Button

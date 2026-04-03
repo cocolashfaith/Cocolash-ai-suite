@@ -49,6 +49,7 @@ interface WizardState {
   backgroundValue: string;
   addCaptions: boolean;
   addWatermark: boolean;
+  musicTrackId: string | null;
 }
 
 const DEFAULT_STATE: WizardState = {
@@ -66,6 +67,7 @@ const DEFAULT_STATE: WizardState = {
   backgroundValue: "#ede5d6",
   addCaptions: true,
   addWatermark: true,
+  musicTrackId: null,
 };
 
 export default function VideoPage() {
@@ -106,6 +108,7 @@ export default function VideoPage() {
     backgroundValue: string;
     addCaptions: boolean;
     addWatermark: boolean;
+    musicTrackId: string | null;
   }) => {
     setState((prev) => ({
       ...prev,
@@ -115,6 +118,7 @@ export default function VideoPage() {
       backgroundValue: data.backgroundValue,
       addCaptions: data.addCaptions,
       addWatermark: data.addWatermark,
+      musicTrackId: data.musicTrackId,
     }));
     setCurrentStep(3);
   };
@@ -239,6 +243,7 @@ export default function VideoPage() {
             backgroundValue={state.backgroundValue}
             addCaptions={state.addCaptions}
             addWatermark={state.addWatermark}
+            musicTrackId={state.musicTrackId}
             campaignType={state.campaignType}
             tone={state.tone}
             duration={state.duration}
