@@ -522,6 +522,9 @@ export type VideoAspectRatio = "9:16" | "1:1" | "16:9";
 // ── Composition Pose (person + product) ───────────────────────
 export type CompositionPose = "holding" | "applying" | "selfie" | "testimonial";
 
+// ── Video Pipeline ────────────────────────────────────────────
+export type VideoPipeline = "heygen" | "seedance";
+
 // ── HeyGen Video Status ──────────────────────────────────────
 export type HeyGenVideoStatus =
   | "pending"
@@ -569,6 +572,11 @@ export interface GeneratedVideo {
   background_type: VideoBackgroundType | null;
   background_value: string | null;
   processing_cost: number | null;
+  pipeline: VideoPipeline;
+  seedance_task_id: string | null;
+  seedance_prompt: string | null;
+  audio_mode: string | null;
+  audio_url: string | null;
   created_at: string;
   completed_at: string | null;
 }
