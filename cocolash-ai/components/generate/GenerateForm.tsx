@@ -1,7 +1,8 @@
 "use client";
 
 import { useState, useCallback } from "react";
-import { Sparkles } from "lucide-react";
+import { useRouter } from "next/navigation";
+import { Sparkles, Video } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
 
@@ -75,6 +76,7 @@ const DEFAULT_SELECTIONS: GenerationSelections = {
 
 // ── Component ────────────────────────────────────────────────
 export function GenerateForm() {
+  const router = useRouter();
   const [selections, setSelections] =
     useState<GenerationSelections>(DEFAULT_SELECTIONS);
   const [isGenerating, setIsGenerating] = useState(false);
@@ -448,14 +450,28 @@ export function GenerateForm() {
                 onTemplateSaved={handleTemplateSaved}
               />
 
-              <Button
-                onClick={() => setCaptionModalOpen(true)}
-                className="mt-4 w-full gap-2 bg-coco-brown py-5 text-sm font-semibold text-white shadow-md transition-all hover:bg-coco-brown-light hover:shadow-lg"
-                size="lg"
-              >
-                <Sparkles className="h-4 w-4" />
-                Create Captions & Publish
-              </Button>
+              <div className="mt-4 flex gap-2">
+                <Button
+                  onClick={() => setCaptionModalOpen(true)}
+                  className="flex-1 gap-2 bg-coco-brown py-5 text-sm font-semibold text-white shadow-md transition-all hover:bg-coco-brown-light hover:shadow-lg"
+                  size="lg"
+                >
+                  <Sparkles className="h-4 w-4" />
+                  Captions & Publish
+                </Button>
+                <Button
+                  onClick={() =>
+                    router.push(
+                      `/video?imageId=${generatedImage.id}&imageUrl=${encodeURIComponent(generatedImage.image_url)}`
+                    )
+                  }
+                  className="flex-1 gap-2 bg-coco-golden py-5 text-sm font-semibold text-white shadow-md transition-all hover:bg-coco-golden-dark hover:shadow-lg"
+                  size="lg"
+                >
+                  <Video className="h-4 w-4" />
+                  Create Video
+                </Button>
+              </div>
 
               <CaptionModal
                 open={captionModalOpen}

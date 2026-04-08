@@ -20,26 +20,26 @@ import type { CompositionPose } from "@/lib/types";
 // ── Pose-Specific Prompts ────────────────────────────────────
 
 const POSE_PROMPTS: Record<CompositionPose, string> = {
-  holding: `A confident woman elegantly holding the exact lash product box shown in the reference image. 
+  holding: `The EXACT same woman from IMAGE 1, in the EXACT same setting and background, now elegantly holding the exact lash product box shown in IMAGE 2. 
 Natural grip in her right hand, product held at chest level with the brand label clearly visible to camera. 
 Product placement is organic — not forced or stiff. She looks directly at camera with a warm, genuine smile.
-Medium shot from waist up, professional product photography lighting, warm golden tones.`,
+Medium shot from waist up. Keep the EXACT same lighting, environment, and background as the original person photo.`,
 
-  applying: `A woman applying false lashes from the exact product shown in the reference image. 
+  applying: `The EXACT same woman from IMAGE 1, in the EXACT same setting and background, now applying false lashes from the exact product shown in IMAGE 2. 
 She holds a lash strip delicately between her fingertips near her eye, with a small handheld mirror nearby.
-Beauty tutorial aesthetic — close enough to see the lash details. Soft focus background.
-Her expression is focused yet relaxed, as if filming a how-to video. Warm vanity lighting.`,
+Beauty tutorial aesthetic — close enough to see the lash details.
+Her expression is focused yet relaxed, as if filming a how-to video. Keep the EXACT same lighting and background as the original person photo.`,
 
-  selfie: `A woman taking a selfie-style photo while holding the exact lash product shown in the reference image.
+  selfie: `The EXACT same woman from IMAGE 1, in the EXACT same setting and background, now taking a selfie-style photo while holding the exact lash product shown in IMAGE 2.
 Phone-camera perspective, slightly above eye level. She holds the product box near her face with one hand.
-Social media UGC style — natural, authentic, relatable. Bright but warm lighting.
-Genuine excited expression, as if sharing a new beauty find with followers.`,
+Social media UGC style — natural, authentic, relatable.
+Genuine excited expression. Keep the EXACT same lighting, environment, and background as the original person photo.`,
 
-  testimonial: `A woman looking directly at camera, holding the exact lash product shown in the reference image at chest level.
+  testimonial: `The EXACT same woman from IMAGE 1, in the EXACT same setting and background, now holding the exact lash product shown in IMAGE 2 at chest level.
 Testimonial video still — as if she's about to speak to camera about the product.
 Product held steady with both hands or cradled in one palm, label facing forward.
-Genuine, trustworthy expression. Clean background, professional but approachable lighting.
-Upper body framing, as if for a UGC review video.`,
+Genuine, trustworthy expression. Upper body framing, as if for a UGC review video.
+Keep the EXACT same lighting, environment, and background as the original person photo.`,
 };
 
 // ── Composition Instruction ──────────────────────────────────
@@ -51,6 +51,7 @@ IMAGE 1 (Person): This is the EXACT person to feature. You MUST preserve:
 - Her exact skin tone, texture, and complexion — NO modifications
 - Her exact hair style, color, and texture
 - Her overall appearance and body proportions
+- The EXACT background, setting, and environment from this image
 
 IMAGE 2 (Product): This is the EXACT product to include. You MUST preserve:
 - The exact product packaging, colors, and branding
@@ -64,7 +65,9 @@ CRITICAL RULES:
 - The composition must look like a real photograph, not a collage or overlay
 - Natural hand positioning — fingers wrap around the product realistically
 - Lighting must be consistent between person and product
-- Background should be simple and clean (soft gradient or neutral)`;
+- PRESERVE the EXACT background from IMAGE 1 — do NOT change, replace, simplify, or modify the background in ANY way
+- The final image must look like the person was photographed in their original setting, just now holding the product
+- Do NOT use a solid color, gradient, or studio background unless IMAGE 1 already has one`;
 
 // ── Negative Prompt for Composition ──────────────────────────
 
@@ -72,9 +75,11 @@ const COMPOSITION_NEGATIVE = `ABSOLUTELY NO TEXT, WRITING, OR TYPOGRAPHY IN THE 
 Do NOT add any brand names, watermarks, labels, or text overlays.
 Do NOT modify the person's skin tone, features, or appearance.
 Do NOT alter the product packaging or branding.
+Do NOT change, replace, or modify the background from the original person image.
 AVOID: illustration, cartoon, 3d render, collage effect, cut-and-paste look, 
 unnatural hand positioning, floating product, mismatched lighting, 
-plastic skin, airbrushed, cool blue lighting, aggressive expression.`;
+plastic skin, airbrushed, cool blue lighting, aggressive expression,
+different background, studio background replacement, solid color background.`;
 
 // ── Main Composition Function ────────────────────────────────
 

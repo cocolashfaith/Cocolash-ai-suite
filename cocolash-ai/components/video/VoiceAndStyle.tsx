@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
@@ -12,11 +12,11 @@ import {
   Monitor,
   Square,
   Smartphone,
+  Search,
+  X,
 } from "lucide-react";
-import { MusicSelector } from "@/components/video/MusicSelector";
 import type {
   VideoAspectRatio,
-  VideoBackgroundType,
   VoiceOption,
 } from "@/lib/types";
 
@@ -24,22 +24,8 @@ interface VoiceAndStyleProps {
   onStyleReady: (data: {
     voiceId: string;
     aspectRatio: VideoAspectRatio;
-    backgroundType: VideoBackgroundType;
-    backgroundValue: string;
-    addCaptions: boolean;
-    addWatermark: boolean;
-    musicTrackId: string | null;
   }) => void;
 }
-
-const BRAND_COLORS = [
-  { label: "Brown", value: "#28150e" },
-  { label: "Beige", value: "#ede5d6" },
-  { label: "Golden", value: "#ce9765" },
-  { label: "Pink", value: "#ead1c1" },
-  { label: "White", value: "#ffffff" },
-  { label: "Charcoal", value: "#242424" },
-];
 
 const ASPECT_RATIOS: {
   value: VideoAspectRatio;
@@ -52,6 +38,8 @@ const ASPECT_RATIOS: {
   { value: "16:9", label: "16:9", icon: Monitor, description: "YouTube, Website" },
 ];
 
+type GenderFilter = "all" | "male" | "female";
+
 export function VoiceAndStyle({ onStyleReady }: VoiceAndStyleProps) {
   const [voices, setVoices] = useState<VoiceOption[]>([]);
   const [loadingVoices, setLoadingVoices] = useState(true);
@@ -59,12 +47,11 @@ export function VoiceAndStyle({ onStyleReady }: VoiceAndStyleProps) {
   const [playingPreview, setPlayingPreview] = useState<string | null>(null);
   const [audioEl, setAudioEl] = useState<HTMLAudioElement | null>(null);
 
+  const [searchQuery, setSearchQuery] = useState("");
+  const [genderFilter, setGenderFilter] = useState<GenderFilter>("all");
+  const [languageFilter, setLanguageFilter] = useState("all");
+
   const [aspectRatio, setAspectRatio] = useState<VideoAspectRatio>("9:16");
-  const [backgroundType] = useState<VideoBackgroundType>("solid");
-  const [selectedColor, setSelectedColor] = useState("#ede5d6");
-  const [addCaptions, setAddCaptions] = useState(true);
-  const [addWatermark, setAddWatermark] = useState(true);
-  const [musicTrackId, setMusicTrackId] = useState<string | null>(null);
 
   useEffect(() => {
     fetchVoices();
@@ -91,6 +78,33 @@ export function VoiceAndStyle({ onStyleReady }: VoiceAndStyleProps) {
     }
   };
 
+  const availableLanguages = useMemo(() => {
+    const langs = new Set<string>();
+    voices.forEach((v) => {
+      if (v.accent) langs.add(v.accent);
+    });
+    return Array.from(langs).sort();
+  }, [voices]);
+
+  const filteredVoices = useMemo(() => {
+    return voices.filter((v) => {
+      if (searchQuery) {
+        const q = searchQuery.toLowerCase();
+        const nameMatch = (v.name ?? "").toLowerCase().includes(q);
+        const accentMatch = (v.accent ?? "").toLowerCase().includes(q);
+        const genderMatch = (v.gender ?? "").toLowerCase().includes(q);
+        if (!nameMatch && !accentMatch && !genderMatch) return false;
+      }
+      if (genderFilter !== "all") {
+        if ((v.gender ?? "").toLowerCase() !== genderFilter) return false;
+      }
+      if (languageFilter !== "all") {
+        if (v.accent !== languageFilter) return false;
+      }
+      return true;
+    });
+  }, [voices, searchQuery, genderFilter, languageFilter]);
+
   const handlePlayPreview = (voiceId: string, previewUrl: string | null) => {
     if (!previewUrl) return;
 
@@ -103,7 +117,13 @@ export function VoiceAndStyle({ onStyleReady }: VoiceAndStyleProps) {
     audioEl?.pause();
     const audio = new Audio(previewUrl);
     audio.onended = () => setPlayingPreview(null);
-    audio.play().catch(() => {});
+    audio.onerror = () => {
+      setPlayingPreview(null);
+      toast.error("Could not play voice preview");
+    };
+    audio.play().catch(() => {
+      setPlayingPreview(null);
+    });
     setAudioEl(audio);
     setPlayingPreview(voiceId);
   };
@@ -117,12 +137,15 @@ export function VoiceAndStyle({ onStyleReady }: VoiceAndStyleProps) {
     onStyleReady({
       voiceId: selectedVoiceId,
       aspectRatio,
-      backgroundType,
-      backgroundValue: selectedColor,
-      addCaptions,
-      addWatermark,
-      musicTrackId,
     });
+  };
+
+  const hasActiveFilters = searchQuery || genderFilter !== "all" || languageFilter !== "all";
+
+  const clearFilters = () => {
+    setSearchQuery("");
+    setGenderFilter("all");
+    setLanguageFilter("all");
   };
 
   return (
@@ -139,94 +162,165 @@ export function VoiceAndStyle({ onStyleReady }: VoiceAndStyleProps) {
             <Loader2 className="h-5 w-5 animate-spin text-coco-brown-medium/40" />
             <span className="ml-2 text-xs text-coco-brown-medium/50">Loading voices...</span>
           </div>
+        ) : voices.length === 0 ? (
+          <div className="flex flex-col items-center justify-center rounded-xl border-2 border-dashed border-coco-beige-dark p-6">
+            <Mic className="h-6 w-6 text-coco-brown-medium/30" />
+            <p className="mt-2 text-xs text-coco-brown-medium/50">
+              No voices available — check your HeyGen API key
+            </p>
+          </div>
         ) : (
-          <div className="max-h-48 space-y-2 overflow-y-auto rounded-xl border-2 border-coco-beige-dark bg-white p-2">
-            {voices.map((voice) => {
-              const isSelected = selectedVoiceId === voice.id;
-              return (
-                <button
-                  key={voice.id}
-                  type="button"
-                  onClick={() => setSelectedVoiceId(voice.id)}
-                  className={cn(
-                    "flex w-full items-center gap-3 rounded-lg px-3 py-2.5 transition-all",
-                    isSelected
-                      ? "bg-coco-golden/10 ring-1 ring-coco-golden"
-                      : "hover:bg-coco-beige-light"
-                  )}
-                >
-                  <div
-                    className={cn(
-                      "flex h-8 w-8 shrink-0 items-center justify-center rounded-full",
-                      isSelected
-                        ? "bg-coco-golden text-white"
-                        : "bg-coco-beige text-coco-brown-medium"
-                    )}
+          <div className="space-y-2">
+            {/* Search + Filters */}
+            <div className="flex flex-col gap-2">
+              <div className="relative">
+                <Search className="absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-coco-brown-medium/40" />
+                <input
+                  type="text"
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  placeholder="Search by name, language, or gender..."
+                  className="w-full rounded-lg border border-coco-beige-dark bg-white py-2 pl-9 pr-8 text-xs text-coco-brown placeholder:text-coco-brown-medium/40 focus:border-coco-golden focus:outline-none focus:ring-1 focus:ring-coco-golden"
+                />
+                {searchQuery && (
+                  <button
+                    type="button"
+                    onClick={() => setSearchQuery("")}
+                    className="absolute right-2 top-1/2 -translate-y-1/2 text-coco-brown-medium/40 hover:text-coco-brown-medium"
                   >
-                    <Mic className="h-3.5 w-3.5" />
-                  </div>
-                  <div className="flex-1 text-left">
-                    <p className={cn("text-xs font-medium", isSelected ? "text-coco-brown" : "text-coco-brown-medium")}>
-                      {voice.name || voice.id}
-                    </p>
-                    <p className="text-[10px] text-coco-brown-medium/50">
-                      {[voice.gender, voice.accent].filter(Boolean).join(" · ")}
-                    </p>
-                  </div>
-                  {voice.preview_url && (
+                    <X className="h-3.5 w-3.5" />
+                  </button>
+                )}
+              </div>
+
+              <div className="flex gap-2">
+                <select
+                  value={languageFilter}
+                  onChange={(e) => setLanguageFilter(e.target.value)}
+                  className="flex-1 rounded-lg border border-coco-beige-dark bg-white px-2 py-1.5 text-[11px] text-coco-brown focus:border-coco-golden focus:outline-none focus:ring-1 focus:ring-coco-golden"
+                >
+                  <option value="all">All Languages</option>
+                  {availableLanguages.map((lang) => (
+                    <option key={lang} value={lang}>{lang}</option>
+                  ))}
+                </select>
+
+                <div className="flex rounded-lg border border-coco-beige-dark bg-white p-0.5">
+                  {(["all", "female", "male"] as const).map((g) => (
                     <button
+                      key={g}
                       type="button"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        handlePlayPreview(voice.id, voice.preview_url);
-                      }}
-                      className="flex h-7 w-7 items-center justify-center rounded-full bg-coco-beige text-coco-brown-medium hover:bg-coco-golden/20 hover:text-coco-golden"
-                    >
-                      {playingPreview === voice.id ? (
-                        <Pause className="h-3 w-3" />
-                      ) : (
-                        <Play className="h-3 w-3" />
+                      onClick={() => setGenderFilter(g)}
+                      className={cn(
+                        "rounded-md px-2.5 py-1 text-[11px] font-medium transition-all",
+                        genderFilter === g
+                          ? "bg-coco-golden text-white"
+                          : "text-coco-brown-medium/60 hover:text-coco-brown-medium"
                       )}
+                    >
+                      {g === "all" ? "All" : g.charAt(0).toUpperCase() + g.slice(1)}
                     </button>
-                  )}
-                </button>
-              );
-            })}
+                  ))}
+                </div>
+
+                {hasActiveFilters && (
+                  <button
+                    type="button"
+                    onClick={clearFilters}
+                    className="flex items-center gap-1 rounded-lg px-2 text-[11px] text-coco-brown-medium/60 hover:text-coco-brown-medium"
+                  >
+                    <X className="h-3 w-3" />
+                    Clear
+                  </button>
+                )}
+              </div>
+            </div>
+
+            {/* Voice count */}
+            <p className="text-[10px] text-coco-brown-medium/40">
+              {filteredVoices.length} voice{filteredVoices.length !== 1 ? "s" : ""}
+              {hasActiveFilters ? " matching" : " available"}
+            </p>
+
+            {/* Voice list */}
+            <div className="max-h-64 space-y-1 overflow-y-auto rounded-xl border-2 border-coco-beige-dark bg-white p-2">
+              {filteredVoices.length === 0 ? (
+                <div className="flex flex-col items-center justify-center py-6">
+                  <Search className="h-5 w-5 text-coco-brown-medium/30" />
+                  <p className="mt-2 text-xs text-coco-brown-medium/50">
+                    No voices match your filters
+                  </p>
+                  <button
+                    type="button"
+                    onClick={clearFilters}
+                    className="mt-1 text-[11px] text-coco-golden hover:underline"
+                  >
+                    Clear filters
+                  </button>
+                </div>
+              ) : (
+                filteredVoices.map((voice) => {
+                  const isSelected = selectedVoiceId === voice.id;
+                  return (
+                    <div
+                      key={voice.id}
+                      role="button"
+                      tabIndex={0}
+                      onClick={() => setSelectedVoiceId(voice.id)}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter" || e.key === " ") {
+                          e.preventDefault();
+                          setSelectedVoiceId(voice.id);
+                        }
+                      }}
+                      className={cn(
+                        "flex w-full cursor-pointer items-center gap-3 rounded-lg px-3 py-2.5 transition-all",
+                        isSelected
+                          ? "bg-coco-golden/10 ring-1 ring-coco-golden"
+                          : "hover:bg-coco-beige-light"
+                      )}
+                    >
+                      <div
+                        className={cn(
+                          "flex h-8 w-8 shrink-0 items-center justify-center rounded-full",
+                          isSelected
+                            ? "bg-coco-golden text-white"
+                            : "bg-coco-beige text-coco-brown-medium"
+                        )}
+                      >
+                        <Mic className="h-3.5 w-3.5" />
+                      </div>
+                      <div className="flex-1 text-left">
+                        <p className={cn("text-xs font-medium", isSelected ? "text-coco-brown" : "text-coco-brown-medium")}>
+                          {voice.name || voice.id}
+                        </p>
+                        <p className="text-[10px] text-coco-brown-medium/50">
+                          {[voice.gender, voice.accent].filter(Boolean).join(" · ")}
+                        </p>
+                      </div>
+                      {voice.preview_url && (
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handlePlayPreview(voice.id, voice.preview_url);
+                          }}
+                          className="flex h-7 w-7 items-center justify-center rounded-full bg-coco-beige text-coco-brown-medium hover:bg-coco-golden/20 hover:text-coco-golden"
+                        >
+                          {playingPreview === voice.id ? (
+                            <Pause className="h-3 w-3" />
+                          ) : (
+                            <Play className="h-3 w-3" />
+                          )}
+                        </button>
+                      )}
+                    </div>
+                  );
+                })
+              )}
+            </div>
           </div>
         )}
-      </div>
-
-      {/* Background Color */}
-      <div className="space-y-2">
-        <label className="text-sm font-semibold text-coco-brown">
-          Background Color
-        </label>
-        <div className="flex gap-3">
-          {BRAND_COLORS.map((color) => {
-            const isActive = selectedColor === color.value;
-            return (
-              <button
-                key={color.value}
-                type="button"
-                onClick={() => setSelectedColor(color.value)}
-                className={cn(
-                  "flex flex-col items-center gap-1.5",
-                )}
-              >
-                <div
-                  className={cn(
-                    "h-10 w-10 rounded-full border-2 transition-all",
-                    isActive
-                      ? "border-coco-golden ring-2 ring-coco-golden/30 scale-110"
-                      : "border-coco-beige-dark hover:border-coco-golden/40"
-                  )}
-                  style={{ backgroundColor: color.value }}
-                />
-                <span className="text-[10px] text-coco-brown-medium/60">{color.label}</span>
-              </button>
-            );
-          })}
-        </div>
       </div>
 
       {/* Aspect Ratio */}
@@ -261,28 +355,6 @@ export function VoiceAndStyle({ onStyleReady }: VoiceAndStyleProps) {
         </div>
       </div>
 
-      {/* Toggles */}
-      <div className="space-y-3">
-        <ToggleRow
-          label="Auto-Captions"
-          description="Add subtitle text overlay to the video"
-          checked={addCaptions}
-          onChange={setAddCaptions}
-        />
-        <ToggleRow
-          label="Watermark"
-          description="Add CocoLash branding to the video"
-          checked={addWatermark}
-          onChange={setAddWatermark}
-        />
-      </div>
-
-      {/* Background Music */}
-      <MusicSelector
-        selectedTrackId={musicTrackId}
-        onSelect={setMusicTrackId}
-      />
-
       {/* Continue */}
       <Button
         onClick={handleContinue}
@@ -292,44 +364,6 @@ export function VoiceAndStyle({ onStyleReady }: VoiceAndStyleProps) {
       >
         Review & Generate →
       </Button>
-    </div>
-  );
-}
-
-function ToggleRow({
-  label,
-  description,
-  checked,
-  onChange,
-}: {
-  label: string;
-  description: string;
-  checked: boolean;
-  onChange: (v: boolean) => void;
-}) {
-  return (
-    <div className="flex items-center justify-between rounded-xl border-2 border-coco-beige-dark bg-white px-4 py-3">
-      <div>
-        <p className="text-xs font-semibold text-coco-brown">{label}</p>
-        <p className="text-[10px] text-coco-brown-medium/60">{description}</p>
-      </div>
-      <button
-        type="button"
-        role="switch"
-        aria-checked={checked}
-        onClick={() => onChange(!checked)}
-        className={cn(
-          "relative inline-flex h-5 w-9 shrink-0 items-center rounded-full transition-colors",
-          checked ? "bg-coco-golden" : "bg-coco-brown-medium/20"
-        )}
-      >
-        <span
-          className={cn(
-            "inline-block h-3.5 w-3.5 transform rounded-full bg-white shadow transition-transform",
-            checked ? "translate-x-[18px]" : "translate-x-[3px]"
-          )}
-        />
-      </button>
     </div>
   );
 }

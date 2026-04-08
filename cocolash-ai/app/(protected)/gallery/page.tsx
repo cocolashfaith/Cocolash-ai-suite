@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState, useCallback } from "react";
+import { useRouter } from "next/navigation";
 import { Images, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -23,6 +24,7 @@ interface PaginationInfo {
 }
 
 export default function GalleryPage() {
+  const router = useRouter();
   const [images, setImages] = useState<GeneratedImage[]>([]);
   const [pagination, setPagination] = useState<PaginationInfo | null>(null);
   const [loading, setLoading] = useState(true);
@@ -135,6 +137,14 @@ export default function GalleryPage() {
     setModalOpen(true);
   };
 
+  const handleCreateVideo = (image: GeneratedImage) => {
+    const params = new URLSearchParams({
+      imageId: image.id,
+      imageUrl: image.image_url,
+    });
+    router.push(`/video?${params.toString()}`);
+  };
+
   return (
     <div>
       {/* Header */}
@@ -206,6 +216,7 @@ export default function GalleryPage() {
                 onFavoriteToggle={handleFavoriteToggle}
                 onDetailsClick={() => openModal(image)}
                 onCaptionClick={() => setCaptionImage(image)}
+                onCreateVideo={() => handleCreateVideo(image)}
               />
             ))}
           </div>
@@ -243,6 +254,7 @@ export default function GalleryPage() {
         }}
         onDelete={handleDelete}
         onFavoriteToggle={handleFavoriteToggle}
+        onCreateVideo={handleCreateVideo}
       />
 
       {/* Full-screen lightbox */}

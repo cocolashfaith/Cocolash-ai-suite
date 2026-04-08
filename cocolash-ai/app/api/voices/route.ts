@@ -60,32 +60,34 @@ export async function GET() {
       return NextResponse.json({ voices: typed, source: "cache" });
     }
 
-    const upsertRows = freshVoices.map((v) => ({
+    const mappedVoices: VoiceOption[] = freshVoices.map((v) => ({
       id: v.voice_id,
       name: v.name,
       gender: v.gender ?? null,
       accent: v.language ?? null,
-      tone: null as string | null,
+      tone: null,
       preview_url: v.preview_audio ?? null,
       is_active: true,
     }));
 
-    const { error: upsertError } = await supabase
-      .from("voice_options")
-      .upsert(upsertRows, { onConflict: "id" });
+    // Try to cache in DB (non-fatal if Supabase is unavailable)
+    try {
+      const { error: upsertError } = await supabase
+        .from("voice_options")
+        .upsert(
+          mappedVoices.map((v) => ({ ...v })),
+          { onConflict: "id" }
+        );
 
-    if (upsertError) {
-      console.error("[voices] Upsert error:", upsertError);
+      if (upsertError) {
+        console.warn("[voices] Cache upsert failed (non-fatal):", upsertError.message);
+      }
+    } catch {
+      console.warn("[voices] Cache write unavailable (non-fatal)");
     }
 
-    const { data: updatedVoices } = await supabase
-      .from("voice_options")
-      .select("*")
-      .eq("is_active", true)
-      .order("name");
-
     return NextResponse.json({
-      voices: (updatedVoices ?? []) as VoiceOption[],
+      voices: mappedVoices,
       source: "fresh",
       synced: freshVoices.length,
     });

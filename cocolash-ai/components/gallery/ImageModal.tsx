@@ -14,6 +14,7 @@ import {
   MessageSquareText,
   Send,
   Info,
+  Film,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -39,6 +40,7 @@ interface ImageModalProps {
   onClose: () => void;
   onDelete: (id: string) => void;
   onFavoriteToggle: (id: string, newValue?: boolean) => void;
+  onCreateVideo?: (image: GeneratedImage) => void;
 }
 
 export function ImageModal({
@@ -47,6 +49,7 @@ export function ImageModal({
   onClose,
   onDelete,
   onFavoriteToggle,
+  onCreateVideo,
 }: ImageModalProps) {
   const [showPrompt, setShowPrompt] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
@@ -204,6 +207,16 @@ export function ImageModal({
                   <Download className="h-4 w-4" />
                   Download
                 </Button>
+                {onCreateVideo && image && (
+                  <Button
+                    variant="outline"
+                    onClick={() => onCreateVideo(image)}
+                    className="gap-2 border-coco-golden/30 text-coco-golden hover:bg-coco-golden/10 hover:text-coco-golden-dark"
+                  >
+                    <Film className="h-4 w-4" />
+                    Create Video
+                  </Button>
+                )}
                 <FavoriteButton
                   imageId={image.id}
                   isFavorite={image.is_favorite}

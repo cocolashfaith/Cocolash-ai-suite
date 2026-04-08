@@ -2,8 +2,9 @@
  * HeyGen API Client
  *
  * Handles all communication with the HeyGen v2 API:
- * - Upload talking photos (for avatar creation from composed images)
- * - Generate videos (talking photo + voice + background)
+ * - Upload assets (images for photo avatar creation)
+ * - Create photo avatar groups from uploaded assets
+ * - Generate videos (photo avatar + voice, Avatar IV engine)
  * - Poll video status (pending → processing → completed/failed)
  * - List available voices (cached in DB)
  */
@@ -12,7 +13,8 @@ import {
   HeyGenError,
   type HeyGenResponse,
   type HeyGenLegacyResponse,
-  type TalkingPhoto,
+  type UploadAssetResult,
+  type PhotoAvatarGroup,
   type VideoGenParams,
   type VideoGenResult,
   type VideoStatusResult,
@@ -93,18 +95,15 @@ async function withRetry<T>(fn: () => Promise<T>, retries = 1): Promise<T> {
   }
 }
 
-// ── Talking Photo Upload ──────────────────────────────────────
+// ── Upload Asset ──────────────────────────────────────────────
 
 /**
- * Upload an image as a talking photo to HeyGen.
- * Downloads the image from the given URL, then uploads the binary
- * to HeyGen's upload endpoint.
- *
- * Returns the talking_photo_id needed for video generation.
+ * Upload an image to HeyGen via the Upload Asset API (/v1/asset).
+ * Returns asset details including `image_key` for photo avatar creation.
  */
-export async function uploadTalkingPhoto(
+export async function uploadAsset(
   imageUrl: string
-): Promise<TalkingPhoto> {
+): Promise<UploadAssetResult> {
   return withRetry(async () => {
     const imageResponse = await fetch(imageUrl);
     if (!imageResponse.ok) {
@@ -119,7 +118,7 @@ export async function uploadTalkingPhoto(
     const contentType = imageResponse.headers.get("content-type") || "image/jpeg";
 
     const apiKey = getApiKey();
-    const response = await fetch(`${UPLOAD_BASE}/v1/talking_photo`, {
+    const response = await fetch(`${UPLOAD_BASE}/v1/asset`, {
       method: "POST",
       headers: {
         "x-api-key": apiKey,
@@ -131,24 +130,161 @@ export async function uploadTalkingPhoto(
     if (!response.ok) {
       const errorText = await response.text().catch(() => "Unknown error");
       throw new HeyGenError(
-        `Failed to upload talking photo: ${errorText}`,
+        `Failed to upload asset: ${errorText}`,
         response.status,
         errorText
       );
     }
 
-    const result = (await response.json()) as HeyGenLegacyResponse<TalkingPhoto>;
+    const result = (await response.json()) as HeyGenLegacyResponse<UploadAssetResult>;
 
-    if (result.code !== 100 || !result.data?.talking_photo_id) {
+    if (result.code !== 100 || !result.data?.id) {
       throw new HeyGenError(
-        `Talking photo upload returned unexpected response: ${result.msg ?? "no data"}`,
+        `Asset upload returned unexpected response: ${result.msg ?? result.message ?? "no data"}`,
         500,
-        result.msg
+        result.msg ?? result.message
       );
     }
 
     return result.data;
   });
+}
+
+// ── Photo Avatar Group ────────────────────────────────────────
+
+/**
+ * Create a photo avatar group from an uploaded image.
+ * Uses the image_key from uploadAsset().
+ */
+export async function createPhotoAvatarGroup(
+  name: string,
+  imageKey: string
+): Promise<PhotoAvatarGroup> {
+  return withRetry(async () => {
+    const result = await heygenFetch<HeyGenResponse<PhotoAvatarGroup>>(
+      `${API_BASE}/v2/photo_avatar/avatar_group/create`,
+      {
+        method: "POST",
+        body: JSON.stringify({ name, image_key: imageKey }),
+      }
+    );
+
+    if (result.error) {
+      throw new HeyGenError(
+        `Photo avatar group creation failed: ${result.error}`,
+        400,
+        result.error
+      );
+    }
+
+    if (!result.data?.id) {
+      throw new HeyGenError(
+        "Photo avatar group creation returned no group ID",
+        500,
+        "missing_group_id"
+      );
+    }
+
+    return result.data;
+  });
+}
+
+interface AvatarLook {
+  id: string;
+  image_url: string;
+  status: string;
+  group_id: string;
+}
+
+/**
+ * List all avatar looks in a photo avatar group.
+ * Endpoint: GET /v2/avatar_group/{group_id}/avatars
+ * Each avatar's `id` is the `talking_photo_id` for video generation.
+ */
+export async function listAvatarsInGroup(
+  groupId: string
+): Promise<AvatarLook[]> {
+  const result = await heygenFetch<HeyGenResponse<{ avatar_list: AvatarLook[] }>>(
+    `${API_BASE}/v2/avatar_group/${groupId}/avatars`
+  );
+
+  if (result.error) {
+    throw new HeyGenError(
+      `Failed to list avatars in group: ${result.error}`,
+      400,
+      result.error
+    );
+  }
+
+  return result.data?.avatar_list ?? [];
+}
+
+/**
+ * Poll for avatars in a group until at least one reaches "completed" status.
+ * Newly created groups start with status "pending" and HeyGen needs time
+ * to process image dimensions before the avatar is usable for video generation.
+ */
+async function waitForAvatarInGroup(
+  groupId: string,
+  maxAttempts = 20,
+  intervalMs = 5000
+): Promise<AvatarLook> {
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    const avatars = await listAvatarsInGroup(groupId);
+
+    const ready = avatars.find((a) => a.status === "completed");
+    if (ready) {
+      return ready;
+    }
+
+    if (avatars.length > 0) {
+      console.log(
+        `[HeyGen] Avatar ${avatars[0].id} status: ${avatars[0].status} (attempt ${attempt}/${maxAttempts})`
+      );
+    }
+
+    if (attempt < maxAttempts) {
+      await new Promise((r) => setTimeout(r, intervalMs));
+    }
+  }
+
+  throw new HeyGenError(
+    `Avatar in group ${groupId} did not reach "completed" status after ${maxAttempts} attempts`,
+    500,
+    "avatar_not_ready"
+  );
+}
+
+/**
+ * Full pipeline: upload image → create photo avatar group → get talking_photo_id.
+ * This replaces the deprecated uploadTalkingPhoto() flow.
+ *
+ * The avatar `id` returned from the group's avatar list is the
+ * `talking_photo_id` used in /v2/video/generate.
+ */
+export async function createPhotoAvatar(
+  imageUrl: string,
+  avatarName: string = "CocoLash Avatar"
+): Promise<{ talking_photo_id: string; avatar_url: string; group_id: string }> {
+  const asset = await uploadAsset(imageUrl);
+
+  if (!asset.image_key) {
+    throw new HeyGenError(
+      "Uploaded asset has no image_key — cannot create photo avatar",
+      500,
+      "missing_image_key"
+    );
+  }
+
+  const group = await createPhotoAvatarGroup(avatarName, asset.image_key);
+
+  const avatar = await waitForAvatarInGroup(group.id);
+
+  return {
+    talking_photo_id: avatar.id,
+    avatar_url: avatar.image_url ?? asset.url,
+    group_id: group.id,
+  };
 }
 
 // ── Video Generation ──────────────────────────────────────────

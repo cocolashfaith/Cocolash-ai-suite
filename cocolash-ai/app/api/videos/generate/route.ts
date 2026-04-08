@@ -2,14 +2,13 @@ import { NextRequest, NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/server";
 import { generateVideoScript } from "@/lib/openrouter/captions";
 import { composePersonWithProduct } from "@/lib/gemini/composition";
-import { uploadTalkingPhoto, generateVideo } from "@/lib/heygen/client";
+import { createPhotoAvatar, generateVideo } from "@/lib/heygen/client";
 import { VIDEO_DIMENSIONS } from "@/lib/heygen/types";
 import type {
   CampaignType,
   ScriptTone,
   VideoDuration,
   VideoAspectRatio,
-  VideoBackgroundType,
   CompositionPose,
   VideoGenerateRequest,
   VideoGenerateResponse,
@@ -24,7 +23,6 @@ const VALID_CAMPAIGN_TYPES: CampaignType[] = [
 const VALID_TONES: ScriptTone[] = ["casual", "energetic", "calm", "professional"];
 const VALID_DURATIONS: VideoDuration[] = [15, 30, 60];
 const VALID_ASPECT_RATIOS: VideoAspectRatio[] = ["9:16", "1:1", "16:9"];
-const VALID_BG_TYPES: VideoBackgroundType[] = ["solid", "gradient", "image"];
 const VALID_POSES: CompositionPose[] = ["holding", "applying", "selfie", "testimonial"];
 
 /**
@@ -33,14 +31,19 @@ const VALID_POSES: CompositionPose[] = ["holding", "applying", "selfie", "testim
  * Full video generation pipeline:
  * 1. Generate or fetch script
  * 2. Get person image (from generated_images or provided URL)
- * 3. Compose person + product via Gemini
- * 4. Upload composed image to HeyGen as talking photo
- * 5. Submit video generation to HeyGen
+ * 3. Compose person + product via Gemini (preserving original background)
+ * 4. Create photo avatar via HeyGen (Upload Asset → Avatar Group → talking_photo_id)
+ * 5. Submit video generation to HeyGen with Avatar IV engine
  * 6. Create DB record and return video ID for status polling
  */
 export async function POST(request: NextRequest) {
   try {
-    const body = (await request.json()) as Partial<VideoGenerateRequest>;
+    const body = (await request.json()) as Partial<VideoGenerateRequest> & { action?: string };
+
+    // ── Compose-only preview ─────────────────────────────────
+    if (body.action === "compose-only") {
+      return handleComposeOnly(body);
+    }
 
     // ── Validate required fields ─────────────────────────────
     const errors = validateRequest(body);
@@ -62,10 +65,6 @@ export async function POST(request: NextRequest) {
       pose,
       voiceId,
       aspectRatio,
-      backgroundType,
-      backgroundValue,
-      addCaptions,
-      addWatermark,
     } = body as VideoGenerateRequest;
 
     const supabase = await createAdminClient();
@@ -168,12 +167,12 @@ export async function POST(request: NextRequest) {
         heygen_status: "pending",
         duration_seconds: duration,
         aspect_ratio: aspectRatio,
-        has_captions: addCaptions ?? false,
-        has_watermark: addWatermark ?? false,
+        has_captions: true,
+        has_watermark: false,
         has_background_music: false,
         voice_id: voiceId,
-        background_type: backgroundType,
-        background_value: backgroundValue,
+        background_type: null,
+        background_value: null,
       })
       .select("id")
       .single();
@@ -188,34 +187,35 @@ export async function POST(request: NextRequest) {
 
     const videoId = videoRecord.id;
 
-    // ── Step 5: Upload composed image to HeyGen as talking photo
+    // ── Step 5: Create photo avatar via HeyGen ──────────────
     let talkingPhotoId: string;
     try {
-      const talkingPhoto = await uploadTalkingPhoto(composedImageUrl);
-      talkingPhotoId = talkingPhoto.talking_photo_id;
+      const photoAvatar = await createPhotoAvatar(
+        composedImageUrl,
+        `CocoLash — ${campaignType} — ${new Date().toISOString().slice(0, 10)}`
+      );
+      talkingPhotoId = photoAvatar.talking_photo_id;
 
       await supabase
         .from("generated_videos")
-        .update({ avatar_image_url: talkingPhoto.talking_photo_url ?? composedImageUrl })
+        .update({ avatar_image_url: photoAvatar.avatar_url ?? composedImageUrl })
         .eq("id", videoId);
     } catch (uploadError) {
-      console.error("[videos/generate] HeyGen upload error:", uploadError);
+      console.error("[videos/generate] HeyGen photo avatar error:", uploadError);
       await supabase
         .from("generated_videos")
         .update({ heygen_status: "failed" })
         .eq("id", videoId);
 
       return NextResponse.json(
-        { error: `Failed to upload avatar to HeyGen: ${uploadError instanceof Error ? uploadError.message : "Unknown error"}` },
+        { error: `Failed to create photo avatar on HeyGen: ${uploadError instanceof Error ? uploadError.message : "Unknown error"}` },
         { status: 500 }
       );
     }
 
-    // ── Step 6: Submit video generation to HeyGen ───────────
+    // ── Step 6: Submit video generation to HeyGen (Avatar IV) ─
     try {
       const dimension = VIDEO_DIMENSIONS[aspectRatio!] ?? VIDEO_DIMENSIONS["9:16"];
-
-      const background = buildBackground(backgroundType!, backgroundValue!);
 
       const heygenResult = await generateVideo({
         video_inputs: [
@@ -223,19 +223,20 @@ export async function POST(request: NextRequest) {
             character: {
               type: "talking_photo",
               talking_photo_id: talkingPhotoId,
-              talking_style: "stable",
+              talking_style: "expressive",
               expression: "happy",
+              matting: false,
+              use_avatar_iv_model: true,
             },
             voice: {
               type: "text",
               voice_id: voiceId!,
               input_text: scriptText,
             },
-            background,
           },
         ],
         dimension,
-        caption: addCaptions ?? false,
+        caption: true,
         title: `CocoLash — ${campaignType} — ${duration}s`,
       });
 
@@ -275,6 +276,43 @@ export async function POST(request: NextRequest) {
   }
 }
 
+// ── Compose-Only Handler ─────────────────────────────────────
+
+async function handleComposeOnly(
+  body: Partial<VideoGenerateRequest> & { action?: string }
+) {
+  if (!body.personImageUrl) {
+    return NextResponse.json({ error: "personImageUrl is required" }, { status: 400 });
+  }
+  if (!body.productImageUrl) {
+    return NextResponse.json({ error: "productImageUrl is required" }, { status: 400 });
+  }
+
+  const pose = body.pose ?? "holding";
+
+  try {
+    const result = await composePersonWithProduct({
+      personImageUrl: body.personImageUrl,
+      productImageUrl: body.productImageUrl,
+      pose,
+      brandId: "cocolash",
+    });
+
+    return NextResponse.json({
+      success: true,
+      composedImageUrl: result.composedImageUrl,
+    });
+  } catch (error) {
+    console.error("[videos/generate] Compose-only error:", error);
+    return NextResponse.json(
+      {
+        error: `Composition failed: ${error instanceof Error ? error.message : "Unknown error"}`,
+      },
+      { status: 500 }
+    );
+  }
+}
+
 // ── Helpers ──────────────────────────────────────────────────
 
 function validateRequest(body: Partial<VideoGenerateRequest>): string[] {
@@ -304,22 +342,6 @@ function validateRequest(body: Partial<VideoGenerateRequest>): string[] {
   if (!body.aspectRatio || !VALID_ASPECT_RATIOS.includes(body.aspectRatio)) {
     errors.push(`aspectRatio must be one of: ${VALID_ASPECT_RATIOS.join(", ")}`);
   }
-  if (!body.backgroundType || !VALID_BG_TYPES.includes(body.backgroundType)) {
-    errors.push(`backgroundType must be one of: ${VALID_BG_TYPES.join(", ")}`);
-  }
-  if (!body.backgroundValue) {
-    errors.push("backgroundValue is required");
-  }
 
   return errors;
-}
-
-function buildBackground(
-  type: VideoBackgroundType,
-  value: string
-): { type: "color"; value: string } | { type: "image"; url: string } {
-  if (type === "image") {
-    return { type: "image", url: value };
-  }
-  return { type: "color", value };
 }

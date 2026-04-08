@@ -14,12 +14,11 @@ import {
   Film,
   DollarSign,
 } from "lucide-react";
-import { calculateVideoCost, type VideoCostEstimate } from "@/lib/costs/tracker";
+import { calculateVideoCost, type VideoCostEstimate } from "@/lib/costs/estimates";
 import type {
   ScriptResult,
   CompositionPose,
   VideoAspectRatio,
-  VideoBackgroundType,
   HeyGenVideoStatus,
 } from "@/lib/types";
 
@@ -32,11 +31,6 @@ interface GenerateVideoProps {
   pose: CompositionPose;
   voiceId: string;
   aspectRatio: VideoAspectRatio;
-  backgroundType: VideoBackgroundType;
-  backgroundValue: string;
-  addCaptions: boolean;
-  addWatermark: boolean;
-  musicTrackId: string | null;
   campaignType: string;
   tone: string;
   duration: number;
@@ -52,9 +46,9 @@ const STATUS_LABELS: Record<string, string> = {
 
 const STEP_LABELS = [
   "Composing avatar image...",
-  "Uploading to HeyGen...",
-  "Generating video...",
-  "Processing & applying effects...",
+  "Creating photo avatar on HeyGen...",
+  "Generating video (Avatar IV)...",
+  "Processing & finalizing...",
 ];
 
 export function GenerateVideo(props: GenerateVideoProps) {
@@ -67,11 +61,6 @@ export function GenerateVideo(props: GenerateVideoProps) {
     pose,
     voiceId,
     aspectRatio,
-    backgroundType,
-    backgroundValue,
-    addCaptions,
-    addWatermark,
-    musicTrackId,
     campaignType,
     tone,
     duration,
@@ -164,10 +153,6 @@ export function GenerateVideo(props: GenerateVideoProps) {
           pose,
           voiceId,
           aspectRatio,
-          backgroundType,
-          backgroundValue,
-          addCaptions,
-          addWatermark,
         }),
       });
 
@@ -217,10 +202,6 @@ export function GenerateVideo(props: GenerateVideoProps) {
               <SummaryRow label="Duration" value={`${duration}s`} />
               <SummaryRow label="Pose" value={pose} />
               <SummaryRow label="Aspect Ratio" value={aspectRatio} />
-              <SummaryRow label="Background" value={backgroundValue} isColor />
-              <SummaryRow label="Captions" value={addCaptions ? "Yes" : "No"} />
-              <SummaryRow label="Watermark" value={addWatermark ? "Yes" : "No"} />
-              <SummaryRow label="Music" value={musicTrackId ? "Selected" : "None"} />
             </div>
           </div>
 
@@ -235,11 +216,7 @@ export function GenerateVideo(props: GenerateVideoProps) {
           </div>
 
           {/* Cost & Time Estimate */}
-          <CostEstimateCard
-            duration={duration}
-            addCaptions={addCaptions}
-            addWatermark={addWatermark}
-          />
+          <CostEstimateCard duration={duration} />
 
           <Button
             onClick={handleGenerate}
@@ -386,44 +363,20 @@ export function GenerateVideo(props: GenerateVideoProps) {
   );
 }
 
-function SummaryRow({
-  label,
-  value,
-  isColor,
-}: {
-  label: string;
-  value: string;
-  isColor?: boolean;
-}) {
+function SummaryRow({ label, value }: { label: string; value: string }) {
   return (
     <div className="flex items-center justify-between py-1">
       <span className="text-xs text-coco-brown-medium/60">{label}</span>
-      <span className="flex items-center gap-2 text-xs font-medium text-coco-brown">
-        {isColor && (
-          <span
-            className="inline-block h-4 w-4 rounded-full border border-coco-beige-dark"
-            style={{ backgroundColor: value }}
-          />
-        )}
-        {isColor ? "" : value}
-      </span>
+      <span className="text-xs font-medium text-coco-brown">{value}</span>
     </div>
   );
 }
 
-function CostEstimateCard({
-  duration,
-  addCaptions,
-  addWatermark,
-}: {
-  duration: number;
-  addCaptions: boolean;
-  addWatermark: boolean;
-}) {
+function CostEstimateCard({ duration }: { duration: number }) {
   const estimate: VideoCostEstimate = calculateVideoCost({
     duration,
-    addCaptions,
-    addWatermark,
+    addCaptions: true,
+    addWatermark: false,
     needsScriptGeneration: true,
   });
 

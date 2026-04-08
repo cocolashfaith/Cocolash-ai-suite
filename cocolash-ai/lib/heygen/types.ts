@@ -2,7 +2,7 @@
  * HeyGen API — Type Definitions
  *
  * Types for the HeyGen v2 API used for avatar video generation.
- * Covers talking photos, video generation, voice listing, and status polling.
+ * Covers photo avatars, video generation, voice listing, and status polling.
  */
 
 // ── HeyGen API Response Wrapper ──────────────────────────────
@@ -11,14 +11,40 @@ export interface HeyGenResponse<T> {
   data: T;
 }
 
-/** Legacy response format (v1 endpoints like upload talking photo) */
+/** Legacy response format (v1 endpoints like upload asset) */
 export interface HeyGenLegacyResponse<T> {
   code: number;
   data: T;
   msg: string | null;
+  message: string | null;
 }
 
-// ── Talking Photo ─────────────────────────────────────────────
+// ── Upload Asset ──────────────────────────────────────────────
+export interface UploadAssetResult {
+  id: string;
+  name: string;
+  file_type: string;
+  folder_id: string;
+  meta: unknown;
+  created_ts: number;
+  url: string;
+  image_key: string | null;
+}
+
+// ── Photo Avatar Group ────────────────────────────────────────
+export interface PhotoAvatarGroup {
+  id: string;
+  name: string;
+  status?: string;
+}
+
+export interface PhotoAvatarLook {
+  id: string;
+  image_url: string;
+  talking_photo_id: string;
+}
+
+// ── Talking Photo (kept for backward compat) ──────────────────
 export interface TalkingPhoto {
   talking_photo_id: string;
   talking_photo_url: string;
@@ -34,6 +60,10 @@ export interface VideoGenCharacter {
   scale?: number;
   offset?: { x: number; y: number };
   matting?: boolean;
+  use_avatar_iv_model?: boolean;
+  prompt?: string;
+  keep_original_prompt?: boolean;
+  super_resolution?: boolean;
 }
 
 export interface VideoGenVoice {

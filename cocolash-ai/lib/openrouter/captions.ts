@@ -12,7 +12,7 @@ import {
 import type { CaptionVariation, Platform, ScriptResult } from "@/lib/types";
 import { PLATFORM_LIMITS } from "@/lib/constants/posting-times";
 
-const MODEL = "anthropic/claude-3.5-sonnet";
+const MODEL = "anthropic/claude-sonnet-4.6";
 
 interface RawCaptionOutput {
   text: string;

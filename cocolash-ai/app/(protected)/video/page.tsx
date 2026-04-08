@@ -1,7 +1,8 @@
 "use client";
 
-import { useState } from "react";
+import { Suspense, useState } from "react";
 import Link from "next/link";
+import { useSearchParams } from "next/navigation";
 import { cn } from "@/lib/utils";
 import {
   FileText,
@@ -10,6 +11,7 @@ import {
   Film,
   Check,
   Images,
+  Loader2,
 } from "lucide-react";
 import { ScriptGenerator } from "@/components/video/ScriptGenerator";
 import { AvatarSetup } from "@/components/video/AvatarSetup";
@@ -22,7 +24,6 @@ import type {
   VideoDuration,
   CompositionPose,
   VideoAspectRatio,
-  VideoBackgroundType,
 } from "@/lib/types";
 
 const STEPS = [
@@ -45,11 +46,6 @@ interface WizardState {
   pose: CompositionPose;
   voiceId: string | null;
   aspectRatio: VideoAspectRatio;
-  backgroundType: VideoBackgroundType;
-  backgroundValue: string;
-  addCaptions: boolean;
-  addWatermark: boolean;
-  musicTrackId: string | null;
 }
 
 const DEFAULT_STATE: WizardState = {
@@ -63,16 +59,35 @@ const DEFAULT_STATE: WizardState = {
   pose: "holding",
   voiceId: null,
   aspectRatio: "9:16",
-  backgroundType: "solid",
-  backgroundValue: "#ede5d6",
-  addCaptions: true,
-  addWatermark: true,
-  musicTrackId: null,
 };
 
 export default function VideoPage() {
+  return (
+    <Suspense
+      fallback={
+        <div className="flex items-center justify-center py-20">
+          <Loader2 className="h-6 w-6 animate-spin text-coco-golden" />
+        </div>
+      }
+    >
+      <VideoWizard />
+    </Suspense>
+  );
+}
+
+function VideoWizard() {
+  const searchParams = useSearchParams();
+  const initialImageId = searchParams.get("imageId") ?? undefined;
+  const initialImageUrl = searchParams.get("imageUrl")
+    ? decodeURIComponent(searchParams.get("imageUrl")!)
+    : undefined;
+
   const [currentStep, setCurrentStep] = useState(0);
-  const [state, setState] = useState<WizardState>(DEFAULT_STATE);
+  const [state, setState] = useState<WizardState>({
+    ...DEFAULT_STATE,
+    personImageUrl: initialImageUrl ?? null,
+    personImageId: initialImageId,
+  });
 
   const handleScriptSelected = (script: ScriptResult, editedText?: string) => {
     setState((prev) => ({
@@ -104,21 +119,11 @@ export default function VideoPage() {
   const handleStyleReady = (data: {
     voiceId: string;
     aspectRatio: VideoAspectRatio;
-    backgroundType: VideoBackgroundType;
-    backgroundValue: string;
-    addCaptions: boolean;
-    addWatermark: boolean;
-    musicTrackId: string | null;
   }) => {
     setState((prev) => ({
       ...prev,
       voiceId: data.voiceId,
       aspectRatio: data.aspectRatio,
-      backgroundType: data.backgroundType,
-      backgroundValue: data.backgroundValue,
-      addCaptions: data.addCaptions,
-      addWatermark: data.addWatermark,
-      musicTrackId: data.musicTrackId,
     }));
     setCurrentStep(3);
   };
@@ -222,7 +227,11 @@ export default function VideoPage() {
         )}
 
         {currentStep === 1 && (
-          <AvatarSetup onCompositionReady={handleCompositionReady} />
+          <AvatarSetup
+            initialPersonImageUrl={initialImageUrl}
+            initialPersonImageId={initialImageId}
+            onCompositionReady={handleCompositionReady}
+          />
         )}
 
         {currentStep === 2 && (
@@ -239,11 +248,6 @@ export default function VideoPage() {
             pose={state.pose}
             voiceId={state.voiceId!}
             aspectRatio={state.aspectRatio}
-            backgroundType={state.backgroundType}
-            backgroundValue={state.backgroundValue}
-            addCaptions={state.addCaptions}
-            addWatermark={state.addWatermark}
-            musicTrackId={state.musicTrackId}
             campaignType={state.campaignType}
             tone={state.tone}
             duration={state.duration}

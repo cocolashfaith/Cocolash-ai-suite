@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import Image from "next/image";
-import { Layers, Clock, Columns2, Info, MessageSquareText } from "lucide-react";
+import { Layers, Clock, Columns2, Info, MessageSquareText, Film } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { ImageLoader } from "@/components/ui/image-loader";
 import { FavoriteButton } from "@/components/gallery/FavoriteButton";
@@ -15,9 +15,10 @@ interface ImageCardProps {
   onFavoriteToggle: (id: string, newValue: boolean) => void;
   onDetailsClick?: () => void;
   onCaptionClick?: () => void;
+  onCreateVideo?: () => void;
 }
 
-export function ImageCard({ image, onClick, onFavoriteToggle, onDetailsClick, onCaptionClick }: ImageCardProps) {
+export function ImageCard({ image, onClick, onFavoriteToggle, onDetailsClick, onCaptionClick, onCreateVideo }: ImageCardProps) {
   const [loaded, setLoaded] = useState(false);
 
   const categoryLabels: Record<string, string> = {
@@ -93,6 +94,21 @@ export function ImageCard({ image, onClick, onFavoriteToggle, onDetailsClick, on
             title="Details"
           >
             <Info className="h-3.5 w-3.5" />
+          </button>
+        )}
+
+        {/* Create Video button */}
+        {onCreateVideo && (
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              onCreateVideo();
+            }}
+            className="flex h-7 w-7 items-center justify-center rounded-full bg-white/80 text-coco-brown-medium opacity-0 backdrop-blur-sm transition-all group-hover:opacity-100 hover:bg-white hover:text-coco-golden-dark"
+            title="Create Video from this image"
+          >
+            <Film className="h-3.5 w-3.5" />
           </button>
         )}
 

@@ -10,7 +10,6 @@ import {
   Mic,
   Ratio,
   MessageSquare,
-  Stamp,
   DollarSign,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -146,11 +145,6 @@ export function VideoModal({
               value={video.has_captions ? "Yes" : "No"}
             />
             <MetaItem
-              icon={Stamp}
-              label="Watermark"
-              value={video.has_watermark ? "Yes" : "No"}
-            />
-            <MetaItem
               icon={DollarSign}
               label="Cost"
               value={
@@ -158,11 +152,6 @@ export function VideoModal({
                   ? `$${Number(video.processing_cost).toFixed(2)}`
                   : "—"
               }
-            />
-            <MetaItem
-              icon={Film}
-              label="Background"
-              value={video.background_type ?? "—"}
             />
           </div>
 

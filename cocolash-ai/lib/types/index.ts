@@ -607,10 +607,6 @@ export interface VideoGenerateRequest {
   pose: CompositionPose;
   voiceId: string;
   aspectRatio: VideoAspectRatio;
-  backgroundType: VideoBackgroundType;
-  backgroundValue: string;
-  addCaptions: boolean;
-  addWatermark: boolean;
 }
 
 export interface VideoGenerateResponse {

@@ -1,47 +1,18 @@
 /**
- * Cost Tracking Module
+ * Server-side cost tracking module.
  *
- * Tracks estimated and actual API costs across all services used
- * in the video generation pipeline. Costs are stored per-video
- * in `generated_videos.processing_cost` and aggregated for
- * monthly reporting.
- *
- * All costs in USD.
+ * Re-exports client-safe cost constants and estimator from estimates.ts,
+ * and provides server-only functions for recording and aggregating costs.
  */
 
 import { createAdminClient } from "@/lib/supabase/server";
+import { API_COSTS } from "./estimates";
 
-// ── Per-call cost estimates (USD) ────────────────────────────
-
-export const API_COSTS = {
-  gemini: {
-    imageGeneration: 0.04,
-    composition: 0.06,
-  },
-  openrouter: {
-    scriptGeneration: 0.0156,
-    captionGeneration: 0.0063,
-  },
-  heygen: {
-    videoGeneration15s: 0.50,
-    videoGeneration30s: 1.00,
-    videoGeneration60s: 2.00,
-  },
-  cloudinary: {
-    videoUpload: 0.01,
-    transformation: 0.005,
-  },
-} as const;
+// Re-export client-safe utilities for server-side callers
+export { API_COSTS, calculateVideoCost } from "./estimates";
+export type { VideoCostEstimate } from "./estimates";
 
 // ── Types ────────────────────────────────────────────────────
-
-export interface VideoCostEstimate {
-  scriptGeneration: number;
-  imageComposition: number;
-  videoGeneration: number;
-  postProcessing: number;
-  total: number;
-}
 
 export interface CostSummary {
   month: string;
@@ -55,57 +26,8 @@ export interface CostSummary {
   };
 }
 
-// ── Estimate Cost Before Generation ──────────────────────────
-
-/**
- * Calculate the estimated cost for generating a video.
- * Shown to the user in Step 4 of the wizard before they hit Generate.
- */
-export function calculateVideoCost(params: {
-  duration: number;
-  addCaptions: boolean;
-  addWatermark: boolean;
-  needsScriptGeneration: boolean;
-}): VideoCostEstimate {
-  const { duration, addCaptions, addWatermark, needsScriptGeneration } = params;
-
-  const scriptGeneration = needsScriptGeneration
-    ? API_COSTS.openrouter.scriptGeneration
-    : 0;
-
-  const imageComposition = API_COSTS.gemini.composition;
-
-  let videoGeneration: number;
-  if (duration <= 15) {
-    videoGeneration = API_COSTS.heygen.videoGeneration15s;
-  } else if (duration <= 30) {
-    videoGeneration = API_COSTS.heygen.videoGeneration30s;
-  } else {
-    videoGeneration = API_COSTS.heygen.videoGeneration60s;
-  }
-
-  let postProcessing = API_COSTS.cloudinary.videoUpload;
-  if (addWatermark) postProcessing += API_COSTS.cloudinary.transformation;
-  if (addCaptions) postProcessing += API_COSTS.cloudinary.transformation;
-
-  const total = scriptGeneration + imageComposition + videoGeneration + postProcessing;
-
-  return {
-    scriptGeneration: Number(scriptGeneration.toFixed(4)),
-    imageComposition: Number(imageComposition.toFixed(4)),
-    videoGeneration: Number(videoGeneration.toFixed(4)),
-    postProcessing: Number(postProcessing.toFixed(4)),
-    total: Number(total.toFixed(4)),
-  };
-}
-
 // ── Record Actual Cost ───────────────────────────────────────
 
-/**
- * Update the processing_cost field in the generated_videos table
- * after a video has been generated. Called by the status route
- * when a video completes.
- */
 export async function recordActualCost(
   videoId: string,
   cost: number
@@ -124,10 +46,6 @@ export async function recordActualCost(
 
 // ── Monthly Cost Summary ─────────────────────────────────────
 
-/**
- * Aggregate costs for a given month (or current month if not specified).
- * Pulls from generated_videos.processing_cost and counts image generations.
- */
 export async function getMonthlyCostSummary(
   year?: number,
   month?: number
@@ -149,7 +67,6 @@ export async function getMonthlyCostSummary(
 
   const supabase = await createAdminClient();
 
-  // Video costs
   const { data: videos, error: videoError } = await supabase
     .from("generated_videos")
     .select("processing_cost")
@@ -167,7 +84,6 @@ export async function getMonthlyCostSummary(
   );
   const videoCount = videoList.length;
 
-  // Image generation count (estimate cost at Gemini rate)
   const { count: imageCount, error: imageError } = await supabase
     .from("generated_images")
     .select("*", { count: "exact", head: true })
@@ -180,7 +96,6 @@ export async function getMonthlyCostSummary(
 
   const imageCosts = (imageCount ?? 0) * API_COSTS.gemini.imageGeneration;
 
-  // Caption generation estimate
   const { count: captionCount, error: captionError } = await supabase
     .from("generated_captions")
     .select("*", { count: "exact", head: true })

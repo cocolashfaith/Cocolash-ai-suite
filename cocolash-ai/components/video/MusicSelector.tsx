@@ -43,12 +43,15 @@ export function MusicSelector({ selectedTrackId, onSelect }: MusicSelectorProps)
     try {
       setIsLoading(true);
       const res = await fetch("/api/backgrounds");
-      if (!res.ok) throw new Error("Failed to load");
+      if (!res.ok) {
+        console.warn("[MusicSelector] API returned", res.status);
+        return;
+      }
       const data = await res.json();
       setTracks(data.tracks ?? []);
       setCategories(data.categories ?? []);
-    } catch {
-      toast.error("Failed to load music library");
+    } catch (err) {
+      console.warn("[MusicSelector] Could not load tracks:", err);
     } finally {
       setIsLoading(false);
     }
