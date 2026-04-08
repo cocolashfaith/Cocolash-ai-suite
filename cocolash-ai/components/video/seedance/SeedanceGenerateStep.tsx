@@ -17,9 +17,9 @@ import {
   Lock,
   Unlock,
 } from "lucide-react";
-import { SEEDANCE_COSTS } from "@/lib/seedance/types";
 import type { SeedanceAspectRatio } from "@/lib/seedance/types";
 import type { SeedanceAudioMode } from "@/lib/seedance/types";
+import { calculateSeedanceCost, calculateVideoCost } from "@/lib/costs/estimates";
 import type { UGCScene, UGCVibe } from "@/lib/seedance/ugc-image-prompt";
 import type {
   CampaignType,
@@ -188,8 +188,20 @@ export function SeedanceGenerateStep(props: SeedanceGenerateStepProps) {
 
   const scriptText = editedScriptText || script.full_script;
   const seedanceDuration = duration <= 5 ? 5 : duration <= 8 ? 8 : duration <= 10 ? 10 : 15;
-  const videoCost = seedanceDuration * SEEDANCE_COSTS.COST_PER_SECOND_720P_NO_VIDEO;
-  const totalCost = videoCost + SEEDANCE_COSTS.SCRIPT_GENERATION + SEEDANCE_COSTS.IMAGE_GENERATION + SEEDANCE_COSTS.POST_PROCESSING;
+
+  const seedanceCost = calculateSeedanceCost({
+    duration: seedanceDuration,
+    includeScript: true,
+    includeImageGen: true,
+    includePostProcessing: true,
+  });
+
+  const heygenCost = calculateVideoCost({
+    duration: seedanceDuration,
+    addCaptions: true,
+    addWatermark: true,
+    needsScriptGeneration: true,
+  });
 
   return (
     <div className="space-y-6">
@@ -273,17 +285,17 @@ export function SeedanceGenerateStep(props: SeedanceGenerateStepProps) {
                 <DollarSign className="h-4 w-4 text-coco-golden" />
                 <p className="text-sm font-semibold text-coco-brown">Estimated Cost</p>
               </div>
-              <span className="text-lg font-bold text-coco-golden">${totalCost.toFixed(2)}</span>
+              <span className="text-lg font-bold text-coco-golden">${seedanceCost.total.toFixed(2)}</span>
             </div>
             <div className="mt-3 space-y-1.5">
-              <CostRow label="Script generation" value={SEEDANCE_COSTS.SCRIPT_GENERATION} />
-              <CostRow label="UGC avatar image" value={SEEDANCE_COSTS.IMAGE_GENERATION} />
-              <CostRow label={`Seedance 2.0 (${seedanceDuration}s)`} value={videoCost} />
-              <CostRow label="Post-processing" value={SEEDANCE_COSTS.POST_PROCESSING} />
+              <CostRow label="Script generation" value={seedanceCost.scriptGeneration} />
+              <CostRow label="UGC avatar image" value={seedanceCost.imageComposition} />
+              <CostRow label={`Seedance 2.0 (${seedanceDuration}s)`} value={seedanceCost.videoGeneration} />
+              <CostRow label="Post-processing" value={seedanceCost.postProcessing} />
             </div>
             <div className="mt-3 border-t border-coco-golden/20 pt-3">
               <p className="text-[11px] text-coco-brown-medium/50">
-                💡 HeyGen pipeline: ~$0.63 (polished studio style) · Seedance: ~${totalCost.toFixed(2)} (authentic UGC style)
+                HeyGen pipeline: ~${heygenCost.total.toFixed(2)} (polished studio style) · Seedance: ~${seedanceCost.total.toFixed(2)} (authentic UGC style)
               </p>
             </div>
             <div className="mt-2 flex items-center gap-2">

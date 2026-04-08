@@ -9,10 +9,17 @@ import { createAdminClient } from "@/lib/supabase/server";
 import { API_COSTS } from "./estimates";
 
 // Re-export client-safe utilities for server-side callers
-export { API_COSTS, calculateVideoCost } from "./estimates";
+export { API_COSTS, calculateVideoCost, calculateSeedanceCost } from "./estimates";
 export type { VideoCostEstimate } from "./estimates";
 
 // ── Types ────────────────────────────────────────────────────
+
+export interface PipelineBreakdown {
+  heygen: number;
+  seedance: number;
+  heygenCount: number;
+  seedanceCount: number;
+}
 
 export interface CostSummary {
   month: string;
@@ -24,6 +31,7 @@ export interface CostSummary {
     images: number;
     captions: number;
   };
+  pipelineBreakdown: PipelineBreakdown;
 }
 
 // ── Record Actual Cost ───────────────────────────────────────
@@ -69,7 +77,7 @@ export async function getMonthlyCostSummary(
 
   const { data: videos, error: videoError } = await supabase
     .from("generated_videos")
-    .select("processing_cost")
+    .select("processing_cost, pipeline")
     .gte("created_at", startDate)
     .lt("created_at", endDate);
 
@@ -83,6 +91,24 @@ export async function getMonthlyCostSummary(
     0
   );
   const videoCount = videoList.length;
+
+  const heygenVideos = videoList.filter((v) => (v.pipeline ?? "heygen") === "heygen");
+  const seedanceVideos = videoList.filter((v) => v.pipeline === "seedance");
+
+  const pipelineBreakdown: PipelineBreakdown = {
+    heygen: Number(
+      heygenVideos
+        .reduce((sum, v) => sum + (Number(v.processing_cost) || 0), 0)
+        .toFixed(2)
+    ),
+    seedance: Number(
+      seedanceVideos
+        .reduce((sum, v) => sum + (Number(v.processing_cost) || 0), 0)
+        .toFixed(2)
+    ),
+    heygenCount: heygenVideos.length,
+    seedanceCount: seedanceVideos.length,
+  };
 
   const { count: imageCount, error: imageError } = await supabase
     .from("generated_images")
@@ -121,5 +147,6 @@ export async function getMonthlyCostSummary(
       images: Number(imageCosts.toFixed(2)),
       captions: Number(captionCosts.toFixed(2)),
     },
+    pipelineBreakdown,
   };
 }

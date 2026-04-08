@@ -10,7 +10,16 @@ import {
   ChevronLeft,
   ChevronRight,
   Loader2,
+  Sparkles,
+  Clapperboard,
 } from "lucide-react";
+
+interface PipelineBreakdown {
+  heygen: number;
+  seedance: number;
+  heygenCount: number;
+  seedanceCount: number;
+}
 
 interface CostSummaryData {
   month: string;
@@ -22,6 +31,7 @@ interface CostSummaryData {
     images: number;
     captions: number;
   };
+  pipelineBreakdown?: PipelineBreakdown;
 }
 
 export function CostSummary() {
@@ -149,6 +159,49 @@ export function CostSummary() {
               color="amber"
             />
           </div>
+
+          {/* Pipeline Breakdown */}
+          {data.pipelineBreakdown &&
+            (data.pipelineBreakdown.heygenCount > 0 ||
+              data.pipelineBreakdown.seedanceCount > 0) && (
+              <div className="rounded-xl border border-coco-beige-dark/40 p-3">
+                <p className="mb-2.5 text-[10px] font-semibold uppercase tracking-wider text-coco-brown-medium/50">
+                  By Pipeline
+                </p>
+                <div className="grid grid-cols-2 gap-2.5">
+                  <div className="rounded-lg bg-indigo-50 p-2.5">
+                    <div className="flex items-center gap-1.5">
+                      <Clapperboard className="h-3 w-3 text-indigo-500" />
+                      <span className="text-[10px] font-medium text-indigo-600">
+                        HeyGen
+                      </span>
+                    </div>
+                    <p className="mt-1 text-sm font-bold text-indigo-700">
+                      ${data.pipelineBreakdown.heygen.toFixed(2)}
+                    </p>
+                    <p className="text-[10px] text-indigo-500/60">
+                      {data.pipelineBreakdown.heygenCount} video
+                      {data.pipelineBreakdown.heygenCount !== 1 ? "s" : ""}
+                    </p>
+                  </div>
+                  <div className="rounded-lg bg-orange-50 p-2.5">
+                    <div className="flex items-center gap-1.5">
+                      <Sparkles className="h-3 w-3 text-orange-500" />
+                      <span className="text-[10px] font-medium text-orange-600">
+                        Seedance
+                      </span>
+                    </div>
+                    <p className="mt-1 text-sm font-bold text-orange-700">
+                      ${data.pipelineBreakdown.seedance.toFixed(2)}
+                    </p>
+                    <p className="text-[10px] text-orange-500/60">
+                      {data.pipelineBreakdown.seedanceCount} video
+                      {data.pipelineBreakdown.seedanceCount !== 1 ? "s" : ""}
+                    </p>
+                  </div>
+                </div>
+              </div>
+            )}
 
           {/* Avg per video */}
           {data.videoCount > 0 && (
