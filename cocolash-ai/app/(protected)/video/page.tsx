@@ -12,11 +12,18 @@ import {
   Check,
   Images,
   Loader2,
+  ArrowLeft,
+  Sparkles,
+  Smartphone,
 } from "lucide-react";
 import { ScriptGenerator } from "@/components/video/ScriptGenerator";
 import { AvatarSetup } from "@/components/video/AvatarSetup";
 import { VoiceAndStyle } from "@/components/video/VoiceAndStyle";
 import { GenerateVideo } from "@/components/video/GenerateVideo";
+import { PipelineSelector } from "@/components/video/PipelineSelector";
+import { SeedanceScriptStep } from "@/components/video/seedance/SeedanceScriptStep";
+import { SeedanceAvatarStep } from "@/components/video/seedance/SeedanceAvatarStep";
+import { SeedanceGenerateStep } from "@/components/video/seedance/SeedanceGenerateStep";
 import type {
   ScriptResult,
   CampaignType,
@@ -24,16 +31,31 @@ import type {
   VideoDuration,
   CompositionPose,
   VideoAspectRatio,
+  VideoPipeline,
 } from "@/lib/types";
+import type { SeedanceAudioMode } from "@/lib/seedance/types";
+import type { UGCScene, UGCVibe } from "@/lib/seedance/ugc-image-prompt";
 
-const STEPS = [
+// ── HeyGen Wizard Steps ──────────────────────────────────────
+
+const HEYGEN_STEPS = [
   { label: "Script", icon: FileText },
   { label: "Avatar", icon: User },
   { label: "Style", icon: Palette },
   { label: "Generate", icon: Film },
 ];
 
-interface WizardState {
+// ── Seedance Wizard Steps ────────────────────────────────────
+
+const SEEDANCE_STEPS = [
+  { label: "Script", icon: FileText },
+  { label: "Avatar + Product", icon: Smartphone },
+  { label: "Generate", icon: Sparkles },
+];
+
+// ── HeyGen Wizard State ──────────────────────────────────────
+
+interface HeyGenWizardState {
   script: ScriptResult | null;
   editedScriptText?: string;
   campaignType: CampaignType;
@@ -48,7 +70,7 @@ interface WizardState {
   aspectRatio: VideoAspectRatio;
 }
 
-const DEFAULT_STATE: WizardState = {
+const DEFAULT_HEYGEN_STATE: HeyGenWizardState = {
   script: null,
   campaignType: "product-showcase",
   tone: "casual",
@@ -60,6 +82,38 @@ const DEFAULT_STATE: WizardState = {
   voiceId: null,
   aspectRatio: "9:16",
 };
+
+// ── Seedance Wizard State ────────────────────────────────────
+
+interface SeedanceWizardState {
+  script: ScriptResult | null;
+  editedScriptText?: string;
+  campaignType: CampaignType;
+  tone: ScriptTone;
+  duration: VideoDuration;
+  personImageUrl: string | null;
+  productImageUrl: string | null;
+  audioMode: SeedanceAudioMode;
+  audioUrl?: string;
+  scene: UGCScene;
+  vibe: UGCVibe;
+  personDescription: string;
+}
+
+const DEFAULT_SEEDANCE_STATE: SeedanceWizardState = {
+  script: null,
+  campaignType: "product-showcase",
+  tone: "casual",
+  duration: 15,
+  personImageUrl: null,
+  productImageUrl: null,
+  audioMode: "script-in-prompt",
+  scene: "casual-bedroom",
+  vibe: "excited-discovery",
+  personDescription: "",
+};
+
+// ── Page ─────────────────────────────────────────────────────
 
 export default function VideoPage() {
   return (
@@ -82,30 +136,53 @@ function VideoWizard() {
     ? decodeURIComponent(searchParams.get("imageUrl")!)
     : undefined;
 
-  const [currentStep, setCurrentStep] = useState(0);
-  const [state, setState] = useState<WizardState>({
-    ...DEFAULT_STATE,
+  const [pipeline, setPipeline] = useState<"select" | VideoPipeline>("select");
+
+  // ── HeyGen state ──────────────────────────────────
+  const [heygenStep, setHeygenStep] = useState(0);
+  const [heygenState, setHeygenState] = useState<HeyGenWizardState>({
+    ...DEFAULT_HEYGEN_STATE,
     personImageUrl: initialImageUrl ?? null,
     personImageId: initialImageId,
   });
 
-  const handleScriptSelected = (script: ScriptResult, editedText?: string) => {
-    setState((prev) => ({
-      ...prev,
-      script,
-      editedScriptText: editedText,
-    }));
-    setCurrentStep(1);
+  // ── Seedance state ────────────────────────────────
+  const [seedanceStep, setSeedanceStep] = useState(0);
+  const [seedanceState, setSeedanceState] = useState<SeedanceWizardState>({
+    ...DEFAULT_SEEDANCE_STATE,
+  });
+
+  // ── Pipeline selection ────────────────────────────
+  const handleSelectPipeline = (p: VideoPipeline) => {
+    setPipeline(p);
   };
 
-  const handleCompositionReady = (data: {
+  const handleBackToPipelineSelect = () => {
+    setPipeline("select");
+    setHeygenStep(0);
+    setSeedanceStep(0);
+    setHeygenState({
+      ...DEFAULT_HEYGEN_STATE,
+      personImageUrl: initialImageUrl ?? null,
+      personImageId: initialImageId,
+    });
+    setSeedanceState({ ...DEFAULT_SEEDANCE_STATE });
+  };
+
+  // ── HeyGen callbacks ─────────────────────────────
+  const handleHeygenScriptSelected = (script: ScriptResult, editedText?: string) => {
+    setHeygenState((prev) => ({ ...prev, script, editedScriptText: editedText }));
+    setHeygenStep(1);
+  };
+
+  const handleHeygenCompositionReady = (data: {
     personImageUrl: string;
     personImageId?: string;
     productImageUrl: string;
     composedImageUrl: string;
     pose: CompositionPose;
   }) => {
-    setState((prev) => ({
+    setHeygenState((prev) => ({
       ...prev,
       personImageUrl: data.personImageUrl,
       personImageId: data.personImageId,
@@ -113,25 +190,67 @@ function VideoWizard() {
       composedImageUrl: data.composedImageUrl,
       pose: data.pose,
     }));
-    setCurrentStep(2);
+    setHeygenStep(2);
   };
 
-  const handleStyleReady = (data: {
-    voiceId: string;
-    aspectRatio: VideoAspectRatio;
-  }) => {
-    setState((prev) => ({
+  const handleHeygenStyleReady = (data: { voiceId: string; aspectRatio: VideoAspectRatio }) => {
+    setHeygenState((prev) => ({ ...prev, voiceId: data.voiceId, aspectRatio: data.aspectRatio }));
+    setHeygenStep(3);
+  };
+
+  const handleHeygenReset = () => {
+    setHeygenState(DEFAULT_HEYGEN_STATE);
+    setHeygenStep(0);
+  };
+
+  // ── Seedance callbacks ────────────────────────────
+  const handleSeedanceScriptSelected = (
+    script: ScriptResult,
+    meta: { campaignType: CampaignType; tone: ScriptTone; duration: VideoDuration },
+    editedText?: string
+  ) => {
+    setSeedanceState((prev) => ({
       ...prev,
-      voiceId: data.voiceId,
-      aspectRatio: data.aspectRatio,
+      script,
+      editedScriptText: editedText,
+      campaignType: meta.campaignType,
+      tone: meta.tone,
+      duration: meta.duration,
     }));
-    setCurrentStep(3);
+    setSeedanceStep(1);
   };
 
-  const handleReset = () => {
-    setState(DEFAULT_STATE);
-    setCurrentStep(0);
+  const handleSeedanceAvatarReady = (data: {
+    personImageUrl: string;
+    productImageUrl: string;
+    audioMode: SeedanceAudioMode;
+    audioUrl?: string;
+    scene: UGCScene;
+    vibe: UGCVibe;
+    personDescription: string;
+  }) => {
+    setSeedanceState((prev) => ({
+      ...prev,
+      personImageUrl: data.personImageUrl,
+      productImageUrl: data.productImageUrl,
+      audioMode: data.audioMode,
+      audioUrl: data.audioUrl,
+      scene: data.scene,
+      vibe: data.vibe,
+      personDescription: data.personDescription,
+    }));
+    setSeedanceStep(2);
   };
+
+  const handleSeedanceReset = () => {
+    setSeedanceState(DEFAULT_SEEDANCE_STATE);
+    setSeedanceStep(0);
+  };
+
+  // ── Determine current steps for progress bar ──────
+  const currentSteps = pipeline === "heygen" ? HEYGEN_STEPS : SEEDANCE_STEPS;
+  const currentStep = pipeline === "heygen" ? heygenStep : seedanceStep;
+  const setCurrentStep = pipeline === "heygen" ? setHeygenStep : setSeedanceStep;
 
   return (
     <div>
@@ -139,11 +258,31 @@ function VideoWizard() {
       <div className="mb-6">
         <div className="flex items-end justify-between">
           <div>
-            <h1 className="text-2xl font-bold text-coco-brown">
-              Create Video
-            </h1>
+            <div className="flex items-center gap-3">
+              {pipeline !== "select" && (
+                <button
+                  type="button"
+                  onClick={handleBackToPipelineSelect}
+                  className="flex items-center gap-1 text-xs font-medium text-coco-brown-medium/50 transition-colors hover:text-coco-brown"
+                >
+                  <ArrowLeft className="h-3.5 w-3.5" />
+                  Back
+                </button>
+              )}
+              <h1 className="text-2xl font-bold text-coco-brown">
+                {pipeline === "select"
+                  ? "Create Video"
+                  : pipeline === "heygen"
+                    ? "Create Video — HeyGen"
+                    : "Create Video — Seedance 2.0"}
+              </h1>
+            </div>
             <p className="mt-1 text-sm text-coco-brown-medium">
-              Generate AI avatar videos with custom scripts, voices & branding
+              {pipeline === "select"
+                ? "Choose your video generation engine"
+                : pipeline === "heygen"
+                  ? "Studio-quality talking head videos"
+                  : "Authentic UGC-style videos for TikTok & Reels"}
             </p>
           </div>
           <Link
@@ -156,105 +295,134 @@ function VideoWizard() {
         </div>
       </div>
 
-      {/* Progress Steps */}
-      <div className="mb-8">
-        <div className="flex items-center justify-between">
-          {STEPS.map((step, i) => {
-            const Icon = step.icon;
-            const isCompleted = i < currentStep;
-            const isActive = i === currentStep;
-
-            return (
-              <div key={step.label} className="flex flex-1 items-center">
-                <button
-                  type="button"
-                  onClick={() => {
-                    if (i < currentStep) setCurrentStep(i);
-                  }}
-                  disabled={i > currentStep}
-                  className="flex flex-col items-center gap-1.5"
-                >
-                  <div
-                    className={cn(
-                      "flex h-10 w-10 items-center justify-center rounded-full border-2 transition-all",
-                      isCompleted
-                        ? "border-coco-golden bg-coco-golden text-white"
-                        : isActive
-                          ? "border-coco-golden bg-coco-golden/10 text-coco-golden"
-                          : "border-coco-beige-dark bg-white text-coco-brown-medium/40"
-                    )}
-                  >
-                    {isCompleted ? (
-                      <Check className="h-5 w-5" />
-                    ) : (
-                      <Icon className="h-5 w-5" />
-                    )}
-                  </div>
-                  <span
-                    className={cn(
-                      "text-[11px] font-medium",
-                      isActive
-                        ? "text-coco-golden"
-                        : isCompleted
-                          ? "text-coco-brown"
-                          : "text-coco-brown-medium/40"
-                    )}
-                  >
-                    {step.label}
-                  </span>
-                </button>
-
-                {i < STEPS.length - 1 && (
-                  <div className="mx-2 mt-[-18px] h-[2px] flex-1">
-                    <div
-                      className={cn(
-                        "h-full rounded-full transition-colors",
-                        i < currentStep ? "bg-coco-golden" : "bg-coco-beige-dark"
-                      )}
-                    />
-                  </div>
-                )}
-              </div>
-            );
-          })}
+      {/* Pipeline Selector */}
+      {pipeline === "select" && (
+        <div className="mx-auto max-w-2xl">
+          <PipelineSelector onSelect={handleSelectPipeline} />
         </div>
-      </div>
+      )}
 
-      {/* Step Content */}
-      <div className="mx-auto max-w-2xl">
-        {currentStep === 0 && (
-          <ScriptGenerator onScriptSelected={handleScriptSelected} />
-        )}
+      {/* Progress Steps (HeyGen or Seedance) */}
+      {pipeline !== "select" && (
+        <>
+          <div className="mb-8">
+            <div className="flex items-center justify-between">
+              {currentSteps.map((step, i) => {
+                const Icon = step.icon;
+                const isCompleted = i < currentStep;
+                const isActive = i === currentStep;
 
-        {currentStep === 1 && (
-          <AvatarSetup
-            initialPersonImageUrl={initialImageUrl}
-            initialPersonImageId={initialImageId}
-            onCompositionReady={handleCompositionReady}
-          />
-        )}
+                return (
+                  <div key={step.label} className="flex flex-1 items-center">
+                    <button
+                      type="button"
+                      onClick={() => { if (i < currentStep) setCurrentStep(i); }}
+                      disabled={i > currentStep}
+                      className="flex flex-col items-center gap-1.5"
+                    >
+                      <div
+                        className={cn(
+                          "flex h-10 w-10 items-center justify-center rounded-full border-2 transition-all",
+                          isCompleted
+                            ? "border-coco-golden bg-coco-golden text-white"
+                            : isActive
+                              ? "border-coco-golden bg-coco-golden/10 text-coco-golden"
+                              : "border-coco-beige-dark bg-white text-coco-brown-medium/40"
+                        )}
+                      >
+                        {isCompleted ? <Check className="h-5 w-5" /> : <Icon className="h-5 w-5" />}
+                      </div>
+                      <span
+                        className={cn(
+                          "text-[11px] font-medium",
+                          isActive ? "text-coco-golden" : isCompleted ? "text-coco-brown" : "text-coco-brown-medium/40"
+                        )}
+                      >
+                        {step.label}
+                      </span>
+                    </button>
 
-        {currentStep === 2 && (
-          <VoiceAndStyle onStyleReady={handleStyleReady} />
-        )}
+                    {i < currentSteps.length - 1 && (
+                      <div className="mx-2 mt-[-18px] h-[2px] flex-1">
+                        <div className={cn("h-full rounded-full transition-colors", i < currentStep ? "bg-coco-golden" : "bg-coco-beige-dark")} />
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          </div>
 
-        {currentStep === 3 && state.script && (
-          <GenerateVideo
-            script={state.script}
-            editedScriptText={state.editedScriptText}
-            personImageUrl={state.personImageUrl!}
-            personImageId={state.personImageId}
-            productImageUrl={state.productImageUrl!}
-            pose={state.pose}
-            voiceId={state.voiceId!}
-            aspectRatio={state.aspectRatio}
-            campaignType={state.campaignType}
-            tone={state.tone}
-            duration={state.duration}
-            onReset={handleReset}
-          />
-        )}
-      </div>
+          <div className="mx-auto max-w-2xl">
+            {/* ── HeyGen Wizard Steps ─────────────── */}
+            {pipeline === "heygen" && (
+              <>
+                {heygenStep === 0 && (
+                  <ScriptGenerator onScriptSelected={handleHeygenScriptSelected} />
+                )}
+                {heygenStep === 1 && (
+                  <AvatarSetup
+                    initialPersonImageUrl={initialImageUrl}
+                    initialPersonImageId={initialImageId}
+                    onCompositionReady={handleHeygenCompositionReady}
+                  />
+                )}
+                {heygenStep === 2 && (
+                  <VoiceAndStyle onStyleReady={handleHeygenStyleReady} />
+                )}
+                {heygenStep === 3 && heygenState.script && (
+                  <GenerateVideo
+                    script={heygenState.script}
+                    editedScriptText={heygenState.editedScriptText}
+                    personImageUrl={heygenState.personImageUrl!}
+                    personImageId={heygenState.personImageId}
+                    productImageUrl={heygenState.productImageUrl!}
+                    pose={heygenState.pose}
+                    voiceId={heygenState.voiceId!}
+                    aspectRatio={heygenState.aspectRatio}
+                    campaignType={heygenState.campaignType}
+                    tone={heygenState.tone}
+                    duration={heygenState.duration}
+                    onReset={handleHeygenReset}
+                  />
+                )}
+              </>
+            )}
+
+            {/* ── Seedance Wizard Steps ───────────── */}
+            {pipeline === "seedance" && (
+              <>
+                {seedanceStep === 0 && (
+                  <SeedanceScriptStep onScriptSelected={handleSeedanceScriptSelected} />
+                )}
+                {seedanceStep === 1 && (
+                  <SeedanceAvatarStep
+                    initialPersonImageUrl={initialImageUrl}
+                    onAvatarReady={handleSeedanceAvatarReady}
+                  />
+                )}
+                {seedanceStep === 2 && seedanceState.script && (
+                  <SeedanceGenerateStep
+                    script={seedanceState.script}
+                    editedScriptText={seedanceState.editedScriptText}
+                    campaignType={seedanceState.campaignType}
+                    tone={seedanceState.tone}
+                    duration={seedanceState.duration}
+                    personImageUrl={seedanceState.personImageUrl!}
+                    productImageUrl={seedanceState.productImageUrl!}
+                    audioMode={seedanceState.audioMode}
+                    audioUrl={seedanceState.audioUrl}
+                    scene={seedanceState.scene}
+                    vibe={seedanceState.vibe}
+                    personDescription={seedanceState.personDescription}
+                    onReset={handleSeedanceReset}
+                  />
+                )}
+              </>
+            )}
+          </div>
+        </>
+      )}
     </div>
   );
 }
