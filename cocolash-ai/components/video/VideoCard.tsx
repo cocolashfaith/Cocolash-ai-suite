@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import Image from "next/image";
-import { Play, Clock, Film, Loader2, AlertCircle } from "lucide-react";
+import { Play, Clock, Film, Loader2, AlertCircle, Sparkles, Clapperboard } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { ImageLoader } from "@/components/ui/image-loader";
 import type { GeneratedVideo } from "@/lib/types";
@@ -120,7 +120,20 @@ export function VideoCard({ video, onClick }: VideoCardProps) {
 
       {/* Footer */}
       <div className="flex items-center justify-between px-3 py-2">
-        <span className="text-[11px] text-coco-brown-medium/60">{dateStr}</span>
+        <div className="flex items-center gap-1.5">
+          <span className="text-[11px] text-coco-brown-medium/60">{dateStr}</span>
+          {video.pipeline === "seedance" ? (
+            <Badge className="bg-orange-100 text-[9px] text-orange-700">
+              <Sparkles className="mr-0.5 h-2.5 w-2.5" />
+              Seedance
+            </Badge>
+          ) : (
+            <Badge className="bg-gray-100 text-[9px] text-gray-600">
+              <Clapperboard className="mr-0.5 h-2.5 w-2.5" />
+              HeyGen
+            </Badge>
+          )}
+        </div>
         <Badge
           className={cn(
             "text-[10px] backdrop-blur-sm",

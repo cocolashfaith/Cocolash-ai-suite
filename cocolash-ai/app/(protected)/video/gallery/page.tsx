@@ -9,15 +9,22 @@ import { cn } from "@/lib/utils";
 
 import { VideoCard } from "@/components/video/VideoCard";
 import { VideoModal } from "@/components/video/VideoModal";
-import type { GeneratedVideo, HeyGenVideoStatus, VideoScript } from "@/lib/types";
+import type { GeneratedVideo, HeyGenVideoStatus, VideoPipeline, VideoScript } from "@/lib/types";
 
 type StatusFilter = HeyGenVideoStatus | "all";
+type PipelineFilter = VideoPipeline | "all";
 
 const STATUS_FILTERS: { value: StatusFilter; label: string }[] = [
   { value: "all", label: "All" },
   { value: "completed", label: "Completed" },
   { value: "processing", label: "Processing" },
   { value: "failed", label: "Failed" },
+];
+
+const PIPELINE_FILTERS: { value: PipelineFilter; label: string }[] = [
+  { value: "all", label: "All Pipelines" },
+  { value: "heygen", label: "HeyGen" },
+  { value: "seedance", label: "Seedance" },
 ];
 
 export default function VideoGalleryPage() {
@@ -27,6 +34,7 @@ export default function VideoGalleryPage() {
   const [loadingMore, setLoadingMore] = useState(false);
   const [offset, setOffset] = useState(0);
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
+  const [pipelineFilter, setPipelineFilter] = useState<PipelineFilter>("all");
 
   const [selectedVideo, setSelectedVideo] = useState<GeneratedVideo | null>(null);
   const [selectedScript, setSelectedScript] = useState<VideoScript | null>(null);
@@ -49,6 +57,10 @@ export default function VideoGalleryPage() {
           params.set("status", statusFilter);
         }
 
+        if (pipelineFilter !== "all") {
+          params.set("pipeline", pipelineFilter);
+        }
+
         const res = await fetch(`/api/videos?${params}`);
         const data = await res.json();
 
@@ -68,7 +80,7 @@ export default function VideoGalleryPage() {
         setLoadingMore(false);
       }
     },
-    [statusFilter]
+    [statusFilter, pipelineFilter]
   );
 
   useEffect(() => {
@@ -121,7 +133,7 @@ export default function VideoGalleryPage() {
       </div>
 
       {/* Filters */}
-      <div className="mb-6 flex gap-2">
+      <div className="mb-6 flex flex-wrap items-center gap-2">
         {STATUS_FILTERS.map((f) => (
           <button
             key={f.value}
@@ -131,6 +143,24 @@ export default function VideoGalleryPage() {
               "rounded-full px-4 py-1.5 text-xs font-medium transition-all",
               statusFilter === f.value
                 ? "bg-coco-golden text-white shadow-sm"
+                : "bg-white text-coco-brown-medium hover:bg-coco-beige-light"
+            )}
+          >
+            {f.label}
+          </button>
+        ))}
+
+        <div className="mx-1 h-5 w-px bg-coco-beige-dark" />
+
+        {PIPELINE_FILTERS.map((f) => (
+          <button
+            key={f.value}
+            type="button"
+            onClick={() => setPipelineFilter(f.value)}
+            className={cn(
+              "rounded-full px-4 py-1.5 text-xs font-medium transition-all",
+              pipelineFilter === f.value
+                ? "bg-coco-brown text-white shadow-sm"
                 : "bg-white text-coco-brown-medium hover:bg-coco-beige-light"
             )}
           >
@@ -161,8 +191,8 @@ export default function VideoGalleryPage() {
             <Film className="h-8 w-8 text-coco-golden/40" />
           </div>
           <p className="mt-4 text-sm font-medium text-coco-brown-medium/50">
-            {statusFilter !== "all"
-              ? `No ${statusFilter} videos`
+            {statusFilter !== "all" || pipelineFilter !== "all"
+              ? `No ${pipelineFilter !== "all" ? pipelineFilter + " " : ""}${statusFilter !== "all" ? statusFilter + " " : ""}videos`
               : "No videos generated yet"}
           </p>
           <p className="mt-1 text-xs text-coco-brown-medium/30">

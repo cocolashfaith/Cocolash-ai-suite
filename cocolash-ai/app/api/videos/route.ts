@@ -6,12 +6,13 @@ import type { GeneratedVideo } from "@/lib/types";
  * GET /api/videos
  *
  * Lists generated videos, paginated and sorted by creation date.
- * Supports filtering by HeyGen status.
+ * Supports filtering by status and pipeline.
  */
 export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url);
     const status = searchParams.get("status");
+    const pipeline = searchParams.get("pipeline");
     const limit = Math.min(Number(searchParams.get("limit") ?? 20), 100);
     const offset = Number(searchParams.get("offset") ?? 0);
 
@@ -25,6 +26,10 @@ export async function GET(request: NextRequest) {
 
     if (status) {
       query = query.eq("heygen_status", status);
+    }
+
+    if (pipeline && (pipeline === "heygen" || pipeline === "seedance")) {
+      query = query.eq("pipeline", pipeline);
     }
 
     const { data, error, count } = await query;
