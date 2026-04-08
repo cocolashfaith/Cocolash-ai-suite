@@ -273,6 +273,13 @@ export interface GenerationSelections {
   includeComposite?: boolean; // [M2] Before/After side-by-side composite toggle
   ethnicity?: Ethnicity; // [U1] Ethnicity selector
   ageRange?: SoloDuoAgeRange; // [U1] Age range for solo/duo
+  /** HeyGen / video wizard assets saved into the image gallery */
+  heygenAsset?: {
+    kind: "ugc-avatar" | "heygen-composition";
+    personImageUrl?: string;
+    productImageUrl?: string;
+    pose?: CompositionPose;
+  };
 }
 
 // ── Generated Image (database record) ─────────────────────────
@@ -615,6 +622,8 @@ export interface VideoGenerateRequest {
   pose: CompositionPose;
   voiceId: string;
   aspectRatio: VideoAspectRatio;
+  /** When set, skip Gemini compose and use this image for HeyGen photo avatar */
+  composedImageUrl?: string;
 }
 
 export interface VideoGenerateResponse {

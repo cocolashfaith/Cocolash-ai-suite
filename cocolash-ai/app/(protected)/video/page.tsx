@@ -68,6 +68,8 @@ interface HeyGenWizardState {
   pose: CompositionPose;
   voiceId: string | null;
   aspectRatio: VideoAspectRatio;
+  /** Skip Gemini compose on /api/videos/generate — use composedImageUrl as-is */
+  preComposed: boolean;
 }
 
 const DEFAULT_HEYGEN_STATE: HeyGenWizardState = {
@@ -81,6 +83,7 @@ const DEFAULT_HEYGEN_STATE: HeyGenWizardState = {
   pose: "holding",
   voiceId: null,
   aspectRatio: "9:16",
+  preComposed: false,
 };
 
 // ── Seedance Wizard State ────────────────────────────────────
@@ -170,8 +173,19 @@ function VideoWizard() {
   };
 
   // ── HeyGen callbacks ─────────────────────────────
-  const handleHeygenScriptSelected = (script: ScriptResult, editedText?: string) => {
-    setHeygenState((prev) => ({ ...prev, script, editedScriptText: editedText }));
+  const handleHeygenScriptSelected = (
+    script: ScriptResult,
+    meta: { campaignType: CampaignType; tone: ScriptTone; duration: VideoDuration },
+    editedText?: string
+  ) => {
+    setHeygenState((prev) => ({
+      ...prev,
+      script,
+      editedScriptText: editedText,
+      campaignType: meta.campaignType,
+      tone: meta.tone,
+      duration: meta.duration,
+    }));
     setHeygenStep(1);
   };
 
@@ -181,6 +195,7 @@ function VideoWizard() {
     productImageUrl: string;
     composedImageUrl: string;
     pose: CompositionPose;
+    preComposed?: boolean;
   }) => {
     setHeygenState((prev) => ({
       ...prev,
@@ -189,6 +204,7 @@ function VideoWizard() {
       productImageUrl: data.productImageUrl,
       composedImageUrl: data.composedImageUrl,
       pose: data.pose,
+      preComposed: data.preComposed ?? false,
     }));
     setHeygenStep(2);
   };
@@ -199,7 +215,11 @@ function VideoWizard() {
   };
 
   const handleHeygenReset = () => {
-    setHeygenState(DEFAULT_HEYGEN_STATE);
+    setHeygenState({
+      ...DEFAULT_HEYGEN_STATE,
+      personImageUrl: initialImageUrl ?? null,
+      personImageId: initialImageId,
+    });
     setHeygenStep(0);
   };
 
@@ -362,13 +382,21 @@ function VideoWizard() {
                 )}
                 {heygenStep === 1 && (
                   <AvatarSetup
+                    campaignType={heygenState.campaignType}
+                    aspectRatio={heygenState.aspectRatio}
+                    onAspectRatioChange={(ratio) =>
+                      setHeygenState((prev) => ({ ...prev, aspectRatio: ratio }))
+                    }
                     initialPersonImageUrl={initialImageUrl}
                     initialPersonImageId={initialImageId}
                     onCompositionReady={handleHeygenCompositionReady}
                   />
                 )}
                 {heygenStep === 2 && (
-                  <VoiceAndStyle onStyleReady={handleHeygenStyleReady} />
+                  <VoiceAndStyle
+                    initialAspectRatio={heygenState.aspectRatio}
+                    onStyleReady={handleHeygenStyleReady}
+                  />
                 )}
                 {heygenStep === 3 && heygenState.script && (
                   <GenerateVideo
@@ -380,6 +408,8 @@ function VideoWizard() {
                     pose={heygenState.pose}
                     voiceId={heygenState.voiceId!}
                     aspectRatio={heygenState.aspectRatio}
+                    composedImageUrl={heygenState.composedImageUrl}
+                    usePrecomposedImage={heygenState.preComposed}
                     campaignType={heygenState.campaignType}
                     tone={heygenState.tone}
                     duration={heygenState.duration}

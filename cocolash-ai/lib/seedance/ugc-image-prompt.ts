@@ -9,6 +9,9 @@
  * that would fool someone scrolling TikTok — not polished studio portraits.
  */
 
+import type { LashStyle } from "@/lib/types";
+import { getLashStyleDescriptor } from "@/lib/prompts/modules/lash-styles";
+
 // ── UGC-Specific Types ───────────────────────────────────────
 
 export type UGCEthnicity =
@@ -57,12 +60,6 @@ export type UGCVibe =
   | "surprised"
   | "casual-unboxing";
 
-export type UGCLashStyle =
-  | "Natural flutter"
-  | "Dramatic glam"
-  | "Wispy cat-eye"
-  | "No lashes";
-
 export interface UGCImageParams {
   ethnicity: UGCEthnicity;
   skinTone: UGCSkinTone;
@@ -70,7 +67,8 @@ export interface UGCImageParams {
   hairStyle: UGCHairStyle;
   scene: UGCScene;
   vibe: UGCVibe;
-  lashStyle: UGCLashStyle;
+  /** Same lash styles as the main Generate page (studio). */
+  lashStyle: LashStyle;
   hasProduct: boolean;
   productDescription?: string;
 }
@@ -207,11 +205,8 @@ export function buildUGCImagePrompt(params: UGCImageParams): {
       ? `She is casually holding ${productDescription} in one hand near her chin level, grip natural and relaxed, product label partially visible. The product is proportional and not the focus — she is.\n\n`
       : "";
 
-  // Lash detail
-  const lashDetail =
-    lashStyle === "No lashes"
-      ? "Her lashes are natural with no extensions, bare and minimal."
-      : `She is wearing ${lashStyle.toLowerCase()} eyelash extensions that look natural and applied, not perfect or symmetrical. One lash slightly lifted at the outer corner.`;
+  const lashDescriptor = getLashStyleDescriptor(lashStyle);
+  const lashDetail = `Her lashes show ${lashDescriptor}. Slight natural asymmetry — not perfectly uniform.`;
 
   // Randomly pick 2-3 imperfections
   const imperfectionCount = 2 + Math.floor(Math.random() * 2); // 2 or 3
@@ -301,9 +296,3 @@ export const UGC_VIBE_OPTIONS: { value: UGCVibe; label: string }[] = [
   { value: "casual-unboxing", label: "Casual Unboxing" },
 ];
 
-export const UGC_LASH_STYLE_OPTIONS: { value: UGCLashStyle; label: string }[] = [
-  { value: "Natural flutter", label: "Natural Flutter" },
-  { value: "Dramatic glam", label: "Dramatic Glam" },
-  { value: "Wispy cat-eye", label: "Wispy Cat-Eye" },
-  { value: "No lashes", label: "No Lashes (Pre-Application)" },
-];

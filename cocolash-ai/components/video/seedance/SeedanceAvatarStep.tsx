@@ -31,7 +31,6 @@ import type {
   UGCHairStyle,
   UGCScene,
   UGCVibe,
-  UGCLashStyle,
 } from "@/lib/seedance/ugc-image-prompt";
 import {
   UGC_ETHNICITY_OPTIONS,
@@ -40,8 +39,9 @@ import {
   UGC_HAIR_STYLE_OPTIONS,
   UGC_SCENE_OPTIONS,
   UGC_VIBE_OPTIONS,
-  UGC_LASH_STYLE_OPTIONS,
 } from "@/lib/seedance/ugc-image-prompt";
+import { LASH_STYLE_OPTIONS } from "@/lib/prompts/modules/lash-styles";
+import type { LashStyle } from "@/lib/types";
 import type { SeedanceAudioMode } from "@/lib/seedance/types";
 
 interface SeedanceAvatarStepProps {
@@ -98,7 +98,7 @@ export function SeedanceAvatarStep({
   const [hairStyle, setHairStyle] = useState<UGCHairStyle>("Wavy");
   const [scene, setScene] = useState<UGCScene>("casual-bedroom");
   const [vibe, setVibe] = useState<UGCVibe>("excited-discovery");
-  const [lashStyle, setLashStyle] = useState<UGCLashStyle>("Natural flutter");
+  const [lashStyle, setLashStyle] = useState<LashStyle>("natural");
   const [hasProduct, setHasProduct] = useState(false);
   const [productDesc, setProductDesc] = useState("");
 
@@ -171,7 +171,7 @@ export function SeedanceAvatarStep({
     setHairStyle(pickRandom(UGC_HAIR_STYLE_OPTIONS));
     setScene(pickRandom(UGC_SCENE_OPTIONS));
     setVibe(pickRandom(UGC_VIBE_OPTIONS));
-    setLashStyle(pickRandom(UGC_LASH_STYLE_OPTIONS));
+    setLashStyle(pickRandom(LASH_STYLE_OPTIONS));
     toast.success("Randomized all selections!");
   };
 
@@ -185,6 +185,7 @@ export function SeedanceAvatarStep({
           ethnicity, skinTone, ageRange, hairStyle,
           scene, vibe, lashStyle, hasProduct,
           productDescription: hasProduct ? productDesc : undefined,
+          aspectRatio: "9:16",
         }),
       });
       const data = await res.json();
@@ -304,7 +305,31 @@ export function SeedanceAvatarStep({
               <Dropdown label="Scene" value={scene} options={UGC_SCENE_OPTIONS} onChange={(v) => setScene(v as UGCScene)} />
               <Dropdown label="Vibe" value={vibe} options={UGC_VIBE_OPTIONS} onChange={(v) => setVibe(v as UGCVibe)} />
             </div>
-            <Dropdown label="Lash Style" value={lashStyle} options={UGC_LASH_STYLE_OPTIONS} onChange={(v) => setLashStyle(v as UGCLashStyle)} />
+            <div>
+              <label className="mb-1 block text-[10px] font-medium text-coco-brown-medium/60">
+                Lash style (same as Generate page)
+              </label>
+              <div className="flex flex-wrap gap-1.5">
+                {LASH_STYLE_OPTIONS.map((opt) => {
+                  const active = lashStyle === opt.value;
+                  return (
+                    <button
+                      key={opt.value}
+                      type="button"
+                      onClick={() => setLashStyle(opt.value)}
+                      className={cn(
+                        "rounded-lg border-2 px-2 py-1 text-[10px] font-medium transition-all",
+                        active
+                          ? "border-coco-golden bg-coco-golden/10 text-coco-brown"
+                          : "border-coco-beige-dark bg-white text-coco-brown-medium hover:border-coco-golden/40"
+                      )}
+                    >
+                      {opt.label}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
 
             {/* Product in image toggle */}
             <div className="flex items-center gap-3">

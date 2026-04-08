@@ -11,8 +11,6 @@ import {
   MessageSquare,
   Tag,
   GraduationCap,
-  Package,
-  ArrowLeftRight,
   Pencil,
 } from "lucide-react";
 import { ScriptVariations } from "./ScriptVariations";
@@ -22,12 +20,17 @@ import type {
   VideoDuration,
   ScriptResult,
 } from "@/lib/types";
+import { HEYGEN_SCRIPT_CAMPAIGN_TYPES } from "@/lib/video/heygen-campaign";
 
 interface ScriptGeneratorProps {
-  onScriptSelected: (script: ScriptResult, editedText?: string) => void;
+  onScriptSelected: (
+    script: ScriptResult,
+    meta: { campaignType: CampaignType; tone: ScriptTone; duration: VideoDuration },
+    editedText?: string
+  ) => void;
 }
 
-const CAMPAIGN_TYPES: {
+const ALL_CAMPAIGN_ROWS: {
   value: CampaignType;
   label: string;
   description: string;
@@ -37,9 +40,11 @@ const CAMPAIGN_TYPES: {
   { value: "testimonial", label: "Testimonial", description: "Personal review & results", icon: MessageSquare },
   { value: "promo", label: "Sale / Promo", description: "Urgency-driven offer", icon: Tag },
   { value: "educational", label: "Educational", description: "Tips & tutorials", icon: GraduationCap },
-  { value: "unboxing", label: "Unboxing", description: "First look & reveal", icon: Package },
-  { value: "before-after", label: "Before & After", description: "Transformation content", icon: ArrowLeftRight },
 ];
+
+const CAMPAIGN_TYPES = ALL_CAMPAIGN_ROWS.filter((c) =>
+  (HEYGEN_SCRIPT_CAMPAIGN_TYPES as CampaignType[]).includes(c.value)
+);
 
 const TONES: { value: ScriptTone; label: string; emoji: string }[] = [
   { value: "casual", label: "Casual", emoji: "💬" },
@@ -102,7 +107,11 @@ export function ScriptGenerator({ onScriptSelected }: ScriptGeneratorProps) {
     if (selectedIndex === null) return;
     const script = scripts[selectedIndex];
     const finalText = isEditing ? editedText : undefined;
-    onScriptSelected(script, finalText);
+    onScriptSelected(
+      script,
+      { campaignType, tone, duration },
+      finalText
+    );
   };
 
   return (

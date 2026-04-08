@@ -15,31 +15,35 @@
 import { generateImage, type ReferenceImage } from "./generate";
 import { createAdminClient } from "@/lib/supabase/server";
 import { uploadGeneratedImage } from "@/lib/supabase/storage";
-import type { CompositionPose } from "@/lib/types";
+import type { AspectRatio, CompositionPose } from "@/lib/types";
 
 // ── Pose-Specific Prompts ────────────────────────────────────
 
 const POSE_PROMPTS: Record<CompositionPose, string> = {
   holding: `The EXACT same woman from IMAGE 1, in the EXACT same setting and background, now elegantly holding the exact lash product box shown in IMAGE 2. 
-Natural grip in her right hand, product held at chest level with the brand label clearly visible to camera. 
-Product placement is organic — not forced or stiff. She looks directly at camera with a warm, genuine smile.
-Medium shot from waist up. Keep the EXACT same lighting, environment, and background as the original person photo.`,
+Natural, relaxed grip in her right hand, product held at chest level with the brand label clearly visible to camera. Her fingers wrap around the product naturally — not stiff, not posed, just like someone casually showing a friend what she bought.
+She looks directly at camera with a warm, genuine smile. Her body is angled slightly (not perfectly squared to camera) for a natural feel.
+Medium shot from waist up. The product is important but secondary to her expression and energy.
+Keep the EXACT same lighting, skin tone, environment, and background as the original person photo. Do NOT alter her appearance in any way.`,
 
   applying: `The EXACT same woman from IMAGE 1, in the EXACT same setting and background, now applying false lashes from the exact product shown in IMAGE 2. 
-She holds a lash strip delicately between her fingertips near her eye, with a small handheld mirror nearby.
-Beauty tutorial aesthetic — close enough to see the lash details.
-Her expression is focused yet relaxed, as if filming a how-to video. Keep the EXACT same lighting and background as the original person photo.`,
+She holds a single lash strip delicately between her thumb and index finger, positioned near her outer eye corner, with her other hand gently pulling her eyelid taut. A small handheld mirror or compact is nearby or held in her other hand.
+Beauty tutorial aesthetic — close enough to see the lash fibers and the precision of her placement. Her eyes are looking slightly downward into the mirror.
+Her expression is focused yet relaxed and confident, as if filming a how-to video she's done a hundred times.
+Keep the EXACT same lighting, skin tone, and background as the original person photo. Do NOT alter her appearance in any way.`,
 
   selfie: `The EXACT same woman from IMAGE 1, in the EXACT same setting and background, now taking a selfie-style photo while holding the exact lash product shown in IMAGE 2.
-Phone-camera perspective, slightly above eye level. She holds the product box near her face with one hand.
-Social media UGC style — natural, authentic, relatable.
-Genuine excited expression. Keep the EXACT same lighting, environment, and background as the original person photo.`,
+Smartphone-camera perspective, slightly above eye level, with a subtle wide-angle distortion. She holds the product box near her chin/jaw with one hand, brand label angled toward camera.
+Social media UGC aesthetic — natural, authentic, relatable, slightly off-center framing. The kind of candid selfie you'd scroll past on Instagram and double-tap.
+Genuine excited expression — eyes bright, slight smile or open-mouth joy. Not a forced model pose.
+Keep the EXACT same lighting, skin tone, environment, and background as the original person photo. Do NOT alter her appearance in any way.`,
 
   testimonial: `The EXACT same woman from IMAGE 1, in the EXACT same setting and background, now holding the exact lash product shown in IMAGE 2 at chest level.
-Testimonial video still — as if she's about to speak to camera about the product.
-Product held steady with both hands or cradled in one palm, label facing forward.
-Genuine, trustworthy expression. Upper body framing, as if for a UGC review video.
-Keep the EXACT same lighting, environment, and background as the original person photo.`,
+Testimonial video still — as if she's mid-sentence, talking directly to camera about why she loves this product. Her body language is open and inviting.
+Product held steady with both hands or cradled in one palm, label facing forward but not perfectly centered — natural, not staged.
+Her expression is genuine, trustworthy, and conversational — slightly raised eyebrows, warm eyes, as if sharing a recommendation with a close friend.
+Upper body framing, like a well-framed UGC review video on TikTok or YouTube Shorts.
+Keep the EXACT same lighting, skin tone, environment, and background as the original person photo. Do NOT alter her appearance in any way.`,
 };
 
 // ── Composition Instruction ──────────────────────────────────
@@ -88,6 +92,8 @@ export interface ComposeParams {
   productImageUrl: string;
   pose: CompositionPose;
   brandId: string;
+  /** Output aspect ratio (defaults to 4:5 for legacy studio compositions). */
+  outputAspectRatio?: AspectRatio;
 }
 
 export interface ComposeResult {
@@ -108,7 +114,8 @@ export interface ComposeResult {
 export async function composePersonWithProduct(
   params: ComposeParams
 ): Promise<ComposeResult> {
-  const { personImageUrl, productImageUrl, pose, brandId } = params;
+  const { personImageUrl, productImageUrl, pose, brandId, outputAspectRatio = "4:5" } =
+    params;
 
   const [personRef, productRef] = await Promise.all([
     downloadAsReference(personImageUrl),
@@ -125,7 +132,7 @@ ${COMPOSITION_NEGATIVE}`;
 
   const result = await generateImage(
     fullPrompt,
-    "4:5",
+    outputAspectRatio,
     referenceImages,
     COMPOSITION_INSTRUCTION,
     "1K"

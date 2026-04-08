@@ -1,15 +1,21 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createAdminClient } from "@/lib/supabase/server";
+import { createAdminClient, createClient, getCurrentUserId } from "@/lib/supabase/server";
 import { generateVideoScript } from "@/lib/openrouter/captions";
 import { composePersonWithProduct } from "@/lib/gemini/composition";
 import { createPhotoAvatar, generateVideo } from "@/lib/heygen/client";
 import { VIDEO_DIMENSIONS } from "@/lib/heygen/types";
+import {
+  buildMinimalSelectionsForVideoAsset,
+  getDefaultBrandId,
+  insertVideoGalleryAsset,
+  videoAspectToImageAspect,
+} from "@/lib/video/insert-gallery-asset";
 import type {
   CampaignType,
+  CompositionPose,
   ScriptTone,
   VideoDuration,
   VideoAspectRatio,
-  CompositionPose,
   VideoGenerateRequest,
   VideoGenerateResponse,
 } from "@/lib/types";
@@ -65,6 +71,7 @@ export async function POST(request: NextRequest) {
       pose,
       voiceId,
       aspectRatio,
+      composedImageUrl: precomposedUrl,
     } = body as VideoGenerateRequest;
 
     const supabase = await createAdminClient();
@@ -137,22 +144,28 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // ── Step 3: Compose person + product via Gemini ──────────
+    // ── Step 3: Compose person + product (or use pre-built composition) ─
     let composedImageUrl: string;
-    try {
-      const composeResult = await composePersonWithProduct({
-        personImageUrl: resolvedPersonUrl,
-        productImageUrl: productImageUrl!,
-        pose: pose!,
-        brandId: "cocolash",
-      });
-      composedImageUrl = composeResult.composedImageUrl;
-    } catch (composeError) {
-      console.error("[videos/generate] Composition error:", composeError);
-      return NextResponse.json(
-        { error: `Image composition failed: ${composeError instanceof Error ? composeError.message : "Unknown error"}` },
-        { status: 500 }
-      );
+    const trimmedPre = precomposedUrl?.trim();
+    if (trimmedPre) {
+      composedImageUrl = trimmedPre;
+    } else {
+      try {
+        const composeResult = await composePersonWithProduct({
+          personImageUrl: resolvedPersonUrl,
+          productImageUrl: productImageUrl!,
+          pose: pose!,
+          brandId: "cocolash",
+          outputAspectRatio: videoAspectToImageAspect(aspectRatio!),
+        });
+        composedImageUrl = composeResult.composedImageUrl;
+      } catch (composeError) {
+        console.error("[videos/generate] Composition error:", composeError);
+        return NextResponse.json(
+          { error: `Image composition failed: ${composeError instanceof Error ? composeError.message : "Unknown error"}` },
+          { status: 500 }
+        );
+      }
     }
 
     // ── Step 4: Create DB record (status: pending) ──────────
@@ -279,7 +292,10 @@ export async function POST(request: NextRequest) {
 // ── Compose-Only Handler ─────────────────────────────────────
 
 async function handleComposeOnly(
-  body: Partial<VideoGenerateRequest> & { action?: string }
+  body: Partial<VideoGenerateRequest> & {
+    action?: string;
+    saveToGallery?: boolean;
+  }
 ) {
   if (!body.personImageUrl) {
     return NextResponse.json({ error: "personImageUrl is required" }, { status: 400 });
@@ -289,6 +305,7 @@ async function handleComposeOnly(
   }
 
   const pose = body.pose ?? "holding";
+  const aspectRatio = body.aspectRatio ?? "9:16";
 
   try {
     const result = await composePersonWithProduct({
@@ -296,11 +313,49 @@ async function handleComposeOnly(
       productImageUrl: body.productImageUrl,
       pose,
       brandId: "cocolash",
+      outputAspectRatio: videoAspectToImageAspect(aspectRatio),
     });
+
+    let galleryImageId: string | undefined;
+
+    if (body.saveToGallery) {
+      const userSupabase = await createClient();
+      const userId = await getCurrentUserId(userSupabase);
+      const admin = await createAdminClient();
+      const brandId = await getDefaultBrandId(admin);
+      if (brandId) {
+        const imageAspect = videoAspectToImageAspect(aspectRatio);
+        const selections = buildMinimalSelectionsForVideoAsset({
+          aspectRatio: imageAspect,
+          lashStyle: "natural",
+          heygenAsset: {
+            kind: "heygen-composition",
+            personImageUrl: body.personImageUrl,
+            productImageUrl: body.productImageUrl,
+            pose,
+          },
+        });
+        const inserted = await insertVideoGalleryAsset({
+          supabase: admin,
+          userId,
+          brandId,
+          imageUrl: result.composedImageUrl,
+          storagePath: result.storagePath,
+          aspectRatio: imageAspect,
+          promptUsed: `[HeyGen composition preview] pose=${pose}`,
+          selections,
+          tags: ["heygen-composition"],
+          geminiModel: "gemini-composition",
+        });
+        galleryImageId = inserted?.id;
+      }
+    }
 
     return NextResponse.json({
       success: true,
       composedImageUrl: result.composedImageUrl,
+      storagePath: result.storagePath,
+      galleryImageId,
     });
   } catch (error) {
     console.error("[videos/generate] Compose-only error:", error);

@@ -25,6 +25,8 @@ export async function GET(request: NextRequest) {
     const dateTo = searchParams.get("dateTo");
     const sortBy = searchParams.get("sortBy") || "created_at";
     const sortOrder = searchParams.get("sortOrder") === "asc" ? true : false;
+    /** Filter video-wizard assets vs main studio generations */
+    const assetTag = searchParams.get("assetTag");
 
     const userId = await getCurrentUserId(supabase);
 
@@ -34,6 +36,15 @@ export async function GET(request: NextRequest) {
 
     if (userId) {
       query = query.eq("user_id", userId);
+    }
+
+    if (assetTag === "ugc-avatar") {
+      query = query.contains("tags", ["ugc-avatar"]);
+    } else if (assetTag === "heygen-composition") {
+      query = query.contains("tags", ["heygen-composition"]);
+    } else if (assetTag === "studio") {
+      query = query.not("tags", "cs", ["ugc-avatar"]);
+      query = query.not("tags", "cs", ["heygen-composition"]);
     }
 
     if (category && ["lash-closeup", "lifestyle", "product", "before-after", "application-process"].includes(category)) {

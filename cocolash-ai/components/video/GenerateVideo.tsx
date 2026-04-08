@@ -31,6 +31,10 @@ interface GenerateVideoProps {
   pose: CompositionPose;
   voiceId: string;
   aspectRatio: VideoAspectRatio;
+  /** Final composed frame (required when usePrecomposedImage) */
+  composedImageUrl?: string | null;
+  /** When true, API skips Gemini compose and uses composedImageUrl */
+  usePrecomposedImage?: boolean;
   campaignType: string;
   tone: string;
   duration: number;
@@ -61,6 +65,8 @@ export function GenerateVideo(props: GenerateVideoProps) {
     pose,
     voiceId,
     aspectRatio,
+    composedImageUrl,
+    usePrecomposedImage,
     campaignType,
     tone,
     duration,
@@ -153,6 +159,9 @@ export function GenerateVideo(props: GenerateVideoProps) {
           pose,
           voiceId,
           aspectRatio,
+          ...(usePrecomposedImage && composedImageUrl
+            ? { composedImageUrl }
+            : {}),
         }),
       });
 

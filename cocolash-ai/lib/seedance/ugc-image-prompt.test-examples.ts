@@ -8,6 +8,7 @@
  * so only the structure and content blocks are verified.
  */
 
+import { getLashStyleDescriptor } from "@/lib/prompts/modules/lash-styles";
 import { buildUGCImagePrompt, type UGCImageParams } from "./ugc-image-prompt";
 
 // ── Example 1: Excited car UGC with product ──────────────────
@@ -19,7 +20,7 @@ export const EXAMPLE_1_INPUT: UGCImageParams = {
   hairStyle: "Wavy",
   scene: "messy-car",
   vibe: "excited-discovery",
-  lashStyle: "Natural flutter",
+  lashStyle: "natural",
   hasProduct: true,
   productDescription: "a pink CocoLash box",
 };
@@ -39,7 +40,7 @@ export const EXAMPLE_1_INPUT: UGCImageParams = {
  * She is casually holding a pink CocoLash box in one hand near her chin level, grip natural
  * and relaxed, product label partially visible. The product is proportional and not the focus — she is.
  *
- * She is wearing natural flutter eyelash extensions that look natural and applied, not perfect
+ * She is wearing natural-looking lash extensions (descriptor from LashStyle) that look applied, not perfect
  * or symmetrical. One lash slightly lifted at the outer corner.
  *
  * Authentic iPhone selfie aesthetic, candid and slightly off-center framing, camera held at eye level.
@@ -59,7 +60,7 @@ export const EXAMPLE_2_INPUT: UGCImageParams = {
   hairStyle: "Braids",
   scene: "bathroom-mirror",
   vibe: "chill-review",
-  lashStyle: "Dramatic glam",
+  lashStyle: "dramatic",
   hasProduct: false,
 };
 
@@ -76,7 +77,7 @@ export const EXAMPLE_2_INPUT: UGCImageParams = {
  * Her expression is calm and conversational, slight knowing smirk, relaxed eyebrows,
  * like she is casually telling a friend about something she has been using for weeks.
  *
- * She is wearing dramatic glam eyelash extensions that look natural and applied, not perfect
+ * Her lashes show dramatic statement lash extensions (descriptor from LashStyle)
  * or symmetrical. One lash slightly lifted at the outer corner.
  *
  * Authentic iPhone selfie aesthetic...
@@ -87,7 +88,7 @@ export const EXAMPLE_2_INPUT: UGCImageParams = {
  * NOTE: No product holding section since hasProduct === false.
  */
 
-// ── Example 3: Surprised vanity desk with no lashes ──────────
+// ── Example 3: Surprised vanity desk with wispy lashes ───────
 
 export const EXAMPLE_3_INPUT: UGCImageParams = {
   ethnicity: "East Asian",
@@ -96,7 +97,7 @@ export const EXAMPLE_3_INPUT: UGCImageParams = {
   hairStyle: "Straight long",
   scene: "vanity-desk",
   vibe: "surprised",
-  lashStyle: "No lashes",
+  lashStyle: "wispy",
   hasProduct: true,
   productDescription: "a gold CocoLash tube",
 };
@@ -116,14 +117,14 @@ export const EXAMPLE_3_INPUT: UGCImageParams = {
  * She is casually holding a gold CocoLash tube in one hand near her chin level, grip natural
  * and relaxed, product label partially visible. The product is proportional and not the focus — she is.
  *
- * Her lashes are natural with no extensions, bare and minimal.
+ * Her lashes show wispy lash extensions (descriptor from LashStyle).
  *
  * Authentic iPhone selfie aesthetic...
  * [2-3 random imperfections].
  *
  * IMG_XXXX.HEIC
  *
- * NOTE: lashStyle "No lashes" produces bare lash description instead of extensions.
+ * NOTE: Lash copy comes from getLashStyleDescriptor(lashStyle) in the prompt body.
  */
 
 // ── Verification Runner ──────────────────────────────────────
@@ -157,14 +158,9 @@ export function runExampleVerification(): void {
       }
     }
 
-    if (input.lashStyle === "No lashes") {
-      if (!p.includes("natural with no extensions")) {
-        throw new Error(`Missing no-lash detail in ${name}`);
-      }
-    } else {
-      if (!p.includes(input.lashStyle.toLowerCase())) {
-        throw new Error(`Missing lash style in ${name}`);
-      }
+    const lashDescriptor = getLashStyleDescriptor(input.lashStyle);
+    if (!p.includes(lashDescriptor.slice(0, 40))) {
+      throw new Error(`Missing lash descriptor fragment in ${name}`);
     }
 
     console.log(`✅ ${name} passed`);

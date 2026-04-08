@@ -21,6 +21,8 @@ import type {
 } from "@/lib/types";
 
 interface VoiceAndStyleProps {
+  /** Carried from avatar step (frame ratio) */
+  initialAspectRatio?: VideoAspectRatio;
   onStyleReady: (data: {
     voiceId: string;
     aspectRatio: VideoAspectRatio;
@@ -40,7 +42,10 @@ const ASPECT_RATIOS: {
 
 type GenderFilter = "all" | "male" | "female";
 
-export function VoiceAndStyle({ onStyleReady }: VoiceAndStyleProps) {
+export function VoiceAndStyle({
+  initialAspectRatio = "9:16",
+  onStyleReady,
+}: VoiceAndStyleProps) {
   const [voices, setVoices] = useState<VoiceOption[]>([]);
   const [loadingVoices, setLoadingVoices] = useState(true);
   const [selectedVoiceId, setSelectedVoiceId] = useState<string | null>(null);
@@ -51,7 +56,12 @@ export function VoiceAndStyle({ onStyleReady }: VoiceAndStyleProps) {
   const [genderFilter, setGenderFilter] = useState<GenderFilter>("all");
   const [languageFilter, setLanguageFilter] = useState("all");
 
-  const [aspectRatio, setAspectRatio] = useState<VideoAspectRatio>("9:16");
+  const [aspectRatio, setAspectRatio] =
+    useState<VideoAspectRatio>(initialAspectRatio);
+
+  useEffect(() => {
+    setAspectRatio(initialAspectRatio);
+  }, [initialAspectRatio]);
 
   useEffect(() => {
     fetchVoices();

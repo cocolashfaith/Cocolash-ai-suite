@@ -1,7 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createAdminClient } from "@/lib/supabase/server";
+import { createAdminClient, createClient, getCurrentUserId } from "@/lib/supabase/server";
 import { generateImage } from "@/lib/gemini/generate";
 import { uploadGeneratedImage } from "@/lib/supabase/storage";
+import {
+  buildMinimalSelectionsForVideoAsset,
+  getDefaultBrandId,
+  insertVideoGalleryAsset,
+  videoAspectToImageAspect,
+} from "@/lib/video/insert-gallery-asset";
 import {
   buildUGCImagePrompt,
   type UGCImageParams,
@@ -11,16 +17,14 @@ import {
   type UGCHairStyle,
   type UGCScene,
   type UGCVibe,
-  type UGCLashStyle,
 } from "@/lib/seedance/ugc-image-prompt";
+import type { LashStyle, VideoAspectRatio } from "@/lib/types";
 
 /**
  * POST /api/seedance/generate-ugc-image
  *
- * Generate a UGC-style avatar image using the Gemini image generation
- * pipeline with the specialized UGC prompt engine.
- *
- * Returns the uploaded image URL and storage path.
+ * Generate a UGC-style avatar image using Gemini + UGC prompt engine.
+ * Persists to gallery with tag `ugc-avatar`.
  */
 export async function POST(request: NextRequest) {
   try {
@@ -31,6 +35,9 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: errors.join("; ") }, { status: 400 });
     }
 
+    const aspectRatio = (body.aspectRatio as VideoAspectRatio) ?? "9:16";
+    const imageAspect = videoAspectToImageAspect(aspectRatio);
+
     const params: UGCImageParams = {
       ethnicity: body.ethnicity as UGCEthnicity,
       skinTone: body.skinTone as UGCSkinTone,
@@ -38,21 +45,16 @@ export async function POST(request: NextRequest) {
       hairStyle: body.hairStyle as UGCHairStyle,
       scene: body.scene as UGCScene,
       vibe: body.vibe as UGCVibe,
-      lashStyle: body.lashStyle as UGCLashStyle,
+      lashStyle: body.lashStyle as LashStyle,
       hasProduct: Boolean(body.hasProduct),
       productDescription: body.productDescription,
     };
 
-    // Build the UGC-optimized prompt
     const { prompt, negativePrompt } = buildUGCImagePrompt(params);
-
-    // Combine prompt with negative prompt for Gemini
     const fullPrompt = `${prompt}\n\n[NEGATIVE PROMPT — avoid these qualities entirely]\n${negativePrompt}`;
 
-    // Generate image via Gemini (9:16 portrait, 1K resolution)
-    const result = await generateImage(fullPrompt, "9:16", undefined, undefined, "1K");
+    const result = await generateImage(fullPrompt, imageAspect, undefined, undefined, "1K");
 
-    // Upload to Supabase Storage
     const supabase = await createAdminClient();
     const { url: imageUrl, path: storagePath } = await uploadGeneratedImage(
       supabase,
@@ -62,10 +64,37 @@ export async function POST(request: NextRequest) {
       result.mimeType
     );
 
+    const userSupabase = await createClient();
+    const userId = await getCurrentUserId(userSupabase);
+    const brandId = await getDefaultBrandId(supabase);
+
+    let galleryImageId: string | undefined;
+    if (brandId) {
+      const selections = buildMinimalSelectionsForVideoAsset({
+        aspectRatio: imageAspect,
+        lashStyle: params.lashStyle,
+        heygenAsset: { kind: "ugc-avatar" },
+      });
+      const inserted = await insertVideoGalleryAsset({
+        supabase,
+        userId,
+        brandId,
+        imageUrl,
+        storagePath,
+        aspectRatio: imageAspect,
+        promptUsed: fullPrompt.slice(0, 8000),
+        selections,
+        tags: ["ugc-avatar"],
+        geminiModel: result.model,
+      });
+      galleryImageId = inserted?.id;
+    }
+
     return NextResponse.json({
       imageUrl,
       storagePath,
       model: result.model,
+      galleryImageId,
     });
   } catch (error: unknown) {
     console.error("[seedance/generate-ugc-image] Error:", error);
@@ -94,9 +123,11 @@ const VALID_VIBES: UGCVibe[] = [
   "excited-discovery", "chill-review", "ranting",
   "whispering-asmr", "surprised", "casual-unboxing",
 ];
-const VALID_LASH_STYLES: UGCLashStyle[] = [
-  "Natural flutter", "Dramatic glam", "Wispy cat-eye", "No lashes",
+const VALID_LASH_STYLES: LashStyle[] = [
+  "natural", "volume", "dramatic", "cat-eye",
+  "wispy", "doll-eye", "hybrid", "mega-volume",
 ];
+const VALID_ASPECT_RATIOS: VideoAspectRatio[] = ["9:16", "1:1", "16:9"];
 
 function validateRequest(body: Record<string, unknown>): string[] {
   const errors: string[] = [];
@@ -119,8 +150,12 @@ function validateRequest(body: Record<string, unknown>): string[] {
   if (!body.vibe || !VALID_VIBES.includes(body.vibe as UGCVibe)) {
     errors.push(`vibe must be one of: ${VALID_VIBES.join(", ")}`);
   }
-  if (!body.lashStyle || !VALID_LASH_STYLES.includes(body.lashStyle as UGCLashStyle)) {
+  if (!body.lashStyle || !VALID_LASH_STYLES.includes(body.lashStyle as LashStyle)) {
     errors.push(`lashStyle must be one of: ${VALID_LASH_STYLES.join(", ")}`);
+  }
+
+  if (body.aspectRatio && !VALID_ASPECT_RATIOS.includes(body.aspectRatio as VideoAspectRatio)) {
+    errors.push(`aspectRatio must be one of: ${VALID_ASPECT_RATIOS.join(", ")}`);
   }
 
   if (body.hasProduct && !body.productDescription) {
