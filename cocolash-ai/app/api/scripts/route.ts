@@ -15,10 +15,13 @@ const VALID_CAMPAIGN_TYPES: CampaignType[] = [
   "educational",
   "unboxing",
   "before-after",
+  "brand-story",
+  "faq",
+  "product-knowledge",
 ];
 
 const VALID_TONES: ScriptTone[] = ["casual", "energetic", "calm", "professional"];
-const VALID_DURATIONS: VideoDuration[] = [15, 30, 60];
+const VALID_DURATIONS: VideoDuration[] = [15, 30, 60, 90];
 
 /**
  * POST /api/scripts

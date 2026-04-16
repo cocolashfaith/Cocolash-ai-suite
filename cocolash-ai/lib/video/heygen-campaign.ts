@@ -1,18 +1,24 @@
 /**
- * HeyGen pipeline — campaign-specific composition poses and UGC vibe options.
- * (HeyGen script step only offers a subset of campaign types; see HEYGEN_SCRIPT_CAMPAIGN_TYPES.)
+ * HeyGen pipeline — campaign configuration for the Brand Content Studio.
+ *
+ * After client review, HeyGen is repositioned for educational/informational
+ * content (not UGC). The talking-head avatar works well for calm, articulate
+ * presenters — tutorials, brand stories, FAQs, and product education.
+ *
+ * Composition poses and UGC vibes are kept for backward compat / Seedance
+ * but the HeyGen script step no longer uses them.
  */
 
 import type { CampaignType, CompositionPose } from "@/lib/types";
 import type { UGCVibe } from "@/lib/seedance/ugc-image-prompt";
 import { UGC_VIBE_OPTIONS } from "@/lib/seedance/ugc-image-prompt";
 
-/** Campaign types shown in the HeyGen script step (excludes unboxing & before-after). */
+/** Campaign types shown in the HeyGen Brand Content Studio. */
 export const HEYGEN_SCRIPT_CAMPAIGN_TYPES: CampaignType[] = [
-  "product-showcase",
-  "testimonial",
-  "promo",
   "educational",
+  "brand-story",
+  "faq",
+  "product-knowledge",
 ];
 
 /** Type guard for HeyGen script campaigns */
@@ -20,9 +26,25 @@ export function isHeygenScriptCampaign(c: CampaignType): boolean {
   return (HEYGEN_SCRIPT_CAMPAIGN_TYPES as CampaignType[]).includes(c);
 }
 
+/**
+ * Whether the given campaign type needs a product image + composition step.
+ * Educational HeyGen campaigns skip composition — the person image goes
+ * straight to HeyGen as the photo avatar.
+ */
+export function campaignNeedsComposition(campaign: CampaignType): boolean {
+  const NO_COMPOSITION: CampaignType[] = [
+    "educational",
+    "brand-story",
+    "faq",
+    "product-knowledge",
+  ];
+  return !NO_COMPOSITION.includes(campaign);
+}
+
+// ── Legacy helpers (still used by Seedance / saved compositions) ──
+
 const ALL_POSES: CompositionPose[] = ["holding", "applying", "selfie", "testimonial"];
 
-/** Composition poses available per campaign (educational excludes product-holding). */
 export function getCompositionPosesForCampaign(
   campaign: CampaignType
 ): CompositionPose[] {
@@ -62,9 +84,23 @@ const VIBE_BY_CAMPAIGN: Record<string, UGCVibe[]> = {
     "ranting",
     "excited-discovery",
   ],
+  "brand-story": [
+    "chill-review",
+    "whispering-asmr",
+    "excited-discovery",
+  ],
+  faq: [
+    "chill-review",
+    "whispering-asmr",
+    "excited-discovery",
+  ],
+  "product-knowledge": [
+    "chill-review",
+    "whispering-asmr",
+    "excited-discovery",
+  ],
 };
 
-/** UGC avatar vibe dropdown options filtered by HeyGen campaign type. */
 export function getUgcVibeOptionsForCampaign(campaign: CampaignType) {
   const allowed = new Set(
     VIBE_BY_CAMPAIGN[campaign] ?? UGC_VIBE_OPTIONS.map((o) => o.value)

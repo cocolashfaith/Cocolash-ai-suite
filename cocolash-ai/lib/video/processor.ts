@@ -8,18 +8,26 @@
  * 4. Generate thumbnail
  * 5. Return final URLs
  *
- * Uses Cloudinary URL-based transformations (no FFmpeg / Vercel-safe).
+ * Supports three caption methods:
+ * - "ffmpeg-burn": Styled captions via FFmpeg WASM (white pill bg, educational look)
+ * - "cloudinary-srt": Cloudinary URL-based SRT overlay (plain text, no background)
+ * - "heygen": HeyGen's built-in captioned video URL
+ *
+ * Fallback chain: FFmpeg burn → Cloudinary SRT → HeyGen built-in → no captions
  */
 
-import type { ProcessedVideo } from "@/lib/types";
+import type { ProcessedVideo, CaptionMethod, VideoCaptionStyle } from "@/lib/types";
+import { DEFAULT_CAPTION_STYLE } from "@/lib/types";
 import {
   uploadVideoFromUrl,
+  uploadVideoFromBuffer,
   getWatermarkedUrl,
   getThumbnailUrl,
   getCaptionedUrl,
   uploadSRT,
 } from "@/lib/cloudinary/video";
 import { generateSRTFromScript } from "./captions";
+import { burnCaptions, isFFmpegAvailable } from "./ffmpeg-captions";
 
 export interface ProcessVideoParams {
   rawVideoUrl: string;
@@ -29,16 +37,18 @@ export interface ProcessVideoParams {
   addWatermark: boolean;
   addCaptions: boolean;
   heygenCaptionUrl?: string | null;
+  captionMethod?: CaptionMethod;
+  captionStyle?: VideoCaptionStyle;
 }
 
 /**
- * Process a raw HeyGen video through the Cloudinary pipeline.
+ * Process a raw HeyGen video through the post-production pipeline.
  *
  * Workflow:
  * - Always uploads to Cloudinary for permanent hosting
  * - Optionally adds text watermark
- * - For captions: prefers HeyGen's built-in captioned URL if available,
- *   otherwise generates SRT from script and applies via Cloudinary
+ * - For captions: uses the specified method with automatic fallback:
+ *   ffmpeg-burn → cloudinary-srt → heygen → none
  * - Always generates a thumbnail from the first frame
  */
 export async function processVideo(
@@ -52,12 +62,14 @@ export async function processVideo(
     addWatermark,
     addCaptions,
     heygenCaptionUrl,
+    captionMethod = "ffmpeg-burn",
+    captionStyle = DEFAULT_CAPTION_STYLE,
   } = params;
 
   // 1. Upload raw video to Cloudinary
   const uploaded = await uploadVideoFromUrl(rawVideoUrl, {
     title,
-    tags: ["cocolash", "ugc", "video"],
+    tags: ["cocolash", "brand-content", "video"],
   });
 
   const { publicId } = uploaded;
@@ -69,27 +81,26 @@ export async function processVideo(
     watermarkedUrl = getWatermarkedUrl(publicId);
   }
 
-  // 3. Handle captions
+  // 3. Handle captions with fallback chain
   let captionedUrl: string | null = null;
   let srtPublicId: string | null = null;
+  let resolvedMethod: CaptionMethod = "none";
 
   if (addCaptions) {
-    if (heygenCaptionUrl) {
-      // HeyGen already produced a captioned version — use it directly
-      // but also upload to Cloudinary for permanent storage
-      const captionUpload = await uploadVideoFromUrl(heygenCaptionUrl, {
-        title: title ? `${title} (captioned)` : "Captioned video",
-        tags: ["cocolash", "ugc", "captioned"],
-      });
-      captionedUrl = captionUpload.secureUrl;
-    } else if (scriptText && duration > 0) {
-      // Generate SRT from script and apply via Cloudinary overlay
-      const srtContent = generateSRTFromScript(scriptText, duration);
-      if (srtContent) {
-        srtPublicId = await uploadSRT(srtContent, publicId);
-        captionedUrl = getCaptionedUrl(publicId, srtPublicId);
-      }
-    }
+    const result = await applyCaptions({
+      method: captionMethod,
+      rawVideoUrl,
+      publicId,
+      scriptText,
+      duration,
+      heygenCaptionUrl,
+      captionStyle,
+      title,
+    });
+
+    captionedUrl = result.captionedUrl;
+    srtPublicId = result.srtPublicId;
+    resolvedMethod = result.method;
   }
 
   // 4. Generate thumbnail
@@ -99,10 +110,14 @@ export async function processVideo(
   });
 
   // 5. Determine the best final video URL
-  // Priority: captioned+watermarked > watermarked > captioned > original
+  // Priority: captioned (ffmpeg) > watermarked > captioned (cloudinary) > original
   let videoUrl = uploaded.secureUrl;
-  if (watermarkedUrl) {
+  if (resolvedMethod === "ffmpeg-burn" && captionedUrl) {
+    videoUrl = captionedUrl;
+  } else if (watermarkedUrl) {
     videoUrl = watermarkedUrl;
+  } else if (captionedUrl) {
+    videoUrl = captionedUrl;
   }
 
   return {
@@ -116,5 +131,153 @@ export async function processVideo(
     width: uploaded.width,
     height: uploaded.height,
     format: uploaded.format,
+    captionMethod: resolvedMethod,
   };
+}
+
+// ── Internal: Caption Fallback Chain ────────────────────────
+
+interface ApplyCaptionsParams {
+  method: CaptionMethod;
+  rawVideoUrl: string;
+  publicId: string;
+  scriptText?: string;
+  duration: number;
+  heygenCaptionUrl?: string | null;
+  captionStyle: VideoCaptionStyle;
+  title?: string;
+}
+
+interface CaptionResult {
+  captionedUrl: string | null;
+  srtPublicId: string | null;
+  method: CaptionMethod;
+}
+
+async function applyCaptions(params: ApplyCaptionsParams): Promise<CaptionResult> {
+  const {
+    method,
+    rawVideoUrl,
+    publicId,
+    scriptText,
+    duration,
+    heygenCaptionUrl,
+    captionStyle,
+    title,
+  } = params;
+
+  const methods: CaptionMethod[] = buildFallbackChain(method, heygenCaptionUrl);
+
+  for (const m of methods) {
+    try {
+      const result = await tryCaptionMethod(m, {
+        rawVideoUrl,
+        publicId,
+        scriptText,
+        duration,
+        heygenCaptionUrl,
+        captionStyle,
+        title,
+      });
+      if (result) return result;
+    } catch (err) {
+      console.warn(`[processor] Caption method "${m}" failed, trying next:`, err);
+    }
+  }
+
+  return { captionedUrl: null, srtPublicId: null, method: "none" };
+}
+
+function buildFallbackChain(
+  preferred: CaptionMethod,
+  heygenCaptionUrl?: string | null
+): CaptionMethod[] {
+  const chain: CaptionMethod[] = [];
+
+  if (preferred === "ffmpeg-burn") {
+    chain.push("ffmpeg-burn", "cloudinary-srt");
+    if (heygenCaptionUrl) chain.push("heygen");
+  } else if (preferred === "cloudinary-srt") {
+    chain.push("cloudinary-srt");
+    if (heygenCaptionUrl) chain.push("heygen");
+  } else if (preferred === "heygen") {
+    if (heygenCaptionUrl) chain.push("heygen");
+    chain.push("cloudinary-srt");
+  }
+
+  return chain;
+}
+
+async function tryCaptionMethod(
+  method: CaptionMethod,
+  params: Omit<ApplyCaptionsParams, "method">
+): Promise<CaptionResult | null> {
+  const { rawVideoUrl, publicId, scriptText, duration, heygenCaptionUrl, captionStyle, title } = params;
+
+  switch (method) {
+    case "ffmpeg-burn": {
+      if (!scriptText || duration <= 0) return null;
+
+      const available = await isFFmpegAvailable();
+      if (!available) {
+        console.warn("[processor] FFmpeg WASM not available, skipping");
+        return null;
+      }
+
+      const srtContent = generateSRTFromScript(scriptText, duration);
+      if (!srtContent) return null;
+
+      console.log("[processor] Burning captions via FFmpeg WASM...");
+      const captionedBuffer = await burnCaptions(rawVideoUrl, srtContent, captionStyle);
+
+      const uploaded = await uploadVideoFromBuffer(captionedBuffer, {
+        title: title ? `${title} (captioned)` : "Captioned video",
+        tags: ["cocolash", "brand-content", "captioned", "ffmpeg"],
+      });
+
+      console.log(
+        `[processor] FFmpeg caption burn complete — ${(captionedBuffer.length / 1024 / 1024).toFixed(1)}MB`
+      );
+
+      return {
+        captionedUrl: uploaded.secureUrl,
+        srtPublicId: null,
+        method: "ffmpeg-burn",
+      };
+    }
+
+    case "cloudinary-srt": {
+      if (!scriptText || duration <= 0) return null;
+
+      const srtContent = generateSRTFromScript(scriptText, duration);
+      if (!srtContent) return null;
+
+      const srtPubId = await uploadSRT(srtContent, publicId);
+      const url = getCaptionedUrl(publicId, srtPubId);
+
+      return {
+        captionedUrl: url,
+        srtPublicId: srtPubId,
+        method: "cloudinary-srt",
+      };
+    }
+
+    case "heygen": {
+      if (!heygenCaptionUrl) return null;
+
+      const captionUpload = await uploadVideoFromUrl(heygenCaptionUrl, {
+        title: title ? `${title} (captioned)` : "Captioned video",
+        tags: ["cocolash", "brand-content", "captioned"],
+      });
+
+      return {
+        captionedUrl: captionUpload.secureUrl,
+        srtPublicId: null,
+        method: "heygen",
+      };
+    }
+
+    default:
+      return null;
+  }
 }

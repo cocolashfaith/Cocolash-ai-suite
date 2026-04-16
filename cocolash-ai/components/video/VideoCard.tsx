@@ -2,11 +2,18 @@
 
 import { useState } from "react";
 import Image from "next/image";
-import { Play, Clock, Film, Loader2, AlertCircle, Sparkles, Clapperboard } from "lucide-react";
+import { Play, Clock, Film, Loader2, AlertCircle, Sparkles, Clapperboard, GraduationCap } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { ImageLoader } from "@/components/ui/image-loader";
 import type { GeneratedVideo } from "@/lib/types";
 import { cn } from "@/lib/utils";
+
+const EDUCATIONAL_CAMPAIGNS = new Set([
+  "educational",
+  "brand-story",
+  "faq",
+  "product-knowledge",
+]);
 
 interface VideoCardProps {
   video: GeneratedVideo;
@@ -18,6 +25,9 @@ const CAMPAIGN_LABELS: Record<string, string> = {
   testimonial: "Testimonial",
   promo: "Promo",
   educational: "Tutorial",
+  "brand-story": "Brand Story",
+  faq: "FAQ",
+  "product-knowledge": "Product Knowledge",
   unboxing: "Unboxing",
   "before-after": "Before/After",
 };
@@ -33,6 +43,7 @@ export function VideoCard({ video, onClick }: VideoCardProps) {
   const [loaded, setLoaded] = useState(false);
 
   const thumbnailUrl = video.thumbnail_url || video.composed_image_url || video.person_image_url;
+  const isEducational = EDUCATIONAL_CAMPAIGNS.has(video.background_type ?? "");
   const status = video.heygen_status ?? "pending";
   const statusConfig = STATUS_CONFIG[status] ?? STATUS_CONFIG.pending;
   const StatusIcon = statusConfig.icon;
@@ -126,6 +137,11 @@ export function VideoCard({ video, onClick }: VideoCardProps) {
             <Badge className="bg-orange-100 text-[9px] text-orange-700">
               <Sparkles className="mr-0.5 h-2.5 w-2.5" />
               Seedance
+            </Badge>
+          ) : isEducational ? (
+            <Badge className="bg-indigo-100 text-[9px] text-indigo-700">
+              <GraduationCap className="mr-0.5 h-2.5 w-2.5" />
+              Brand Content
             </Badge>
           ) : (
             <Badge className="bg-gray-100 text-[9px] text-gray-600">

@@ -515,13 +515,16 @@ export type CampaignType =
   | "promo"
   | "educational"
   | "unboxing"
-  | "before-after";
+  | "before-after"
+  | "brand-story"
+  | "faq"
+  | "product-knowledge";
 
 // ── Script Tone ───────────────────────────────────────────────
 export type ScriptTone = "casual" | "energetic" | "calm" | "professional";
 
 // ── Video Duration (seconds) ──────────────────────────────────
-export type VideoDuration = 15 | 30 | 60;
+export type VideoDuration = 15 | 30 | 60 | 90;
 
 // ── Video Aspect Ratio ────────────────────────────────────────
 export type VideoAspectRatio = "9:16" | "1:1" | "16:9";
@@ -618,8 +621,8 @@ export interface VideoGenerateRequest {
   duration: VideoDuration;
   personImageId?: string;
   personImageUrl?: string;
-  productImageUrl: string;
-  pose: CompositionPose;
+  productImageUrl?: string;
+  pose?: CompositionPose;
   voiceId: string;
   aspectRatio: VideoAspectRatio;
   /** When set, skip Gemini compose and use this image for HeyGen photo avatar */
@@ -651,6 +654,32 @@ export interface ScriptResult {
   style_match: number;
 }
 
+// ── Caption Burn Method ───────────────────────────────────────
+export type CaptionMethod = "heygen" | "cloudinary-srt" | "ffmpeg-burn" | "none";
+
+/** Visual style for FFmpeg-burned captions */
+export interface VideoCaptionStyle {
+  fontFamily: string;
+  fontSize: number;
+  fontColor: string;
+  bgColor: string;
+  bgOpacity: number;
+  borderRadius: number;
+  position: number;
+  maxWidthPercent: number;
+}
+
+export const DEFAULT_CAPTION_STYLE: VideoCaptionStyle = {
+  fontFamily: "sans-serif",
+  fontSize: 5,
+  fontColor: "#000000",
+  bgColor: "#FFFFFF",
+  bgOpacity: 0.85,
+  borderRadius: 12,
+  position: 85,
+  maxWidthPercent: 80,
+};
+
 // ── Processed Video (post-pipeline result) ───────────────────
 export interface ProcessedVideo {
   cloudinaryPublicId: string;
@@ -663,4 +692,5 @@ export interface ProcessedVideo {
   width: number;
   height: number;
   format: string;
+  captionMethod?: CaptionMethod;
 }

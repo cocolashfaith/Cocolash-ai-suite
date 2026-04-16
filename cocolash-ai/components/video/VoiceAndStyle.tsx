@@ -14,18 +14,23 @@ import {
   Smartphone,
   Search,
   X,
+  Subtitles,
 } from "lucide-react";
 import type {
   VideoAspectRatio,
   VoiceOption,
+  CaptionMethod,
 } from "@/lib/types";
 
 interface VoiceAndStyleProps {
   /** Carried from avatar step (frame ratio) */
   initialAspectRatio?: VideoAspectRatio;
+  /** When true, shows caption style options (educational pipeline) */
+  isEducational?: boolean;
   onStyleReady: (data: {
     voiceId: string;
     aspectRatio: VideoAspectRatio;
+    captionMethod: CaptionMethod;
   }) => void;
 }
 
@@ -44,6 +49,7 @@ type GenderFilter = "all" | "male" | "female";
 
 export function VoiceAndStyle({
   initialAspectRatio = "9:16",
+  isEducational = false,
   onStyleReady,
 }: VoiceAndStyleProps) {
   const [voices, setVoices] = useState<VoiceOption[]>([]);
@@ -58,6 +64,7 @@ export function VoiceAndStyle({
 
   const [aspectRatio, setAspectRatio] =
     useState<VideoAspectRatio>(initialAspectRatio);
+  const [styledCaptions, setStyledCaptions] = useState(isEducational);
 
   useEffect(() => {
     setAspectRatio(initialAspectRatio);
@@ -144,9 +151,14 @@ export function VoiceAndStyle({
       return;
     }
 
+    const captionMethod: CaptionMethod = styledCaptions
+      ? "ffmpeg-burn"
+      : "cloudinary-srt";
+
     onStyleReady({
       voiceId: selectedVoiceId,
       aspectRatio,
+      captionMethod,
     });
   };
 
@@ -363,6 +375,57 @@ export function VoiceAndStyle({
             );
           })}
         </div>
+      </div>
+
+      {/* Caption Style Toggle */}
+      <div className="space-y-2">
+        <label className="text-sm font-semibold text-coco-brown">
+          Captions
+        </label>
+        <button
+          type="button"
+          onClick={() => setStyledCaptions(!styledCaptions)}
+          className={cn(
+            "flex w-full items-center gap-3 rounded-xl border-2 p-4 transition-all duration-200",
+            styledCaptions
+              ? "border-coco-golden bg-coco-golden/10"
+              : "border-coco-beige-dark bg-white hover:border-coco-golden/40"
+          )}
+        >
+          <div
+            className={cn(
+              "flex h-10 w-10 shrink-0 items-center justify-center rounded-xl",
+              styledCaptions
+                ? "bg-coco-golden text-white"
+                : "bg-coco-beige text-coco-brown-medium"
+            )}
+          >
+            <Subtitles className="h-5 w-5" />
+          </div>
+          <div className="flex-1 text-left">
+            <p className={cn("text-xs font-semibold", styledCaptions ? "text-coco-brown" : "text-coco-brown-medium")}>
+              Styled captions
+            </p>
+            <p className="text-[10px] text-coco-brown-medium/60">
+              {styledCaptions
+                ? "Clean pill-style captions with background — recommended for educational content"
+                : "Standard text overlay — no background styling"}
+            </p>
+          </div>
+          <div
+            className={cn(
+              "flex h-6 w-11 shrink-0 items-center rounded-full p-0.5 transition-colors",
+              styledCaptions ? "bg-coco-golden" : "bg-coco-beige-dark"
+            )}
+          >
+            <div
+              className={cn(
+                "h-5 w-5 rounded-full bg-white shadow-sm transition-transform",
+                styledCaptions ? "translate-x-5" : "translate-x-0"
+              )}
+            />
+          </div>
+        </button>
       </div>
 
       {/* Continue */}

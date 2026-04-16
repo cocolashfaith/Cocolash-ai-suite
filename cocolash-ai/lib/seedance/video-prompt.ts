@@ -124,6 +124,24 @@ const SCRIPT_TEMPLATES: Record<CampaignType, (v: ScriptTemplateVars) => string> 
     `She is hyped up, moving her face side to side slightly to show off her look from different ` +
     `angles. She holds ${v.productDescription} and points at it emphatically. Quick movements, ` +
     `excited energy, like recording a story update to share a deal. She says urgently:\n"${v.scriptText}"`,
+
+  "brand-story": (v) =>
+    `A heartfelt, personal UGC video of ${v.personDescription} in ${v.sceneDescription}. ` +
+    `She speaks directly to camera, sharing a personal story. Warm, conversational energy. ` +
+    `She holds ${v.productDescription} gently, not as a prop but as part of the story. ` +
+    `Natural pacing with pauses for emphasis. Phone propped on a surface. She says:\n"${v.scriptText}"`,
+
+  faq: (v) =>
+    `A helpful, informative UGC video of ${v.personDescription} in ${v.sceneDescription}. ` +
+    `She is answering a question, speaking clearly and directly to camera. ` +
+    `She holds ${v.productDescription} and occasionally references it. Relaxed, knowledgeable energy. ` +
+    `Phone propped on surface or held steady. She explains:\n"${v.scriptText}"`,
+
+  "product-knowledge": (v) =>
+    `A detailed, educational UGC video of ${v.personDescription} in ${v.sceneDescription}. ` +
+    `She examines ${v.productDescription} closely, pointing out details and features. ` +
+    `She speaks in a knowledgeable, appreciative tone. Camera occasionally zooms in on the product. ` +
+    `Natural lighting from ${v.scene}. She explains:\n"${v.scriptText}"`,
 };
 
 const AUDIO_TEMPLATES: Record<CampaignType, (v: TemplateVars) => string> = {
@@ -166,6 +184,24 @@ const AUDIO_TEMPLATES: Record<CampaignType, (v: TemplateVars) => string> = {
     `She moves energetically, showing off her look from different angles. Her expressions ` +
     `and lip movements follow the provided audio reference. She holds ${v.productDescription} ` +
     `and gestures excitedly. Story-style recording energy.`,
+
+  "brand-story": (v) =>
+    `A heartfelt UGC video of ${v.personDescription} in ${v.sceneDescription}. ` +
+    `She speaks directly to camera, sharing a personal story. Her lip movements and ` +
+    `expressions follow the provided audio reference. She holds ${v.productDescription} ` +
+    `gently. Warm, personal energy. Phone propped on a surface.`,
+
+  faq: (v) =>
+    `An informative UGC video of ${v.personDescription} in ${v.sceneDescription}. ` +
+    `She answers a question, speaking clearly to camera. Her lip movements match ` +
+    `the provided audio reference. She holds ${v.productDescription} and references it. ` +
+    `Relaxed, knowledgeable energy. Phone propped on surface.`,
+
+  "product-knowledge": (v) =>
+    `A detailed educational UGC video of ${v.personDescription} in ${v.sceneDescription}. ` +
+    `She examines ${v.productDescription} closely, pointing out details. Her expressions ` +
+    `and lip movements follow the provided audio reference. Knowledgeable, appreciative tone. ` +
+    `Natural lighting from ${v.scene}.`,
 };
 
 // ── Main Exported Functions ──────────────────────────────────

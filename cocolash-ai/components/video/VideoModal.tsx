@@ -11,6 +11,8 @@ import {
   Ratio,
   MessageSquare,
   DollarSign,
+  Tag,
+  Layers,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -21,6 +23,31 @@ import {
 } from "@/components/ui/dialog";
 import type { GeneratedVideo, VideoScript } from "@/lib/types";
 import { toast } from "sonner";
+
+const CAMPAIGN_DISPLAY: Record<string, string> = {
+  "product-showcase": "Product Showcase",
+  testimonial: "Testimonial",
+  promo: "Sale / Promo",
+  educational: "Educational / Tutorial",
+  "brand-story": "Brand Story",
+  faq: "FAQ / Myth-Busting",
+  "product-knowledge": "Product Knowledge",
+  unboxing: "Unboxing",
+  "before-after": "Before / After",
+};
+
+const EDUCATIONAL_CAMPAIGNS = new Set([
+  "educational",
+  "brand-story",
+  "faq",
+  "product-knowledge",
+]);
+
+function getPipelineLabel(video: GeneratedVideo): string {
+  if (video.pipeline === "seedance") return "Seedance 2.0";
+  const ct = video.background_type ?? "";
+  return EDUCATIONAL_CAMPAIGNS.has(ct) ? "Brand Content Studio" : "HeyGen";
+}
 
 interface VideoModalProps {
   video: GeneratedVideo | null;
@@ -124,6 +151,16 @@ export function VideoModal({
 
           {/* Metadata Grid */}
           <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+            <MetaItem
+              icon={Layers}
+              label="Pipeline"
+              value={getPipelineLabel(video)}
+            />
+            <MetaItem
+              icon={Tag}
+              label="Content Type"
+              value={CAMPAIGN_DISPLAY[video.background_type ?? ""] ?? video.background_type ?? "—"}
+            />
             <MetaItem
               icon={Clock}
               label="Duration"

@@ -1,8 +1,11 @@
 /**
- * UGC Video Script — User Prompt Builder
+ * Brand Content Video Script — User Prompt Builder
  *
  * Constructs the user-facing prompt with campaign type, tone,
  * duration, product details, and campaign-specific guidance.
+ *
+ * Duration options for HeyGen Brand Content Studio:
+ *   30s, 60s, 90s (15s still supported for Seedance/legacy)
  */
 
 import type { CampaignType, ScriptTone, VideoDuration } from "@/lib/types";
@@ -24,31 +27,36 @@ This is a SHORT-FORM script. Structure:
 - Hook (first 3 seconds — MUST stop the scroll)
 - One key benefit or statement (5 seconds)
 - CTA (final 3-5 seconds)
-NO room for problem/solution flow. Get to the point FAST. Every word counts.`,
+NO room for multiple teaching points. Get to the point FAST.`,
 
-  30: `DURATION: 30 seconds (~70-80 words)
-This is a STANDARD short-form script. Full UGC structure:
-- Hook (0-3 seconds)
-- Problem or relatable moment (3-8 seconds)
-- Solution — introduce CocoLash (8-20 seconds)
-- CTA (20-30 seconds)
-Tight pacing. No filler. Every sentence earns its place.`,
+  30: `DURATION: 30 seconds (~65-70 words)
+This is a concise educational script. Structure:
+- Intro (0-5 seconds) — set the topic warmly and clearly
+- One or two key teaching points (5-22 seconds) — be specific and actionable
+- Takeaway + CTA (22-30 seconds) — summarise and close naturally
+Tight pacing. Every sentence should teach or connect. No filler.`,
 
-  60: `DURATION: 60 seconds (~140-160 words)
-This is a LONGER-FORM script with room to breathe. Full structure with expanded proof:
-- Hook (0-5 seconds)
-- Problem/Relate (5-15 seconds) — go deeper into the pain point
-- Solution (15-35 seconds) — describe the product experience, multiple benefits
-- Proof (35-50 seconds) — personal result, before/after reference, or social proof
-- CTA (50-60 seconds) — compelling, specific reason to act now
-You have time for storytelling. Use it. Paint a picture.`,
+  60: `DURATION: 60 seconds (~130-140 words)
+This is a standard educational script with room for depth. Full structure:
+- Intro (0-7 seconds) — set the topic, establish credibility
+- Key Points (7-45 seconds) — 2-3 distinct teaching moments, each with a clear takeaway
+- Summary + CTA (45-60 seconds) — wrap up what the viewer learned, gentle call to action
+You have enough time for real teaching. Use examples, comparisons, and sensory details.`,
+
+  90: `DURATION: 90 seconds (~195-210 words)
+This is a longer-form educational script for in-depth tutorials and storytelling. Full structure:
+- Intro (0-8 seconds) — set the topic, establish why it matters
+- Key Points (8-65 seconds) — 3-4 distinct teaching moments, each building on the last
+- Demo/Story (65-80 seconds) — walk through a practical example, share a personal anecdote, or describe a step-by-step process
+- Summary + CTA (80-90 seconds) — summarise the key takeaways, close with a warm call to action
+You have real space to teach. Paint a picture. Let the viewer absorb each point before moving on.`,
 };
 
 const TONE_ADJECTIVES: Record<ScriptTone, string> = {
-  casual: "relaxed, fun, bestie-energy",
-  energetic: "hype, excited, fast-paced, high-energy",
-  calm: "soft, luxurious, ASMR-adjacent, self-care vibes",
-  professional: "polished, authoritative, beauty-expert credibility",
+  casual: "warm, approachable, relatable teacher — like a friend who happens to be an expert",
+  energetic: "passionate, animated, enthusiastic expert — genuinely excited about the topic",
+  calm: "soft-spoken, luxurious, ASMR-adjacent beauty guru — deliberate and soothing",
+  professional: "polished, credible, editorial-quality brand ambassador — authoritative but warm",
 };
 
 export function buildScriptUserPrompt(params: ScriptUserPromptParams): string {
@@ -67,7 +75,7 @@ export function buildScriptUserPrompt(params: ScriptUserPromptParams): string {
   const toneDesc = TONE_ADJECTIVES[tone];
 
   const lines: string[] = [
-    `Generate 3 UGC video scripts for CocoLash.`,
+    `Generate 3 educational / brand content video scripts for CocoLash.`,
     "",
     `CAMPAIGN TYPE: ${template.label}`,
     template.description,
@@ -75,7 +83,7 @@ export function buildScriptUserPrompt(params: ScriptUserPromptParams): string {
     `FOCUS AREAS:`,
     ...template.focusAreas.map((f) => `- ${f}`),
     "",
-    `EXAMPLE HOOKS (for inspiration — do NOT copy these exactly):`,
+    `EXAMPLE OPENINGS (for inspiration — do NOT copy these exactly):`,
     ...template.exampleHooks.map((h) => `- "${h}"`),
     "",
     `TONE: ${tone} (${toneDesc})`,
@@ -99,11 +107,12 @@ export function buildScriptUserPrompt(params: ScriptUserPromptParams): string {
     lines.push(
       "",
       `KEY FEATURES:`,
-      `- Premium quality false lashes`,
-      `- Lightweight, comfortable all-day wear`,
-      `- Easy application — takes under 5 minutes`,
-      `- Luxury packaging`,
-      `- Designed for Black women — celebrates melanin beauty`
+      `- Premium quality false lashes with hand-crafted fibers`,
+      `- Flexible cotton band — lightweight, comfortable all-day wear`,
+      `- Easy application — takes under 5 minutes even for beginners`,
+      `- Reusable 25+ times with proper care`,
+      `- Luxury magnetic-closure packaging`,
+      `- Designed specifically for Black women — celebrates melanin beauty and diverse eye shapes`
     );
   }
 
@@ -112,20 +121,20 @@ export function buildScriptUserPrompt(params: ScriptUserPromptParams): string {
   } else {
     lines.push(
       "",
-      `TARGET AUDIENCE: Confident Black women aged 20-45 who love beauty, self-care, and looking their best`
+      `TARGET AUDIENCE: Beauty enthusiasts who want to learn about lash care, application, and CocoLash products — confident Black women aged 20-45 who value self-care and looking their best`
     );
   }
 
   if (specialOffer) {
     lines.push("", `SPECIAL OFFER: ${specialOffer}`);
     lines.push(
-      `Weave this offer naturally into the script — it should feel like sharing a hot tip, not reading an ad.`
+      `If relevant, mention this offer naturally at the end — but don't make the script about the offer. The primary purpose is educational.`
     );
   }
 
   lines.push(
     "",
-    `Return exactly 3 unique script variations as JSON. Each script must take a completely different creative angle.`
+    `Return exactly 3 unique script variations as JSON. Each script must take a completely different creative angle and teach the topic from a different perspective.`
   );
 
   return lines.join("\n");

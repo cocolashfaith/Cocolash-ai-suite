@@ -38,6 +38,7 @@ import type {
   VideoAspectRatio,
 } from "@/lib/types";
 import {
+  campaignNeedsComposition,
   getCompositionPosesForCampaign,
   getUgcVibeOptionsForCampaign,
 } from "@/lib/video/heygen-campaign";
@@ -69,6 +70,8 @@ interface AvatarSetupProps {
     pose: CompositionPose;
     /** Use server-side pre-built composition (skip re-compose on video generate) */
     preComposed?: boolean;
+    /** When true, the person image is used directly as the HeyGen avatar (no composition) */
+    skipComposition?: boolean;
   }) => void;
 }
 
@@ -127,6 +130,11 @@ export function AvatarSetup({
   const [isComposing, setIsComposing] = useState(false);
   const [composedImageUrl, setComposedImageUrl] = useState<string | null>(null);
   const [compositionReuseMode, setCompositionReuseMode] = useState(false);
+
+  const needsComposition = useMemo(
+    () => campaignNeedsComposition(campaignType),
+    [campaignType]
+  );
 
   const poseOptions = useMemo(() => {
     return getCompositionPosesForCampaign(campaignType).map((value) => ({
@@ -393,7 +401,28 @@ export function AvatarSetup({
     }
   };
 
+  const handleContinueSimple = () => {
+    if (!selectedPersonUrl) {
+      toast.error("Please select a person image");
+      return;
+    }
+    onCompositionReady({
+      personImageUrl: selectedPersonUrl,
+      personImageId: selectedPersonId ?? undefined,
+      productImageUrl: "",
+      composedImageUrl: selectedPersonUrl,
+      pose: "holding",
+      preComposed: true,
+      skipComposition: true,
+    });
+  };
+
   const handleContinue = () => {
+    if (!needsComposition) {
+      handleContinueSimple();
+      return;
+    }
+
     if (!selectedPersonUrl || !productImageUrl.trim()) {
       toast.error("Please complete all selections");
       return;
@@ -773,7 +802,32 @@ export function AvatarSetup({
         )}
       </div>
 
-      {compositionReuseMode && composedImageUrl && (
+      {/* ── Simplified flow for educational campaigns (no composition) ── */}
+      {!needsComposition && selectedPersonUrl && (
+        <div className="space-y-3 rounded-xl border-2 border-coco-golden/20 bg-coco-golden/5 p-4">
+          <div className="flex items-center gap-2">
+            <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-coco-golden/10">
+              <Check className="h-4 w-4 text-coco-golden" />
+            </div>
+            <div>
+              <p className="text-sm font-semibold text-coco-brown">Presenter selected</p>
+              <p className="text-[11px] text-coco-brown-medium/60">
+                Educational content uses the presenter image directly — no product composition needed.
+              </p>
+            </div>
+          </div>
+          <Button
+            onClick={handleContinue}
+            className="w-full gap-2 bg-coco-golden py-5 text-sm font-semibold text-white shadow-lg hover:bg-coco-golden-dark hover:shadow-xl"
+            size="lg"
+          >
+            Continue to Voice & Style →
+          </Button>
+        </div>
+      )}
+
+      {/* ── Full composition flow (product + pose + compose) ── */}
+      {needsComposition && compositionReuseMode && composedImageUrl && (
         <div className="space-y-3 rounded-xl border-2 border-coco-golden/40 bg-coco-golden/5 p-4">
           <p className="text-sm font-semibold text-coco-brown">Using a saved composition</p>
           <p className="text-xs text-coco-brown-medium/70">
@@ -805,7 +859,7 @@ export function AvatarSetup({
       )}
 
       {/* Product Image — Tabbed Picker */}
-      {!compositionReuseMode && (
+      {needsComposition && !compositionReuseMode && (
       <div className="space-y-2">
         <label className="text-sm font-semibold text-coco-brown">
           Product Image
@@ -979,7 +1033,7 @@ export function AvatarSetup({
       </div>
       )}
 
-      {!compositionReuseMode && (
+      {needsComposition && !compositionReuseMode && (
       <>
       {/* Pose Selector */}
       <div className="space-y-2">

@@ -7,10 +7,10 @@ import { toast } from "sonner";
 import {
   Sparkles,
   Loader2,
-  ShoppingBag,
-  MessageSquare,
-  Tag,
   GraduationCap,
+  BookOpen,
+  HelpCircle,
+  Gem,
   Pencil,
 } from "lucide-react";
 import { ScriptVariations } from "./ScriptVariations";
@@ -36,10 +36,10 @@ const ALL_CAMPAIGN_ROWS: {
   description: string;
   icon: React.ElementType;
 }[] = [
-  { value: "product-showcase", label: "Product Showcase", description: "Highlight the product itself", icon: ShoppingBag },
-  { value: "testimonial", label: "Testimonial", description: "Personal review & results", icon: MessageSquare },
-  { value: "promo", label: "Sale / Promo", description: "Urgency-driven offer", icon: Tag },
-  { value: "educational", label: "Educational", description: "Tips & tutorials", icon: GraduationCap },
+  { value: "educational", label: "Educational", description: "Tutorials & how-to guides", icon: GraduationCap },
+  { value: "brand-story", label: "Brand Story", description: "Mission, values & identity", icon: BookOpen },
+  { value: "faq", label: "FAQ / Myths", description: "Answer questions & bust myths", icon: HelpCircle },
+  { value: "product-knowledge", label: "Product Knowledge", description: "Deep-dive into product details", icon: Gem },
 ];
 
 const CAMPAIGN_TYPES = ALL_CAMPAIGN_ROWS.filter((c) =>
@@ -54,13 +54,13 @@ const TONES: { value: ScriptTone; label: string; emoji: string }[] = [
 ];
 
 const DURATIONS: { value: VideoDuration; label: string; platforms: string }[] = [
-  { value: 15, label: "15s", platforms: "TikTok, Reels" },
   { value: 30, label: "30s", platforms: "Reels, Stories" },
   { value: 60, label: "60s", platforms: "TikTok, YouTube Shorts" },
+  { value: 90, label: "90s", platforms: "YouTube, Website" },
 ];
 
 export function ScriptGenerator({ onScriptSelected }: ScriptGeneratorProps) {
-  const [campaignType, setCampaignType] = useState<CampaignType>("product-showcase");
+  const [campaignType, setCampaignType] = useState<CampaignType>("educational");
   const [tone, setTone] = useState<ScriptTone>("casual");
   const [duration, setDuration] = useState<VideoDuration>(30);
   const [isGenerating, setIsGenerating] = useState(false);
@@ -119,9 +119,9 @@ export function ScriptGenerator({ onScriptSelected }: ScriptGeneratorProps) {
       {/* Campaign Type */}
       <div className="space-y-2">
         <label className="text-sm font-semibold text-coco-brown">
-          Campaign Type
+          Content Type
         </label>
-        <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+        <div className="grid grid-cols-2 gap-3">
           {CAMPAIGN_TYPES.map((ct) => {
             const Icon = ct.icon;
             const isActive = campaignType === ct.value;

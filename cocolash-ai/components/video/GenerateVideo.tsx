@@ -20,15 +20,35 @@ import type {
   CompositionPose,
   VideoAspectRatio,
   HeyGenVideoStatus,
+  CaptionMethod,
 } from "@/lib/types";
+
+const CAMPAIGN_DISPLAY: Record<string, string> = {
+  "product-showcase": "Product Showcase",
+  testimonial: "Testimonial",
+  promo: "Sale / Promo",
+  educational: "Educational / Tutorial",
+  "brand-story": "Brand Story",
+  faq: "FAQ / Myth-Busting",
+  "product-knowledge": "Product Knowledge",
+  unboxing: "Unboxing",
+  "before-after": "Before / After",
+};
+
+const EDUCATIONAL_CAMPAIGNS = new Set([
+  "educational",
+  "brand-story",
+  "faq",
+  "product-knowledge",
+]);
 
 interface GenerateVideoProps {
   script: ScriptResult;
   editedScriptText?: string;
   personImageUrl: string;
   personImageId?: string;
-  productImageUrl: string;
-  pose: CompositionPose;
+  productImageUrl?: string | null;
+  pose?: CompositionPose;
   voiceId: string;
   aspectRatio: VideoAspectRatio;
   /** Final composed frame (required when usePrecomposedImage) */
@@ -38,6 +58,7 @@ interface GenerateVideoProps {
   campaignType: string;
   tone: string;
   duration: number;
+  captionMethod?: CaptionMethod;
   onReset: () => void;
 }
 
@@ -48,11 +69,18 @@ const STATUS_LABELS: Record<string, string> = {
   failed: "Failed",
 };
 
-const STEP_LABELS = [
+const STEP_LABELS_FULL = [
   "Composing avatar image...",
   "Creating photo avatar on HeyGen...",
   "Generating video (Avatar IV)...",
-  "Processing & finalizing...",
+  "Processing & burning captions...",
+];
+
+const STEP_LABELS_SIMPLE = [
+  "Uploading presenter image...",
+  "Creating photo avatar on HeyGen...",
+  "Generating video (Avatar IV)...",
+  "Processing & burning captions...",
 ];
 
 export function GenerateVideo(props: GenerateVideoProps) {
@@ -70,6 +98,7 @@ export function GenerateVideo(props: GenerateVideoProps) {
     campaignType,
     tone,
     duration,
+    captionMethod = "ffmpeg-burn",
     onReset,
   } = props;
 
@@ -155,8 +184,8 @@ export function GenerateVideo(props: GenerateVideoProps) {
           duration,
           personImageUrl,
           personImageId,
-          productImageUrl,
-          pose,
+          ...(productImageUrl ? { productImageUrl } : {}),
+          ...(pose ? { pose } : {}),
           voiceId,
           aspectRatio,
           ...(usePrecomposedImage && composedImageUrl
@@ -194,6 +223,9 @@ export function GenerateVideo(props: GenerateVideoProps) {
     window.open(`/api/videos/${videoId}/download`, "_blank");
   };
 
+  const hasComposition = !!productImageUrl;
+  const isEducationalCampaign = EDUCATIONAL_CAMPAIGNS.has(campaignType);
+  const stepLabels = hasComposition ? STEP_LABELS_FULL : STEP_LABELS_SIMPLE;
   const scriptText = editedScriptText || script.full_script;
 
   return (
@@ -206,11 +238,29 @@ export function GenerateVideo(props: GenerateVideoProps) {
               Video Summary
             </label>
             <div className="space-y-2 rounded-xl border-2 border-coco-beige-dark bg-white p-4">
-              <SummaryRow label="Campaign" value={campaignType} />
-              <SummaryRow label="Tone" value={tone} />
+              {isEducationalCampaign && (
+                <SummaryRow label="Pipeline" value="Brand Content Studio" />
+              )}
+              <SummaryRow label="Content Type" value={CAMPAIGN_DISPLAY[campaignType] ?? campaignType.replace(/-/g, " ")} />
+              <SummaryRow label="Tone" value={tone.charAt(0).toUpperCase() + tone.slice(1)} />
               <SummaryRow label="Duration" value={`${duration}s`} />
-              <SummaryRow label="Pose" value={pose} />
+              {hasComposition && pose && <SummaryRow label="Pose" value={pose} />}
               <SummaryRow label="Aspect Ratio" value={aspectRatio} />
+              {!hasComposition && (
+                <SummaryRow label="Composition" value="Direct presenter (no product)" />
+              )}
+              <SummaryRow
+                label="Captions"
+                value={
+                  captionMethod === "ffmpeg-burn"
+                    ? "Styled captions (FFmpeg)"
+                    : captionMethod === "cloudinary-srt"
+                      ? "Standard overlay"
+                      : captionMethod === "heygen"
+                        ? "HeyGen built-in"
+                        : "None"
+                }
+              />
             </div>
           </div>
 
@@ -225,7 +275,7 @@ export function GenerateVideo(props: GenerateVideoProps) {
           </div>
 
           {/* Cost & Time Estimate */}
-          <CostEstimateCard duration={duration} />
+          <CostEstimateCard duration={duration} needsComposition={hasComposition} />
 
           <Button
             onClick={handleGenerate}
@@ -249,7 +299,7 @@ export function GenerateVideo(props: GenerateVideoProps) {
               {STATUS_LABELS[status ?? "pending"]}
             </p>
             <p className="mt-1 text-xs text-coco-brown-medium/50">
-              {STEP_LABELS[pipelineStep]}
+              {stepLabels[pipelineStep]}
             </p>
 
             {/* Progress bar */}
@@ -266,7 +316,7 @@ export function GenerateVideo(props: GenerateVideoProps) {
 
           {/* Pipeline Steps */}
           <div className="space-y-2">
-            {STEP_LABELS.map((label, i) => (
+            {stepLabels.map((label, i) => (
               <div key={i} className="flex items-center gap-3">
                 <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full">
                   {i < pipelineStep ? (
@@ -381,12 +431,13 @@ function SummaryRow({ label, value }: { label: string; value: string }) {
   );
 }
 
-function CostEstimateCard({ duration }: { duration: number }) {
+function CostEstimateCard({ duration, needsComposition }: { duration: number; needsComposition: boolean }) {
   const estimate: VideoCostEstimate = calculateVideoCost({
     duration,
     addCaptions: true,
     addWatermark: false,
     needsScriptGeneration: true,
+    needsComposition,
   });
 
   return (

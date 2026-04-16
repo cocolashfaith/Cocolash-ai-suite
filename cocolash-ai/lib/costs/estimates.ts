@@ -20,6 +20,7 @@ export const API_COSTS = {
     videoGeneration15s: 0.50,
     videoGeneration30s: 1.00,
     videoGeneration60s: 2.00,
+    videoGeneration90s: 3.00,
   },
   seedance: {
     videoGeneration720pPerSecond: 0.205,
@@ -47,22 +48,25 @@ export function calculateVideoCost(params: {
   addCaptions: boolean;
   addWatermark: boolean;
   needsScriptGeneration: boolean;
+  needsComposition?: boolean;
 }): VideoCostEstimate {
-  const { duration, addCaptions, addWatermark, needsScriptGeneration } = params;
+  const { duration, addCaptions, addWatermark, needsScriptGeneration, needsComposition = true } = params;
 
   const scriptGeneration = needsScriptGeneration
     ? API_COSTS.openrouter.scriptGeneration
     : 0;
 
-  const imageComposition = API_COSTS.gemini.composition;
+  const imageComposition = needsComposition ? API_COSTS.gemini.composition : 0;
 
   let videoGeneration: number;
   if (duration <= 15) {
     videoGeneration = API_COSTS.heygen.videoGeneration15s;
   } else if (duration <= 30) {
     videoGeneration = API_COSTS.heygen.videoGeneration30s;
-  } else {
+  } else if (duration <= 60) {
     videoGeneration = API_COSTS.heygen.videoGeneration60s;
+  } else {
+    videoGeneration = API_COSTS.heygen.videoGeneration90s;
   }
 
   let postProcessing = API_COSTS.cloudinary.videoUpload;

@@ -32,6 +32,7 @@ import type {
   CompositionPose,
   VideoAspectRatio,
   VideoPipeline,
+  CaptionMethod,
 } from "@/lib/types";
 import type { SeedanceAudioMode } from "@/lib/seedance/types";
 import type { UGCScene, UGCVibe } from "@/lib/seedance/ugc-image-prompt";
@@ -68,13 +69,14 @@ interface HeyGenWizardState {
   pose: CompositionPose;
   voiceId: string | null;
   aspectRatio: VideoAspectRatio;
+  captionMethod: CaptionMethod;
   /** Skip Gemini compose on /api/videos/generate — use composedImageUrl as-is */
   preComposed: boolean;
 }
 
 const DEFAULT_HEYGEN_STATE: HeyGenWizardState = {
   script: null,
-  campaignType: "product-showcase",
+  campaignType: "educational",
   tone: "casual",
   duration: 30,
   personImageUrl: null,
@@ -83,6 +85,7 @@ const DEFAULT_HEYGEN_STATE: HeyGenWizardState = {
   pose: "holding",
   voiceId: null,
   aspectRatio: "9:16",
+  captionMethod: "ffmpeg-burn",
   preComposed: false,
 };
 
@@ -196,12 +199,13 @@ function VideoWizard() {
     composedImageUrl: string;
     pose: CompositionPose;
     preComposed?: boolean;
+    skipComposition?: boolean;
   }) => {
     setHeygenState((prev) => ({
       ...prev,
       personImageUrl: data.personImageUrl,
       personImageId: data.personImageId,
-      productImageUrl: data.productImageUrl,
+      productImageUrl: data.skipComposition ? null : data.productImageUrl,
       composedImageUrl: data.composedImageUrl,
       pose: data.pose,
       preComposed: data.preComposed ?? false,
@@ -209,8 +213,17 @@ function VideoWizard() {
     setHeygenStep(2);
   };
 
-  const handleHeygenStyleReady = (data: { voiceId: string; aspectRatio: VideoAspectRatio }) => {
-    setHeygenState((prev) => ({ ...prev, voiceId: data.voiceId, aspectRatio: data.aspectRatio }));
+  const handleHeygenStyleReady = (data: {
+    voiceId: string;
+    aspectRatio: VideoAspectRatio;
+    captionMethod: CaptionMethod;
+  }) => {
+    setHeygenState((prev) => ({
+      ...prev,
+      voiceId: data.voiceId,
+      aspectRatio: data.aspectRatio,
+      captionMethod: data.captionMethod,
+    }));
     setHeygenStep(3);
   };
 
@@ -293,7 +306,7 @@ function VideoWizard() {
                 {pipeline === "select"
                   ? "Create Video"
                   : pipeline === "heygen"
-                    ? "Create Video — HeyGen"
+                    ? "Brand Content Studio"
                     : "Create Video — Seedance 2.0"}
               </h1>
             </div>
@@ -301,7 +314,7 @@ function VideoWizard() {
               {pipeline === "select"
                 ? "Choose your video generation engine"
                 : pipeline === "heygen"
-                  ? "Studio-quality talking head videos"
+                  ? "Educational videos, tutorials & brand storytelling"
                   : "Authentic UGC-style videos for TikTok & Reels"}
             </p>
           </div>
@@ -395,6 +408,7 @@ function VideoWizard() {
                 {heygenStep === 2 && (
                   <VoiceAndStyle
                     initialAspectRatio={heygenState.aspectRatio}
+                    isEducational={["educational", "brand-story", "faq", "product-knowledge"].includes(heygenState.campaignType)}
                     onStyleReady={handleHeygenStyleReady}
                   />
                 )}
@@ -404,7 +418,7 @@ function VideoWizard() {
                     editedScriptText={heygenState.editedScriptText}
                     personImageUrl={heygenState.personImageUrl!}
                     personImageId={heygenState.personImageId}
-                    productImageUrl={heygenState.productImageUrl!}
+                    productImageUrl={heygenState.productImageUrl}
                     pose={heygenState.pose}
                     voiceId={heygenState.voiceId!}
                     aspectRatio={heygenState.aspectRatio}
@@ -413,6 +427,7 @@ function VideoWizard() {
                     campaignType={heygenState.campaignType}
                     tone={heygenState.tone}
                     duration={heygenState.duration}
+                    captionMethod={heygenState.captionMethod}
                     onReset={handleHeygenReset}
                   />
                 )}

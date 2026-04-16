@@ -25,9 +25,10 @@ export const maxDuration = 300;
 const VALID_CAMPAIGN_TYPES: CampaignType[] = [
   "product-showcase", "testimonial", "promo",
   "educational", "unboxing", "before-after",
+  "brand-story", "faq", "product-knowledge",
 ];
 const VALID_TONES: ScriptTone[] = ["casual", "energetic", "calm", "professional"];
-const VALID_DURATIONS: VideoDuration[] = [15, 30, 60];
+const VALID_DURATIONS: VideoDuration[] = [15, 30, 60, 90];
 const VALID_ASPECT_RATIOS: VideoAspectRatio[] = ["9:16", "1:1", "16:9"];
 const VALID_POSES: CompositionPose[] = ["holding", "applying", "selfie", "testimonial"];
 
@@ -144,17 +145,17 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // ── Step 3: Compose person + product (or use pre-built composition) ─
+    // ── Step 3: Compose person + product (or skip for educational) ─
     let composedImageUrl: string;
     const trimmedPre = precomposedUrl?.trim();
     if (trimmedPre) {
       composedImageUrl = trimmedPre;
-    } else {
+    } else if (productImageUrl && pose) {
       try {
         const composeResult = await composePersonWithProduct({
           personImageUrl: resolvedPersonUrl,
-          productImageUrl: productImageUrl!,
-          pose: pose!,
+          productImageUrl,
+          pose,
           brandId: "cocolash",
           outputAspectRatio: videoAspectToImageAspect(aspectRatio!),
         });
@@ -166,6 +167,8 @@ export async function POST(request: NextRequest) {
           { status: 500 }
         );
       }
+    } else {
+      composedImageUrl = resolvedPersonUrl;
     }
 
     // ── Step 4: Create DB record (status: pending) ──────────
@@ -385,10 +388,7 @@ function validateRequest(body: Partial<VideoGenerateRequest>): string[] {
     }
   }
 
-  if (!body.productImageUrl) {
-    errors.push("productImageUrl is required");
-  }
-  if (!body.pose || !VALID_POSES.includes(body.pose)) {
+  if (body.pose && !VALID_POSES.includes(body.pose)) {
     errors.push(`pose must be one of: ${VALID_POSES.join(", ")}`);
   }
   if (!body.voiceId) {

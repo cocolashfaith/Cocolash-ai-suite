@@ -20,17 +20,17 @@ const PIPELINES: {
 }[] = [
   {
     value: "heygen",
-    title: "HeyGen Pipeline",
+    title: "Brand Content Studio",
     description:
-      "Studio-quality talking head videos with voice catalog selection. Best for polished brand content.",
-    badge: "Existing",
+      "Educational videos, tutorials & brand storytelling. Consistent talking-head delivery with clear speech.",
+    badge: "Educational",
     badgeColor: "bg-coco-beige text-coco-brown-medium",
-    cost: "~$0.63/video",
+    cost: "~$0.50/video",
     icon: Film,
     bullets: [
-      "Choose from 300+ voices & accents",
-      "Polished studio-style output",
-      "4-step wizard with composition preview",
+      "Tutorials, FAQs, brand stories & product education",
+      "300+ voices & accents, 30-90s durations",
+      "Consistent, professional presenter output",
     ],
   },
   {
@@ -118,7 +118,7 @@ export function PipelineSelector({ onSelect }: PipelineSelectorProps) {
 
               <div className="mt-3 flex items-center justify-center gap-1.5 rounded-xl bg-coco-golden/10 py-2.5 text-xs font-semibold text-coco-golden transition-colors group-hover:bg-coco-golden group-hover:text-white">
                 <Sparkles className="h-3.5 w-3.5" />
-                Select {p.value === "heygen" ? "HeyGen" : "Seedance"}
+                Select {p.value === "heygen" ? "Brand Content" : "Seedance"}
               </div>
             </button>
           );

@@ -4,7 +4,8 @@ import { getVideoStatus } from "@/lib/heygen/client";
 import { HeyGenError } from "@/lib/heygen/types";
 import { processVideo } from "@/lib/video/processor";
 import { calculateVideoCost, recordActualCost } from "@/lib/costs/tracker";
-import type { GeneratedVideo, VideoStatusResponse } from "@/lib/types";
+import { isHeygenScriptCampaign } from "@/lib/video/heygen-campaign";
+import type { GeneratedVideo, VideoStatusResponse, CampaignType, CaptionMethod } from "@/lib/types";
 
 /**
  * GET /api/videos/[id]/status
@@ -95,19 +96,28 @@ export async function GET(
         completed_at: new Date().toISOString(),
       };
 
-      // Run Cloudinary post-processing if we have a raw video URL
+      // Run post-processing if we have a raw video URL
       if (rawVideoUrl) {
         try {
-          // Fetch script text for SRT generation if needed
+          // Fetch script text and campaign type for caption method selection
           let scriptText: string | undefined;
+          let campaignType: string | undefined;
           if (typedVideo.script_id) {
             const { data: script } = await supabase
               .from("video_scripts")
-              .select("script_text")
+              .select("script_text, campaign_type")
               .eq("id", typedVideo.script_id)
               .single();
             scriptText = script?.script_text ?? undefined;
+            campaignType = script?.campaign_type ?? undefined;
           }
+
+          // Educational campaigns use FFmpeg-burn for styled captions;
+          // legacy UGC campaigns fall back to Cloudinary SRT
+          const captionMethod: CaptionMethod =
+            campaignType && isHeygenScriptCampaign(campaignType as CampaignType)
+              ? "ffmpeg-burn"
+              : "cloudinary-srt";
 
           const processed = await processVideo({
             rawVideoUrl,
@@ -117,6 +127,7 @@ export async function GET(
             addWatermark: typedVideo.has_watermark,
             addCaptions: typedVideo.has_captions,
             heygenCaptionUrl,
+            captionMethod,
           });
 
           updateData.final_video_url = processed.videoUrl;
