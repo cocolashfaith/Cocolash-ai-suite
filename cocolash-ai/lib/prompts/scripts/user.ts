@@ -19,6 +19,8 @@ export interface ScriptUserPromptParams {
   keyFeatures?: string[];
   targetAudience?: string;
   specialOffer?: string;
+  campaignFocus?: string;
+  customInstructions?: string;
 }
 
 const DURATION_INSTRUCTIONS: Record<VideoDuration, string> = {
@@ -68,6 +70,8 @@ export function buildScriptUserPrompt(params: ScriptUserPromptParams): string {
     keyFeatures,
     targetAudience,
     specialOffer,
+    campaignFocus,
+    customInstructions,
   } = params;
 
   const template = CAMPAIGN_TEMPLATES[campaignType];
@@ -129,6 +133,24 @@ export function buildScriptUserPrompt(params: ScriptUserPromptParams): string {
     lines.push("", `SPECIAL OFFER: ${specialOffer}`);
     lines.push(
       `If relevant, mention this offer naturally at the end — but don't make the script about the offer. The primary purpose is educational.`
+    );
+  }
+
+  if (campaignFocus) {
+    lines.push(
+      "",
+      `CREATOR'S FOCUS: The creator specifically wants this script to focus on:`,
+      campaignFocus,
+      `Make this the central theme. All 3 variations should address this focus from different angles.`
+    );
+  }
+
+  if (customInstructions) {
+    lines.push(
+      "",
+      `ADDITIONAL INSTRUCTIONS FROM THE CREATOR:`,
+      customInstructions,
+      `Keep these notes in mind when writing the scripts.`
     );
   }
 

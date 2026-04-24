@@ -29,7 +29,8 @@ const CAMPAIGN_DISPLAY: Record<string, string> = {
   promo: "Sale / Promo",
   educational: "Educational / Tutorial",
   "brand-story": "Brand Story",
-  faq: "FAQ / Myth-Busting",
+  faq: "FAQ",
+  myths: "Myth-Busting",
   "product-knowledge": "Product Knowledge",
   unboxing: "Unboxing",
   "before-after": "Before / After",
@@ -39,6 +40,7 @@ const EDUCATIONAL_CAMPAIGNS = new Set([
   "educational",
   "brand-story",
   "faq",
+  "myths",
   "product-knowledge",
 ]);
 
@@ -51,9 +53,7 @@ interface GenerateVideoProps {
   pose?: CompositionPose;
   voiceId: string;
   aspectRatio: VideoAspectRatio;
-  /** Final composed frame (required when usePrecomposedImage) */
   composedImageUrl?: string | null;
-  /** When true, API skips Gemini compose and uses composedImageUrl */
   usePrecomposedImage?: boolean;
   campaignType: string;
   tone: string;
@@ -65,6 +65,7 @@ interface GenerateVideoProps {
 const STATUS_LABELS: Record<string, string> = {
   pending: "Preparing...",
   processing: "Generating video...",
+  captioning: "Burning styled captions...",
   completed: "Complete!",
   failed: "Failed",
 };
@@ -73,14 +74,14 @@ const STEP_LABELS_FULL = [
   "Composing avatar image...",
   "Creating photo avatar on HeyGen...",
   "Generating video (Avatar IV)...",
-  "Processing & burning captions...",
+  "Burning styled captions...",
 ];
 
 const STEP_LABELS_SIMPLE = [
   "Uploading presenter image...",
   "Creating photo avatar on HeyGen...",
   "Generating video (Avatar IV)...",
-  "Processing & burning captions...",
+  "Burning styled captions...",
 ];
 
 export function GenerateVideo(props: GenerateVideoProps) {
@@ -98,7 +99,7 @@ export function GenerateVideo(props: GenerateVideoProps) {
     campaignType,
     tone,
     duration,
-    captionMethod = "ffmpeg-burn",
+    captionMethod = "shotstack",
     onReset,
   } = props;
 
@@ -137,6 +138,10 @@ export function GenerateVideo(props: GenerateVideoProps) {
 
           if (data.status === "processing") {
             setPipelineStep(2);
+          }
+
+          if (data.status === "captioning") {
+            setPipelineStep(3);
           }
 
           if (data.status === "completed") {
@@ -191,6 +196,7 @@ export function GenerateVideo(props: GenerateVideoProps) {
           ...(usePrecomposedImage && composedImageUrl
             ? { composedImageUrl }
             : {}),
+          scriptText,
         }),
       });
 
@@ -219,8 +225,9 @@ export function GenerateVideo(props: GenerateVideoProps) {
   };
 
   const handleDownload = () => {
-    if (!videoId) return;
-    window.open(`/api/videos/${videoId}/download`, "_blank");
+    if (videoId) {
+      window.open(`/api/videos/${videoId}/download`, "_blank");
+    }
   };
 
   const hasComposition = !!productImageUrl;
@@ -251,15 +258,7 @@ export function GenerateVideo(props: GenerateVideoProps) {
               )}
               <SummaryRow
                 label="Captions"
-                value={
-                  captionMethod === "ffmpeg-burn"
-                    ? "Styled captions (FFmpeg)"
-                    : captionMethod === "cloudinary-srt"
-                      ? "Standard overlay"
-                      : captionMethod === "heygen"
-                        ? "HeyGen built-in"
-                        : "None"
-                }
+                value={captionMethod === "shotstack" ? "Styled (Shotstack)" : "Standard overlay"}
               />
             </div>
           </div>
@@ -386,8 +385,9 @@ export function GenerateVideo(props: GenerateVideoProps) {
               </span>
             </div>
 
-            <div className="aspect-video bg-black">
+            <div className="relative aspect-video bg-black">
               <video
+                key={finalVideoUrl}
                 src={finalVideoUrl}
                 poster={thumbnailUrl ?? undefined}
                 controls
@@ -458,6 +458,7 @@ function CostEstimateCard({ duration, needsComposition }: { duration: number; ne
         <CostRow label="Script Generation" value={estimate.scriptGeneration} />
         <CostRow label="Image Composition" value={estimate.imageComposition} />
         <CostRow label="Video Generation (HeyGen)" value={estimate.videoGeneration} />
+        <CostRow label="Voice (ElevenLabs TTS)" value={estimate.ttsCost} />
         <CostRow label="Post-Processing" value={estimate.postProcessing} />
       </div>
 

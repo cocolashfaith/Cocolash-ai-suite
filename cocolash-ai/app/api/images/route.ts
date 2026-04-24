@@ -42,9 +42,12 @@ export async function GET(request: NextRequest) {
       query = query.contains("tags", ["ugc-avatar"]);
     } else if (assetTag === "heygen-composition") {
       query = query.contains("tags", ["heygen-composition"]);
+    } else if (assetTag === "studio-avatar") {
+      query = query.contains("tags", ["studio-avatar"]);
     } else if (assetTag === "studio") {
-      query = query.not("tags", "cs", ["ugc-avatar"]);
-      query = query.not("tags", "cs", ["heygen-composition"]);
+      query = query.not("tags", "cs", "{ugc-avatar}");
+      query = query.not("tags", "cs", "{heygen-composition}");
+      query = query.not("tags", "cs", "{studio-avatar}");
     }
 
     if (category && ["lash-closeup", "lifestyle", "product", "before-after", "application-process"].includes(category)) {

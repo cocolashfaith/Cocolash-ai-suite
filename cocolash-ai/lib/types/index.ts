@@ -275,7 +275,7 @@ export interface GenerationSelections {
   ageRange?: SoloDuoAgeRange; // [U1] Age range for solo/duo
   /** HeyGen / video wizard assets saved into the image gallery */
   heygenAsset?: {
-    kind: "ugc-avatar" | "heygen-composition";
+    kind: "ugc-avatar" | "heygen-composition" | "studio-avatar";
     personImageUrl?: string;
     productImageUrl?: string;
     pose?: CompositionPose;
@@ -518,6 +518,7 @@ export type CampaignType =
   | "before-after"
   | "brand-story"
   | "faq"
+  | "myths"
   | "product-knowledge";
 
 // ── Script Tone ───────────────────────────────────────────────
@@ -536,9 +537,14 @@ export type CompositionPose = "holding" | "applying" | "selfie" | "testimonial";
 export type VideoPipeline = "heygen" | "seedance";
 
 // ── HeyGen Video Status ──────────────────────────────────────
+// `captioning` is an intermediate state we set AFTER HeyGen returns
+// `completed` but BEFORE Shotstack has finished burning captions. It
+// acts as a lock so that parallel status polls don't each spawn a new
+// Shotstack render.
 export type HeyGenVideoStatus =
   | "pending"
   | "processing"
+  | "captioning"
   | "completed"
   | "failed";
 
@@ -565,7 +571,7 @@ export interface GeneratedVideo {
   script_id: string | null;
   person_image_id: string | null;
   person_image_url: string | null;
-  product_image_url: string;
+  product_image_url: string | null;
   composed_image_url: string | null;
   avatar_image_url: string | null;
   heygen_video_id: string | null;
@@ -579,7 +585,7 @@ export interface GeneratedVideo {
   has_watermark: boolean;
   has_background_music: boolean;
   voice_id: string | null;
-  background_type: VideoBackgroundType | null;
+  background_type: VideoBackgroundType | CampaignType | string | null;
   background_value: string | null;
   processing_cost: number | null;
   pipeline: VideoPipeline;
@@ -587,11 +593,13 @@ export interface GeneratedVideo {
   seedance_prompt: string | null;
   audio_mode: string | null;
   audio_url: string | null;
+  script_text_cache: string | null;
+  caption_srt: string | null;
   created_at: string;
   completed_at: string | null;
 }
 
-// ── Voice Option (database record — cached from HeyGen) ───────
+// ── Voice Option (database record — cached from voice provider) ─
 export interface VoiceOption {
   id: string;
   name: string | null;
@@ -600,6 +608,10 @@ export interface VoiceOption {
   tone: string | null;
   preview_url: string | null;
   is_active: boolean;
+  age?: string | null;
+  descriptive?: string | null;
+  use_case?: string | null;
+  provider?: "elevenlabs" | "heygen";
 }
 
 // ── Background Music (database record) ────────────────────────
@@ -642,6 +654,9 @@ export interface VideoStatusResponse {
   progress?: number;
   finalVideoUrl?: string;
   thumbnailUrl?: string;
+  captionSrt?: string;
+  scriptTextCache?: string;
+  durationSeconds?: number;
   error?: string;
 }
 
@@ -655,30 +670,7 @@ export interface ScriptResult {
 }
 
 // ── Caption Burn Method ───────────────────────────────────────
-export type CaptionMethod = "heygen" | "cloudinary-srt" | "ffmpeg-burn" | "none";
-
-/** Visual style for FFmpeg-burned captions */
-export interface VideoCaptionStyle {
-  fontFamily: string;
-  fontSize: number;
-  fontColor: string;
-  bgColor: string;
-  bgOpacity: number;
-  borderRadius: number;
-  position: number;
-  maxWidthPercent: number;
-}
-
-export const DEFAULT_CAPTION_STYLE: VideoCaptionStyle = {
-  fontFamily: "sans-serif",
-  fontSize: 5,
-  fontColor: "#000000",
-  bgColor: "#FFFFFF",
-  bgOpacity: 0.85,
-  borderRadius: 12,
-  position: 85,
-  maxWidthPercent: 80,
-};
+export type CaptionMethod = "shotstack" | "heygen" | "cloudinary-srt" | "none";
 
 // ── Processed Video (post-pipeline result) ───────────────────
 export interface ProcessedVideo {

@@ -2,8 +2,9 @@ import { NextRequest, NextResponse } from "next/server";
 import { createAdminClient, createClient, getCurrentUserId } from "@/lib/supabase/server";
 import { generateVideoScript } from "@/lib/openrouter/captions";
 import { composePersonWithProduct } from "@/lib/gemini/composition";
-import { createPhotoAvatar, generateVideo } from "@/lib/heygen/client";
+import { createPhotoAvatar, generateVideo, uploadAudioAsset } from "@/lib/heygen/client";
 import { VIDEO_DIMENSIONS } from "@/lib/heygen/types";
+import { synthesizeToAudio, alignmentToSRT } from "@/lib/elevenlabs/client";
 import {
   buildMinimalSelectionsForVideoAsset,
   getDefaultBrandId,
@@ -25,7 +26,7 @@ export const maxDuration = 300;
 const VALID_CAMPAIGN_TYPES: CampaignType[] = [
   "product-showcase", "testimonial", "promo",
   "educational", "unboxing", "before-after",
-  "brand-story", "faq", "product-knowledge",
+  "brand-story", "faq", "myths", "product-knowledge",
 ];
 const VALID_TONES: ScriptTone[] = ["casual", "energetic", "calm", "professional"];
 const VALID_DURATIONS: VideoDuration[] = [15, 30, 60, 90];
@@ -75,6 +76,10 @@ export async function POST(request: NextRequest) {
       composedImageUrl: precomposedUrl,
     } = body as VideoGenerateRequest;
 
+    const clientScriptText = typeof (body as Record<string, unknown>).scriptText === "string"
+      ? ((body as Record<string, unknown>).scriptText as string).trim()
+      : null;
+
     const supabase = await createAdminClient();
 
     // ── Step 1: Get or generate script ───────────────────────
@@ -95,6 +100,24 @@ export async function POST(request: NextRequest) {
         );
       }
       scriptText = existingScript.script_text;
+    } else if (clientScriptText) {
+      // Use the script text selected by the user in the wizard
+      scriptText = clientScriptText;
+
+      const { data: savedScript } = await supabase
+        .from("video_scripts")
+        .insert({
+          title: `${campaignType} — ${tone} — ${duration}s`,
+          campaign_type: campaignType,
+          tone,
+          duration_seconds: duration,
+          script_text: scriptText,
+          is_template: false,
+        })
+        .select("id")
+        .single();
+
+      scriptDbId = savedScript?.id ?? null;
     } else {
       const scripts = await generateVideoScript({
         campaignType: campaignType!,
@@ -178,7 +201,7 @@ export async function POST(request: NextRequest) {
         script_id: scriptDbId,
         person_image_id: personImageId ?? null,
         person_image_url: resolvedPersonUrl,
-        product_image_url: productImageUrl,
+        product_image_url: productImageUrl ?? null,
         composed_image_url: composedImageUrl,
         heygen_status: "pending",
         duration_seconds: duration,
@@ -187,8 +210,9 @@ export async function POST(request: NextRequest) {
         has_watermark: false,
         has_background_music: false,
         voice_id: voiceId,
-        background_type: null,
+        background_type: campaignType ?? null,
         background_value: null,
+        script_text_cache: scriptText,
       })
       .select("id")
       .single();
@@ -229,9 +253,25 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // ── Step 6: Submit video generation to HeyGen (Avatar IV) ─
+    // ── Step 6: Synthesize TTS via ElevenLabs + submit to HeyGen ─
     try {
       const dimension = VIDEO_DIMENSIONS[aspectRatio!] ?? VIDEO_DIMENSIONS["9:16"];
+
+      let voiceConfig: import("@/lib/heygen/types").VideoGenVoice;
+      let captionSrt: string | null = null;
+
+      if (process.env.ELEVENLABS_API_KEY) {
+        const ttsResult = await synthesizeToAudio(voiceId!, scriptText);
+        const audioAssetId = await uploadAudioAsset(ttsResult.audioBuffer);
+        voiceConfig = { type: "audio", audio_asset_id: audioAssetId };
+
+        if (ttsResult.alignment) {
+          captionSrt = alignmentToSRT(ttsResult.alignment);
+          console.log(`[videos/generate] Generated SRT from ElevenLabs alignment (${captionSrt.length} chars)`);
+        }
+      } else {
+        voiceConfig = { type: "text", voice_id: voiceId!, input_text: scriptText };
+      }
 
       const heygenResult = await generateVideo({
         video_inputs: [
@@ -244,15 +284,11 @@ export async function POST(request: NextRequest) {
               matting: false,
               use_avatar_iv_model: true,
             },
-            voice: {
-              type: "text",
-              voice_id: voiceId!,
-              input_text: scriptText,
-            },
+            voice: voiceConfig,
           },
         ],
         dimension,
-        caption: true,
+        caption: false,
         title: `CocoLash — ${campaignType} — ${duration}s`,
       });
 
@@ -261,6 +297,7 @@ export async function POST(request: NextRequest) {
         .update({
           heygen_video_id: heygenResult.video_id,
           heygen_status: "processing",
+          ...(captionSrt ? { caption_srt: captionSrt } : {}),
         })
         .eq("id", videoId);
 

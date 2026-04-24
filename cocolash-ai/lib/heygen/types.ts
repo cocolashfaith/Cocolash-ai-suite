@@ -66,7 +66,7 @@ export interface VideoGenCharacter {
   super_resolution?: boolean;
 }
 
-export interface VideoGenVoice {
+export interface VideoGenVoiceText {
   type: "text";
   voice_id: string;
   input_text: string;
@@ -74,6 +74,13 @@ export interface VideoGenVoice {
   pitch?: number;
   emotion?: "Excited" | "Friendly" | "Serious" | "Soothing" | "Broadcaster";
 }
+
+export interface VideoGenVoiceAudio {
+  type: "audio";
+  audio_asset_id: string;
+}
+
+export type VideoGenVoice = VideoGenVoiceText | VideoGenVoiceAudio;
 
 export interface VideoGenBackgroundColor {
   type: "color";

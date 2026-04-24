@@ -12,6 +12,7 @@ const EDUCATIONAL_CAMPAIGNS = new Set([
   "educational",
   "brand-story",
   "faq",
+  "myths",
   "product-knowledge",
 ]);
 
@@ -27,6 +28,7 @@ const CAMPAIGN_LABELS: Record<string, string> = {
   educational: "Tutorial",
   "brand-story": "Brand Story",
   faq: "FAQ",
+  myths: "Myth-Busting",
   "product-knowledge": "Product Knowledge",
   unboxing: "Unboxing",
   "before-after": "Before/After",
@@ -34,6 +36,7 @@ const CAMPAIGN_LABELS: Record<string, string> = {
 
 const STATUS_CONFIG: Record<string, { label: string; className: string; icon: React.ElementType }> = {
   completed: { label: "Ready", className: "bg-green-500/80 text-white", icon: Film },
+  captioning: { label: "Captioning", className: "bg-coco-golden/80 text-white", icon: Loader2 },
   processing: { label: "Processing", className: "bg-coco-golden/80 text-white", icon: Loader2 },
   pending: { label: "Pending", className: "bg-coco-brown-medium/60 text-white", icon: Clock },
   failed: { label: "Failed", className: "bg-red-500/80 text-white", icon: AlertCircle },
@@ -102,8 +105,8 @@ export function VideoCard({ video, onClick }: VideoCardProps) {
             </div>
           )}
 
-          {/* Processing spinner overlay */}
-          {status === "processing" && (
+          {/* Processing / captioning spinner overlay */}
+          {(status === "processing" || status === "captioning") && (
             <div className="absolute inset-0 flex items-center justify-center bg-black/20">
               <div className="flex h-10 w-10 items-center justify-center rounded-full bg-white/90">
                 <Loader2 className="h-5 w-5 animate-spin text-coco-golden" />
@@ -159,7 +162,7 @@ export function VideoCard({ video, onClick }: VideoCardProps) {
           <StatusIcon
             className={cn(
               "mr-1 h-3 w-3",
-              status === "processing" && "animate-spin"
+              (status === "processing" || status === "captioning") && "animate-spin"
             )}
           />
           {statusConfig.label}

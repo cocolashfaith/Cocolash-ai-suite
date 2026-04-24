@@ -9,7 +9,7 @@
  * existing DB records and the Seedance pipeline.
  *
  * The HeyGen Brand Content Studio uses:
- *   educational, brand-story, faq, product-knowledge
+ *   brand-story, faq, myths, product-knowledge
  */
 
 import type { CampaignType } from "@/lib/types";
@@ -71,9 +71,9 @@ export const CAMPAIGN_TEMPLATES: Record<CampaignType, CampaignTemplate> = {
   },
 
   faq: {
-    label: "FAQ / Myth-Busting",
+    label: "FAQ",
     description:
-      "Address the most common questions, misconceptions, and concerns about false lashes and CocoLash specifically. The presenter is a patient, credible expert clearing things up with facts and personal experience. Each answer should feel definitive — the viewer should walk away with clarity and confidence.",
+      "Answer the most common questions and concerns about false lashes and CocoLash specifically. The presenter is a patient, credible expert giving clear, definitive answers with facts and personal experience. Each answer should feel thorough — the viewer should walk away with clarity and confidence.",
     focusAreas: [
       "Do false lashes damage your natural lashes? (No — with proper application and removal)",
       "How many times can you reuse CocoLash lashes? (25+ wears with proper care)",
@@ -85,12 +85,36 @@ export const CAMPAIGN_TEMPLATES: Record<CampaignType, CampaignTemplate> = {
       "Why are these more expensive than drugstore lashes? (Reusable 25+ times, premium materials, designed for specific eye shapes)",
     ],
     exampleHooks: [
-      "I hear this question all the time: 'Do false lashes ruin your real lashes?' Let me set the record straight...",
-      "There's a myth about false lashes that I need to address...",
+      "I hear this question all the time: 'Do false lashes ruin your real lashes?' Let me give you the real answer...",
       "The number one question I get asked is... and the answer might surprise you.",
       "Let's talk about the thing everyone wants to know but nobody asks...",
       "If you've been on the fence about false lashes because of this concern — let me put your mind at ease.",
       "Someone asked me this the other day, and I realized a lot of people probably have the same question...",
+      "This is probably the question I get asked the most. Here's what you need to know...",
+    ],
+  },
+
+  myths: {
+    label: "Myth-Busting",
+    description:
+      "Tackle the most persistent myths, misconceptions, and pieces of bad advice about false lashes. The presenter is a confident expert who's here to set the record straight — not in a condescending way, but with the energy of someone who genuinely cares about getting the truth out. Each myth should be clearly stated, then dismantled with facts, logic, and real experience.",
+    focusAreas: [
+      "MYTH: False lashes ruin your natural lashes (TRUTH: Only if removed improperly — CocoLash cotton bands are gentle)",
+      "MYTH: False lashes are only for special occasions (TRUTH: Everyday wear is easy with lightweight styles like natural or wispy)",
+      "MYTH: All false lashes feel heavy and uncomfortable (TRUTH: Cotton-band lashes like CocoLash are barely noticeable after 10 minutes)",
+      "MYTH: Cheaper lashes are just as good (TRUTH: Drugstore lashes use plastic bands, last 1-3 wears, and can irritate)",
+      "MYTH: You need to be a makeup pro to apply false lashes (TRUTH: Most beginners get the hang of it in 2-3 tries)",
+      "MYTH: Lash glue is toxic and bad for your eyes (TRUTH: Latex-free, dermatologically tested options are safe for daily use)",
+      "MYTH: False lashes and lash extensions are the same thing (TRUTH: Strip lashes are non-invasive, affordable, and removable any time)",
+      "MYTH: One lash style works for everyone (TRUTH: Eye shape, lid space, and desired look all affect which style is best)",
+    ],
+    exampleHooks: [
+      "There's a myth about false lashes that I need to address...",
+      "I keep seeing this piece of bad advice online and it's time to set the record straight...",
+      "If someone told you this about lashes, they were wrong. Here's why...",
+      "Let's bust one of the biggest misconceptions in the lash world...",
+      "This myth has been around forever and it's keeping people from trying something they'd love...",
+      "Okay, we need to talk about this. Because the misinformation is getting out of hand...",
     ],
   },
 

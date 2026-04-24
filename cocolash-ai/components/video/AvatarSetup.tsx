@@ -55,6 +55,17 @@ import {
   type UGCScene,
   type UGCVibe,
 } from "@/lib/seedance/ugc-image-prompt";
+import {
+  STUDIO_SCENE_OPTIONS,
+  STUDIO_OUTFIT_OPTIONS,
+  STUDIO_FRAMING_OPTIONS,
+  STUDIO_EXPRESSION_OPTIONS,
+  getScenesForCampaign,
+  type StudioScene,
+  type StudioOutfit,
+  type StudioFraming,
+  type StudioExpression,
+} from "@/lib/heygen/studio-avatar-prompt";
 
 interface AvatarSetupProps {
   campaignType: CampaignType;
@@ -102,7 +113,7 @@ const POSE_META: Record<
 
 type ProductTab = "my-products" | "upload" | "url";
 type PersonTab = "gallery" | "generate";
-type GallerySource = "studio" | "ugc-avatar" | "heygen-composition";
+type GallerySource = "studio" | "ugc-avatar" | "heygen-composition" | "studio-avatar";
 
 function pickRandom<T>(arr: readonly { value: T }[]): T {
   return arr[Math.floor(Math.random() * arr.length)].value;
@@ -117,7 +128,7 @@ export function AvatarSetup({
   onCompositionReady,
 }: AvatarSetupProps) {
   const [galleryImages, setGalleryImages] = useState<GalleryImage[]>([]);
-  const [gallerySource, setGallerySource] = useState<GallerySource>("studio");
+  const [gallerySource, setGallerySource] = useState<GallerySource>("studio-avatar");
   const [loadingGallery, setLoadingGallery] = useState(true);
   const [selectedPersonId, setSelectedPersonId] = useState<string | null>(
     initialPersonImageId ?? null
@@ -163,6 +174,26 @@ export function AvatarSetup({
   const [ugcLashStyle, setUgcLashStyle] = useState<LashStyle>("natural");
   const [isGeneratingUgc, setIsGeneratingUgc] = useState(false);
   const [generatedUgcUrl, setGeneratedUgcUrl] = useState<string | null>(null);
+
+  // Studio avatar generation state (HeyGen pipeline)
+  const [studioScene, setStudioScene] = useState<StudioScene>("warm-minimal-studio");
+  const [studioOutfit, setStudioOutfit] = useState<StudioOutfit>("professional-blazer");
+  const [studioFraming, setStudioFraming] = useState<StudioFraming>("head-chest");
+  const [studioExpression, setStudioExpression] = useState<StudioExpression>("confident-teacher");
+  const [studioCustomPrompt, setStudioCustomPrompt] = useState("");
+  const [isGeneratingStudio, setIsGeneratingStudio] = useState(false);
+  const [generatedStudioUrl, setGeneratedStudioUrl] = useState<string | null>(null);
+
+  const isHeygenPipeline = !needsComposition;
+
+  const filteredSceneOptions = useMemo(
+    () => {
+      const campaignScenes = getScenesForCampaign(campaignType);
+      const campaignSceneSet = new Set(campaignScenes);
+      return STUDIO_SCENE_OPTIONS.filter((o) => campaignSceneSet.has(o.value));
+    },
+    [campaignType]
+  );
 
   // Product picker state
   const [productTab, setProductTab] = useState<ProductTab>("my-products");
@@ -319,6 +350,55 @@ export function AvatarSetup({
       toast.error(err instanceof Error ? err.message : "Failed to generate avatar");
     } finally {
       setIsGeneratingUgc(false);
+    }
+  };
+
+  const handleRandomizeStudio = () => {
+    setUgcEthnicity(pickRandom(UGC_ETHNICITY_OPTIONS));
+    setUgcSkinTone(pickRandom(UGC_SKIN_TONE_OPTIONS));
+    setUgcAgeRange(pickRandom(UGC_AGE_RANGE_OPTIONS));
+    setUgcHairStyle(pickRandom(UGC_HAIR_STYLE_OPTIONS));
+    setStudioScene(pickRandom(filteredSceneOptions));
+    setStudioOutfit(pickRandom(STUDIO_OUTFIT_OPTIONS));
+    setStudioExpression(pickRandom(STUDIO_EXPRESSION_OPTIONS));
+    setUgcLashStyle(pickRandom(LASH_STYLE_OPTIONS));
+  };
+
+  const handleGenerateStudioAvatar = async () => {
+    setIsGeneratingStudio(true);
+    setGeneratedStudioUrl(null);
+    try {
+      const res = await fetch("/api/heygen/generate-studio-avatar", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          ethnicity: ugcEthnicity,
+          skinTone: ugcSkinTone,
+          ageRange: ugcAgeRange,
+          hairStyle: ugcHairStyle,
+          scene: studioScene,
+          outfit: studioOutfit,
+          framing: studioFraming,
+          expression: studioExpression,
+          lashStyle: ugcLashStyle,
+          customPrompt: studioCustomPrompt.trim() || undefined,
+          aspectRatio,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Studio avatar generation failed");
+
+      setGeneratedStudioUrl(data.imageUrl);
+      setSelectedPersonId(data.galleryImageId ?? null);
+      setSelectedPersonUrl(data.imageUrl);
+      setComposedImageUrl(null);
+      setCompositionReuseMode(false);
+      toast.success("Studio avatar generated!");
+      fetchGalleryImages();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed to generate studio avatar");
+    } finally {
+      setIsGeneratingStudio(false);
     }
   };
 
@@ -507,11 +587,13 @@ export function AvatarSetup({
 
       {/* Person Image Selection */}
       <div className="space-y-2">
-        <label className="text-sm font-semibold text-coco-brown">
+          <label className="text-sm font-semibold text-coco-brown">
           Person Image
         </label>
         <p className="text-xs text-coco-brown-medium/60">
-          Select an existing image or generate a new UGC-style avatar
+          {isHeygenPipeline
+            ? "Select an existing image or generate a new studio-quality avatar"
+            : "Select an existing image or generate a new UGC-style avatar"}
         </p>
 
         {/* Person Tab Buttons */}
@@ -526,7 +608,7 @@ export function AvatarSetup({
             active={personTab === "generate"}
             onClick={() => setPersonTab("generate")}
             icon={Wand2}
-            label="Generate UGC Avatar"
+            label={isHeygenPipeline ? "Generate Studio Avatar" : "Generate UGC Avatar"}
           />
         </div>
 
@@ -535,11 +617,16 @@ export function AvatarSetup({
           <>
             <div className="flex flex-wrap gap-1.5">
               {(
-                [
-                  { id: "studio" as const, label: "Studio", icon: Sparkles },
-                  { id: "ugc-avatar" as const, label: "UGC avatars", icon: Wand2 },
-                  { id: "heygen-composition" as const, label: "Saved compositions", icon: Layers },
-                ] as const
+                isHeygenPipeline
+                  ? [
+                      { id: "studio-avatar" as GallerySource, label: "Studio Avatars", icon: Sparkles },
+                      { id: "ugc-avatar" as GallerySource, label: "UGC avatars", icon: Wand2 },
+                    ]
+                  : [
+                      { id: "studio" as GallerySource, label: "Studio", icon: Sparkles },
+                      { id: "ugc-avatar" as GallerySource, label: "UGC avatars", icon: Wand2 },
+                      { id: "heygen-composition" as GallerySource, label: "Saved compositions", icon: Layers },
+                    ]
               ).map((src) => {
                 const Icon = src.icon;
                 const active = gallerySource === src.id;
@@ -706,8 +793,118 @@ export function AvatarSetup({
           </>
         )}
 
-        {/* Tab: Generate UGC Avatar */}
-        {personTab === "generate" && (
+        {/* Tab: Generate Avatar (Studio for HeyGen, UGC for Seedance) */}
+        {personTab === "generate" && isHeygenPipeline && (
+          <div className="space-y-4 rounded-xl border-2 border-coco-beige-dark bg-white p-4">
+            <div className="flex items-center justify-between">
+              <p className="text-xs font-medium text-coco-brown-medium">
+                Customize your studio avatar
+              </p>
+              <button
+                type="button"
+                onClick={handleRandomizeStudio}
+                className="flex items-center gap-1 rounded-lg bg-coco-beige-light px-2.5 py-1 text-[10px] font-medium text-coco-brown-medium transition-colors hover:bg-coco-beige"
+              >
+                <Shuffle className="h-3 w-3" />
+                Randomize All
+              </button>
+            </div>
+
+            <div className="grid grid-cols-2 gap-3">
+              <UgcDropdown label="Ethnicity" value={ugcEthnicity} onChange={(v) => setUgcEthnicity(v as UGCEthnicity)} options={UGC_ETHNICITY_OPTIONS} />
+              <UgcDropdown label="Skin Tone" value={ugcSkinTone} onChange={(v) => setUgcSkinTone(v as UGCSkinTone)} options={UGC_SKIN_TONE_OPTIONS} />
+              <UgcDropdown label="Age Range" value={ugcAgeRange} onChange={(v) => setUgcAgeRange(v as UGCAgeRange)} options={UGC_AGE_RANGE_OPTIONS} />
+              <UgcDropdown label="Hair Style" value={ugcHairStyle} onChange={(v) => setUgcHairStyle(v as UGCHairStyle)} options={UGC_HAIR_STYLE_OPTIONS} />
+              <UgcDropdown label="Scene" value={studioScene} onChange={(v) => setStudioScene(v as StudioScene)} options={filteredSceneOptions} />
+              <UgcDropdown label="Outfit" value={studioOutfit} onChange={(v) => setStudioOutfit(v as StudioOutfit)} options={STUDIO_OUTFIT_OPTIONS} />
+              <UgcDropdown label="Framing" value={studioFraming} onChange={(v) => setStudioFraming(v as StudioFraming)} options={STUDIO_FRAMING_OPTIONS} />
+              <UgcDropdown label="Expression" value={studioExpression} onChange={(v) => setStudioExpression(v as StudioExpression)} options={STUDIO_EXPRESSION_OPTIONS} />
+            </div>
+
+            <div>
+              <label className="mb-1.5 block text-[10px] font-medium text-coco-brown-medium/60">
+                Lash style (same as Generate page)
+              </label>
+              <div className="flex flex-wrap gap-1.5">
+                {LASH_STYLE_OPTIONS.map((opt) => {
+                  const active = ugcLashStyle === opt.value;
+                  return (
+                    <button
+                      key={opt.value}
+                      type="button"
+                      onClick={() => setUgcLashStyle(opt.value)}
+                      className={cn(
+                        "rounded-lg border-2 px-2 py-1 text-[10px] font-medium transition-all",
+                        active
+                          ? "border-coco-golden bg-coco-golden/10 text-coco-brown"
+                          : "border-coco-beige-dark bg-white text-coco-brown-medium hover:border-coco-golden/40"
+                      )}
+                    >
+                      {opt.label}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            <div>
+              <label className="mb-1.5 block text-[10px] font-medium text-coco-brown-medium/60">
+                Custom instructions (optional)
+              </label>
+              <textarea
+                value={studioCustomPrompt}
+                onChange={(e) => setStudioCustomPrompt(e.target.value)}
+                placeholder="e.g. specific jewelry, a particular hairstyle detail, brand-specific styling..."
+                rows={2}
+                className="w-full rounded-lg border border-coco-beige-dark bg-white px-3 py-2 text-xs text-coco-brown outline-none placeholder:text-coco-brown-medium/30 focus:border-coco-golden"
+              />
+            </div>
+
+            {generatedStudioUrl && (
+              <div className="overflow-hidden rounded-xl border-2 border-coco-golden/30">
+                <div className="flex items-center justify-between border-b border-coco-beige-dark px-3 py-1.5">
+                  <span className="text-[10px] font-semibold text-coco-brown">Generated Avatar</span>
+                  <span className="flex items-center gap-1 text-[10px] text-green-600">
+                    <Check className="h-3 w-3" /> Selected
+                  </span>
+                </div>
+                <div className="aspect-[3/4] bg-coco-beige-light">
+                  <img src={generatedStudioUrl} alt="Generated Studio Avatar" className="h-full w-full object-cover" />
+                </div>
+              </div>
+            )}
+
+            <Button
+              onClick={handleGenerateStudioAvatar}
+              disabled={isGeneratingStudio}
+              className="w-full gap-2 bg-coco-golden py-5 text-sm font-semibold text-white shadow-md hover:bg-coco-golden-dark"
+              size="lg"
+            >
+              {isGeneratingStudio ? (
+                <>
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                  Generating studio avatar...
+                </>
+              ) : generatedStudioUrl ? (
+                <>
+                  <RefreshCw className="h-4 w-4" />
+                  Regenerate Avatar
+                </>
+              ) : (
+                <>
+                  <Wand2 className="h-4 w-4" />
+                  Generate Studio Avatar
+                </>
+              )}
+            </Button>
+
+            <p className="text-center text-[10px] text-coco-brown-medium/40">
+              Uses Gemini to create a professional brand presenter image (~$0.04)
+            </p>
+          </div>
+        )}
+
+        {personTab === "generate" && !isHeygenPipeline && (
           <div className="space-y-4 rounded-xl border-2 border-coco-beige-dark bg-white p-4">
             <div className="flex items-center justify-between">
               <p className="text-xs font-medium text-coco-brown-medium">
@@ -812,7 +1009,7 @@ export function AvatarSetup({
             <div>
               <p className="text-sm font-semibold text-coco-brown">Presenter selected</p>
               <p className="text-[11px] text-coco-brown-medium/60">
-                Educational content uses the presenter image directly — no product composition needed.
+                Brand content uses the presenter image directly — no product composition needed.
               </p>
             </div>
           </div>

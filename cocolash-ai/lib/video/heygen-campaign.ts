@@ -15,9 +15,9 @@ import { UGC_VIBE_OPTIONS } from "@/lib/seedance/ugc-image-prompt";
 
 /** Campaign types shown in the HeyGen Brand Content Studio. */
 export const HEYGEN_SCRIPT_CAMPAIGN_TYPES: CampaignType[] = [
-  "educational",
   "brand-story",
   "faq",
+  "myths",
   "product-knowledge",
 ];
 
@@ -36,6 +36,7 @@ export function campaignNeedsComposition(campaign: CampaignType): boolean {
     "educational",
     "brand-story",
     "faq",
+    "myths",
     "product-knowledge",
   ];
   return !NO_COMPOSITION.includes(campaign);
@@ -98,6 +99,11 @@ const VIBE_BY_CAMPAIGN: Record<string, UGCVibe[]> = {
     "chill-review",
     "whispering-asmr",
     "excited-discovery",
+  ],
+  myths: [
+    "chill-review",
+    "excited-discovery",
+    "ranting",
   ],
 };
 

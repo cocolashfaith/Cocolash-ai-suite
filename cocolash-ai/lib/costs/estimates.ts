@@ -25,6 +25,11 @@ export const API_COSTS = {
   seedance: {
     videoGeneration720pPerSecond: 0.205,
   },
+  elevenlabs: {
+    ttsPerVideo30s: 0.20,
+    ttsPerVideo60s: 0.30,
+    ttsPerVideo90s: 0.40,
+  },
   cloudinary: {
     videoUpload: 0.01,
     transformation: 0.005,
@@ -37,6 +42,7 @@ export interface VideoCostEstimate {
   scriptGeneration: number;
   imageComposition: number;
   videoGeneration: number;
+  ttsCost: number;
   postProcessing: number;
   total: number;
 }
@@ -69,16 +75,26 @@ export function calculateVideoCost(params: {
     videoGeneration = API_COSTS.heygen.videoGeneration90s;
   }
 
+  let ttsCost: number;
+  if (duration <= 30) {
+    ttsCost = API_COSTS.elevenlabs.ttsPerVideo30s;
+  } else if (duration <= 60) {
+    ttsCost = API_COSTS.elevenlabs.ttsPerVideo60s;
+  } else {
+    ttsCost = API_COSTS.elevenlabs.ttsPerVideo90s;
+  }
+
   let postProcessing = API_COSTS.cloudinary.videoUpload;
   if (addWatermark) postProcessing += API_COSTS.cloudinary.transformation;
   if (addCaptions) postProcessing += API_COSTS.cloudinary.transformation;
 
-  const total = scriptGeneration + imageComposition + videoGeneration + postProcessing;
+  const total = scriptGeneration + imageComposition + videoGeneration + ttsCost + postProcessing;
 
   return {
     scriptGeneration: Number(scriptGeneration.toFixed(4)),
     imageComposition: Number(imageComposition.toFixed(4)),
     videoGeneration: Number(videoGeneration.toFixed(4)),
+    ttsCost: Number(ttsCost.toFixed(4)),
     postProcessing: Number(postProcessing.toFixed(4)),
     total: Number(total.toFixed(4)),
   };
@@ -119,6 +135,7 @@ export function calculateSeedanceCost(params: {
     scriptGeneration: Number(scriptGeneration.toFixed(4)),
     imageComposition: Number(imageComposition.toFixed(4)),
     videoGeneration: Number(videoGeneration.toFixed(4)),
+    ttsCost: 0,
     postProcessing: Number(postProcessing.toFixed(4)),
     total: Number(total.toFixed(4)),
   };

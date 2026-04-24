@@ -17,6 +17,7 @@ const VALID_CAMPAIGN_TYPES: CampaignType[] = [
   "before-after",
   "brand-story",
   "faq",
+  "myths",
   "product-knowledge",
 ];
 
@@ -40,6 +41,8 @@ export async function POST(request: NextRequest) {
       keyFeatures,
       targetAudience,
       specialOffer,
+      campaignFocus,
+      customInstructions,
       save,
     } = body as {
       campaignType?: CampaignType;
@@ -49,6 +52,8 @@ export async function POST(request: NextRequest) {
       keyFeatures?: string[];
       targetAudience?: string;
       specialOffer?: string;
+      campaignFocus?: string;
+      customInstructions?: string;
       save?: boolean;
     };
 
@@ -82,6 +87,8 @@ export async function POST(request: NextRequest) {
       keyFeatures,
       targetAudience,
       specialOffer,
+      campaignFocus,
+      customInstructions,
     });
 
     let savedIds: string[] | null = null;

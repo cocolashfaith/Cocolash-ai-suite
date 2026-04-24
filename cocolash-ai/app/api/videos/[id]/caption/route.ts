@@ -1,25 +1,23 @@
 /**
  * POST /api/videos/[id]/caption
  *
- * Burns styled captions onto a completed video using FFmpeg WASM.
- * This is a separate endpoint so users can add/re-add captions
- * after video generation with different styles.
+ * Burns styled captions onto a completed video using Shotstack's cloud
+ * rendering API. Allows users to add/re-add captions after generation.
  *
  * Flow:
  * 1. Fetch video record + script from DB
- * 2. Generate SRT from script text
- * 3. Burn captions via FFmpeg WASM (ASS subtitles with pill background)
- * 4. Upload captioned video to Cloudinary
+ * 2. Generate SRT from script text (or use stored caption_srt)
+ * 3. Upload SRT to Cloudinary, submit Shotstack render
+ * 4. Poll until done, upload captioned MP4 to Cloudinary
  * 5. Update DB record with captioned URL
  */
 
 import { NextRequest, NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/server";
 import { generateSRTFromScript } from "@/lib/video/captions";
-import { burnCaptions, isFFmpegAvailable } from "@/lib/video/ffmpeg-captions";
-import { uploadVideoFromBuffer } from "@/lib/cloudinary/video";
-import type { GeneratedVideo, VideoCaptionStyle } from "@/lib/types";
-import { DEFAULT_CAPTION_STYLE } from "@/lib/types";
+import { burnCaptionsWithShotstack } from "@/lib/shotstack/client";
+import { uploadVideoFromUrl } from "@/lib/cloudinary/video";
+import type { GeneratedVideo } from "@/lib/types";
 
 export const maxDuration = 300;
 
@@ -37,15 +35,15 @@ export async function POST(
       );
     }
 
-    const body = await request.json().catch(() => ({}));
-    const captionStyle: VideoCaptionStyle = {
-      ...DEFAULT_CAPTION_STYLE,
-      ...(body.captionStyle ?? {}),
-    };
+    if (!process.env.SHOTSTACK_API_KEY) {
+      return NextResponse.json(
+        { error: "Shotstack API key is not configured" },
+        { status: 503 }
+      );
+    }
 
     const supabase = await createAdminClient();
 
-    // Fetch video record
     const { data: video, error: fetchError } = await supabase
       .from("generated_videos")
       .select("*")
@@ -78,62 +76,58 @@ export async function POST(
       );
     }
 
-    // Fetch script text for SRT generation
-    let scriptText: string | null = null;
-    if (typedVideo.script_id) {
-      const { data: script } = await supabase
-        .from("video_scripts")
-        .select("script_text")
-        .eq("id", typedVideo.script_id)
-        .single();
-      scriptText = script?.script_text ?? null;
-    }
+    // Use stored SRT if available, otherwise generate from script
+    let srtContent: string | null = typedVideo.caption_srt ?? null;
 
-    if (!scriptText) {
-      return NextResponse.json(
-        { error: "No script text available for caption generation" },
-        { status: 400 }
-      );
+    if (!srtContent) {
+      let scriptText: string | null = typedVideo.script_text_cache ?? null;
+      if (!scriptText && typedVideo.script_id) {
+        const { data: script } = await supabase
+          .from("video_scripts")
+          .select("script_text")
+          .eq("id", typedVideo.script_id)
+          .single();
+        scriptText = script?.script_text ?? null;
+      }
+
+      if (!scriptText) {
+        return NextResponse.json(
+          { error: "No script text available for caption generation" },
+          { status: 400 }
+        );
+      }
+
+      const duration = typedVideo.duration_seconds ?? 30;
+      srtContent = generateSRTFromScript(scriptText, duration);
+
+      if (!srtContent) {
+        return NextResponse.json(
+          { error: "Failed to generate SRT from script" },
+          { status: 500 }
+        );
+      }
     }
 
     const duration = typedVideo.duration_seconds ?? 30;
+    const videoPublicId = `video-${id}`;
 
-    // Check FFmpeg availability
-    const ffmpegReady = await isFFmpegAvailable();
-    if (!ffmpegReady) {
-      return NextResponse.json(
-        { error: "FFmpeg WASM is not available in this environment" },
-        { status: 503 }
-      );
-    }
+    console.log(`[caption] Starting Shotstack caption burn for video ${id}`);
 
-    // Generate SRT
-    const srtContent = generateSRTFromScript(scriptText, duration);
-    if (!srtContent) {
-      return NextResponse.json(
-        { error: "Failed to generate SRT from script" },
-        { status: 500 }
-      );
-    }
-
-    // Burn captions
-    console.log(`[caption] Starting FFmpeg burn for video ${id}`);
-    const captionedBuffer = await burnCaptions(
-      sourceVideoUrl,
+    const { captionedVideoUrl, renderId } = await burnCaptionsWithShotstack({
+      videoUrl: sourceVideoUrl,
       srtContent,
-      captionStyle,
-    );
-    console.log(
-      `[caption] FFmpeg burn complete — ${(captionedBuffer.length / 1024 / 1024).toFixed(1)}MB`
-    );
-
-    // Upload to Cloudinary
-    const uploaded = await uploadVideoFromBuffer(captionedBuffer, {
-      title: `CocoLash Video (captioned)`,
-      tags: ["cocolash", "brand-content", "captioned", "ffmpeg"],
+      durationSeconds: duration,
+      videoPublicId,
+      aspectRatio: (typedVideo.aspect_ratio as "9:16" | "16:9" | "1:1") ?? "9:16",
     });
 
-    // Update DB record
+    const uploaded = await uploadVideoFromUrl(captionedVideoUrl, {
+      title: "CocoLash Video (captioned)",
+      tags: ["cocolash", "brand-content", "captioned", "shotstack"],
+    });
+
+    console.log(`[caption] Shotstack burn complete — uploaded to Cloudinary`);
+
     await supabase
       .from("generated_videos")
       .update({
@@ -145,8 +139,8 @@ export async function POST(
     return NextResponse.json({
       success: true,
       captionedUrl: uploaded.secureUrl,
-      captionMethod: "ffmpeg-burn",
-      fileSizeMB: Number((captionedBuffer.length / 1024 / 1024).toFixed(1)),
+      captionMethod: "shotstack",
+      renderId,
     });
   } catch (error: unknown) {
     console.error("[caption] Error:", error);

@@ -142,6 +142,12 @@ const SCRIPT_TEMPLATES: Record<CampaignType, (v: ScriptTemplateVars) => string> 
     `She examines ${v.productDescription} closely, pointing out details and features. ` +
     `She speaks in a knowledgeable, appreciative tone. Camera occasionally zooms in on the product. ` +
     `Natural lighting from ${v.scene}. She explains:\n"${v.scriptText}"`,
+
+  myths: (v) =>
+    `A confident, informative UGC video of ${v.personDescription} in ${v.sceneDescription}. ` +
+    `She is addressing a common misconception, speaking directly to camera with authority. ` +
+    `She holds ${v.productDescription} and gestures for emphasis. Energetic but credible. ` +
+    `Phone propped on surface. She says:\n"${v.scriptText}"`,
 };
 
 const AUDIO_TEMPLATES: Record<CampaignType, (v: TemplateVars) => string> = {
@@ -202,6 +208,12 @@ const AUDIO_TEMPLATES: Record<CampaignType, (v: TemplateVars) => string> = {
     `She examines ${v.productDescription} closely, pointing out details. Her expressions ` +
     `and lip movements follow the provided audio reference. Knowledgeable, appreciative tone. ` +
     `Natural lighting from ${v.scene}.`,
+
+  myths: (v) =>
+    `A confident, myth-busting UGC video of ${v.personDescription} in ${v.sceneDescription}. ` +
+    `She addresses a misconception, speaking directly to camera with authority. Her lip movements ` +
+    `match the provided audio reference. She holds ${v.productDescription} and gestures for emphasis. ` +
+    `Energetic but credible. Phone propped on surface.`,
 };
 
 // ── Main Exported Functions ──────────────────────────────────

@@ -37,62 +37,119 @@ function getApiKey(): string {
   return key;
 }
 
+/**
+ * Transient network errors that warrant a retry. These are caused by
+ * flaky local connectivity, DNS hiccups, or the remote server closing
+ * the TCP connection mid-request. Not real API failures.
+ */
+function isTransientNetworkError(err: unknown): boolean {
+  if (!(err instanceof Error)) return false;
+  const msg = err.message || "";
+  const cause = (err as { cause?: { code?: string } }).cause;
+  const code = cause?.code ?? "";
+  return (
+    code === "ECONNRESET" ||
+    code === "ENOTFOUND" ||
+    code === "ETIMEDOUT" ||
+    code === "ECONNREFUSED" ||
+    code === "EAI_AGAIN" ||
+    /fetch failed|terminated|socket hang up/i.test(msg)
+  );
+}
+
 async function heygenFetch<T>(
   url: string,
-  options: RequestInit = {}
+  options: RequestInit = {},
+  networkRetries = 3
 ): Promise<T> {
   const apiKey = getApiKey();
 
-  const response = await fetch(url, {
-    ...options,
-    headers: {
-      "x-api-key": apiKey,
-      "Content-Type": "application/json",
-      Accept: "application/json",
-      ...options.headers,
-    },
-  });
-
-  if (!response.ok) {
-    let errorMessage: string | null = null;
+  let lastError: unknown;
+  for (let attempt = 1; attempt <= networkRetries + 1; attempt++) {
     try {
-      const errorBody = await response.json();
-      errorMessage =
-        typeof errorBody.error === "string"
-          ? errorBody.error
-          : errorBody.error?.message ?? JSON.stringify(errorBody);
-    } catch {
-      errorMessage = await response.text().catch(() => null);
+      const response = await fetch(url, {
+        ...options,
+        headers: {
+          "x-api-key": apiKey,
+          "Content-Type": "application/json",
+          Accept: "application/json",
+          ...options.headers,
+        },
+      });
+
+      if (!response.ok) {
+        let errorMessage: string | null = null;
+        try {
+          const errorBody = await response.json();
+          errorMessage =
+            typeof errorBody.error === "string"
+              ? errorBody.error
+              : errorBody.error?.message ?? JSON.stringify(errorBody);
+        } catch {
+          errorMessage = await response.text().catch(() => null);
+        }
+
+        throw new HeyGenError(
+          `HeyGen API error (${response.status}): ${errorMessage ?? "Unknown error"}`,
+          response.status,
+          errorMessage
+        );
+      }
+
+      return response.json() as Promise<T>;
+    } catch (err) {
+      lastError = err;
+      if (attempt <= networkRetries && isTransientNetworkError(err)) {
+        const delay = 1000 * attempt;
+        console.warn(
+          `[HeyGen] Transient network error (attempt ${attempt}/${networkRetries + 1}), retrying in ${delay}ms…`
+        );
+        await new Promise((r) => setTimeout(r, delay));
+        continue;
+      }
+      throw err;
     }
-
-    throw new HeyGenError(
-      `HeyGen API error (${response.status}): ${errorMessage ?? "Unknown error"}`,
-      response.status,
-      errorMessage
-    );
   }
-
-  return response.json() as Promise<T>;
+  throw lastError;
 }
 
 /**
- * Execute a HeyGen API call with automatic retry on 500/503.
- * Retries once after a 1-second delay.
+ * Execute a HeyGen API call with automatic retry on 500/503 AND on
+ * transient network errors (ECONNRESET/terminated/etc.) from any raw
+ * fetch inside the function. This makes uploadAsset/uploadAudioAsset
+ * resilient to flaky local connectivity.
  */
-async function withRetry<T>(fn: () => Promise<T>, retries = 1): Promise<T> {
-  try {
-    return await fn();
-  } catch (error) {
-    if (
-      retries > 0 &&
-      error instanceof HeyGenError &&
-      (error.statusCode === 500 || error.statusCode === 503)
-    ) {
-      await new Promise((r) => setTimeout(r, 1000));
-      return withRetry(fn, retries - 1);
+async function withRetry<T>(fn: () => Promise<T>, retries = 3): Promise<T> {
+  let attempt = 1;
+  let lastError: unknown;
+  while (attempt <= retries + 1) {
+    try {
+      return await fn();
+    } catch (error) {
+      lastError = error;
+      const retriable =
+        (error instanceof HeyGenError &&
+          (error.statusCode === 500 ||
+            error.statusCode === 502 ||
+            error.statusCode === 503 ||
+            error.statusCode === 504)) ||
+        isTransientNetworkError(error);
+
+      if (retriable && attempt <= retries) {
+        const delay = 1000 * attempt;
+        console.warn(
+          `[HeyGen] withRetry attempt ${attempt}/${retries + 1} failed (${
+            error instanceof Error ? error.message : error
+          }), retrying in ${delay}ms…`
+        );
+        await new Promise((r) => setTimeout(r, delay));
+        attempt += 1;
+        continue;
+      }
+      throw error;
     }
-    throw error;
   }
+  throw lastError;
 }
 
 // ── Upload Asset ──────────────────────────────────────────────
@@ -147,6 +204,49 @@ export async function uploadAsset(
     }
 
     return result.data;
+  });
+}
+
+/**
+ * Upload an audio buffer (e.g. from ElevenLabs TTS) to HeyGen.
+ * Returns an asset_id to use with voice.type='audio'.
+ */
+export async function uploadAudioAsset(
+  audioBuffer: Buffer,
+  contentType = "audio/mpeg"
+): Promise<string> {
+  return withRetry(async () => {
+    const apiKey = getApiKey();
+    const bodyBytes = new Uint8Array(audioBuffer);
+    const response = await fetch(`${UPLOAD_BASE}/v1/asset`, {
+      method: "POST",
+      headers: {
+        "x-api-key": apiKey,
+        "Content-Type": contentType,
+      },
+      body: bodyBytes,
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text().catch(() => "Unknown error");
+      throw new HeyGenError(
+        `Failed to upload audio asset: ${errorText}`,
+        response.status,
+        errorText
+      );
+    }
+
+    const result = (await response.json()) as HeyGenLegacyResponse<UploadAssetResult>;
+
+    if (result.code !== 100 || !result.data?.id) {
+      throw new HeyGenError(
+        `Audio asset upload returned unexpected response: ${result.msg ?? result.message ?? "no data"}`,
+        500,
+        result.msg ?? result.message
+      );
+    }
+
+    return result.data.id;
   });
 }
 

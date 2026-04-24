@@ -30,7 +30,8 @@ const CAMPAIGN_DISPLAY: Record<string, string> = {
   promo: "Sale / Promo",
   educational: "Educational / Tutorial",
   "brand-story": "Brand Story",
-  faq: "FAQ / Myth-Busting",
+  faq: "FAQ",
+  myths: "Myth-Busting",
   "product-knowledge": "Product Knowledge",
   unboxing: "Unboxing",
   "before-after": "Before / After",
@@ -40,6 +41,7 @@ const EDUCATIONAL_CAMPAIGNS = new Set([
   "educational",
   "brand-story",
   "faq",
+  "myths",
   "product-knowledge",
 ]);
 
@@ -66,6 +68,8 @@ export function VideoModal({
 }: VideoModalProps) {
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
+
+  const videoUrl = video?.final_video_url ?? video?.raw_video_url ?? null;
 
   if (!video) return null;
 
@@ -102,8 +106,6 @@ export function VideoModal({
     minute: "2-digit",
   });
 
-  const videoUrl = video.final_video_url ?? video.raw_video_url;
-
   return (
     <Dialog open={isOpen} onOpenChange={(open) => !open && onClose()}>
       <DialogContent className="max-h-[90vh] max-w-3xl overflow-y-auto bg-white p-0">
@@ -119,8 +121,9 @@ export function VideoModal({
 
         {/* Video Player */}
         {videoUrl ? (
-          <div className="aspect-video bg-black">
+          <div className="relative aspect-video bg-black">
             <video
+              key={videoUrl}
               src={videoUrl}
               poster={video.thumbnail_url ?? undefined}
               controls
@@ -135,6 +138,8 @@ export function VideoModal({
               <p className="mt-2 text-sm text-coco-beige/50">
                 {video.heygen_status === "processing"
                   ? "Video is still generating..."
+                  : video.heygen_status === "captioning"
+                  ? "Burning styled captions..."
                   : "Video not available"}
               </p>
             </div>
@@ -193,12 +198,12 @@ export function VideoModal({
           </div>
 
           {/* Script Text */}
-          {script && (
+          {(script || video.script_text_cache) && (
             <div className="space-y-2">
               <p className="text-xs font-semibold text-coco-brown">Script</p>
               <div className="rounded-xl border border-coco-beige-dark bg-coco-beige-light/50 p-3">
                 <p className="whitespace-pre-wrap text-xs leading-relaxed text-coco-brown-medium">
-                  {script.script_text}
+                  {script?.script_text ?? video.script_text_cache}
                 </p>
               </div>
             </div>

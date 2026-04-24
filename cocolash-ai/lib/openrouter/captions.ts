@@ -172,7 +172,7 @@ export async function generateVideoScript(
         { role: "system", content: systemPrompt },
         { role: "user", content: userPrompt },
       ],
-      max_tokens: 1500,
+      max_tokens: 4096,
       temperature: 0.8,
     })
   );
@@ -191,35 +191,58 @@ function parseScriptResponse(
 ): ScriptResult[] {
   let cleaned = raw.trim();
 
+  // Strip markdown code fences (```json ... ``` or ``` ... ```)
   const jsonMatch = cleaned.match(/```(?:json)?\s*([\s\S]*?)```/);
   if (jsonMatch) {
     cleaned = jsonMatch[1].trim();
   }
 
+  // Try to extract a JSON object { ... }
   const braceStart = cleaned.indexOf("{");
   const braceEnd = cleaned.lastIndexOf("}");
   if (braceStart !== -1 && braceEnd !== -1 && braceEnd > braceStart) {
     cleaned = cleaned.slice(braceStart, braceEnd + 1);
   }
 
-  try {
-    const data = JSON.parse(cleaned) as ParsedScriptResponse;
+  // Also handle if model returns a bare array [ ... ]
+  if (cleaned.startsWith("[")) {
+    const bracketEnd = cleaned.lastIndexOf("]");
+    if (bracketEnd !== -1) {
+      cleaned = cleaned.slice(0, bracketEnd + 1);
+    }
+  }
 
-    if (Array.isArray(data.scripts) && data.scripts.length >= 1) {
-      return data.scripts.slice(0, 3).map((s) => ({
-        hook: String(s.hook ?? ""),
-        body: String(s.body ?? ""),
-        cta: String(s.cta ?? ""),
-        full_script: String(s.full_script ?? `${s.hook} ${s.body} ${s.cta}`),
-        estimated_duration:
-          typeof s.estimated_duration === "number"
-            ? s.estimated_duration
-            : targetDuration,
-        style_match:
-          typeof s.style_match === "number"
-            ? s.style_match
-            : parseFloat(String(s.style_match)) || 0.85,
-      }));
+  const mapScript = (s: RawScriptOutput): ScriptResult => ({
+    hook: String(s.hook ?? ""),
+    body: String(s.body ?? ""),
+    cta: String(s.cta ?? ""),
+    full_script: String(s.full_script ?? `${s.hook} ${s.body} ${s.cta}`),
+    estimated_duration:
+      typeof s.estimated_duration === "number"
+        ? s.estimated_duration
+        : targetDuration,
+    style_match:
+      typeof s.style_match === "number"
+        ? s.style_match
+        : parseFloat(String(s.style_match)) || 0.85,
+  });
+
+  try {
+    const data = JSON.parse(cleaned);
+
+    // Handle { "scripts": [...] }
+    if (data.scripts && Array.isArray(data.scripts) && data.scripts.length >= 1) {
+      return (data.scripts as RawScriptOutput[]).slice(0, 3).map(mapScript);
+    }
+
+    // Handle bare array [{ hook, body, ... }, ...]
+    if (Array.isArray(data) && data.length >= 1 && data[0].full_script) {
+      return (data as RawScriptOutput[]).slice(0, 3).map(mapScript);
+    }
+
+    // Handle single object { hook, body, ... } (model returned 1 script without array)
+    if (data.full_script) {
+      return [mapScript(data as RawScriptOutput)];
     }
   } catch {
     // Fallback below

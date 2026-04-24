@@ -1,6 +1,6 @@
 "use client";
 
-import { Suspense, useState } from "react";
+import { Suspense, useState, useCallback } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { cn } from "@/lib/utils";
@@ -85,7 +85,7 @@ const DEFAULT_HEYGEN_STATE: HeyGenWizardState = {
   pose: "holding",
   voiceId: null,
   aspectRatio: "9:16",
-  captionMethod: "ffmpeg-burn",
+  captionMethod: "shotstack",
   preComposed: false,
 };
 
@@ -146,17 +146,29 @@ function VideoWizard() {
 
   // ── HeyGen state ──────────────────────────────────
   const [heygenStep, setHeygenStep] = useState(0);
+  const [heygenMaxStep, setHeygenMaxStep] = useState(0);
   const [heygenState, setHeygenState] = useState<HeyGenWizardState>({
     ...DEFAULT_HEYGEN_STATE,
     personImageUrl: initialImageUrl ?? null,
     personImageId: initialImageId,
   });
 
+  const advanceHeygenStep = useCallback((step: number) => {
+    setHeygenStep(step);
+    setHeygenMaxStep((prev) => Math.max(prev, step));
+  }, []);
+
   // ── Seedance state ────────────────────────────────
   const [seedanceStep, setSeedanceStep] = useState(0);
+  const [seedanceMaxStep, setSeedanceMaxStep] = useState(0);
   const [seedanceState, setSeedanceState] = useState<SeedanceWizardState>({
     ...DEFAULT_SEEDANCE_STATE,
   });
+
+  const advanceSeedanceStep = useCallback((step: number) => {
+    setSeedanceStep(step);
+    setSeedanceMaxStep((prev) => Math.max(prev, step));
+  }, []);
 
   // ── Pipeline selection ────────────────────────────
   const handleSelectPipeline = (p: VideoPipeline) => {
@@ -166,7 +178,9 @@ function VideoWizard() {
   const handleBackToPipelineSelect = () => {
     setPipeline("select");
     setHeygenStep(0);
+    setHeygenMaxStep(0);
     setSeedanceStep(0);
+    setSeedanceMaxStep(0);
     setHeygenState({
       ...DEFAULT_HEYGEN_STATE,
       personImageUrl: initialImageUrl ?? null,
@@ -189,7 +203,7 @@ function VideoWizard() {
       tone: meta.tone,
       duration: meta.duration,
     }));
-    setHeygenStep(1);
+    advanceHeygenStep(1);
   };
 
   const handleHeygenCompositionReady = (data: {
@@ -210,7 +224,7 @@ function VideoWizard() {
       pose: data.pose,
       preComposed: data.preComposed ?? false,
     }));
-    setHeygenStep(2);
+    advanceHeygenStep(2);
   };
 
   const handleHeygenStyleReady = (data: {
@@ -224,7 +238,7 @@ function VideoWizard() {
       aspectRatio: data.aspectRatio,
       captionMethod: data.captionMethod,
     }));
-    setHeygenStep(3);
+    advanceHeygenStep(3);
   };
 
   const handleHeygenReset = () => {
@@ -234,6 +248,7 @@ function VideoWizard() {
       personImageId: initialImageId,
     });
     setHeygenStep(0);
+    setHeygenMaxStep(0);
   };
 
   // ── Seedance callbacks ────────────────────────────
@@ -250,7 +265,7 @@ function VideoWizard() {
       tone: meta.tone,
       duration: meta.duration,
     }));
-    setSeedanceStep(1);
+    advanceSeedanceStep(1);
   };
 
   const handleSeedanceAvatarReady = (data: {
@@ -272,12 +287,13 @@ function VideoWizard() {
       vibe: data.vibe,
       personDescription: data.personDescription,
     }));
-    setSeedanceStep(2);
+    advanceSeedanceStep(2);
   };
 
   const handleSeedanceReset = () => {
     setSeedanceState(DEFAULT_SEEDANCE_STATE);
     setSeedanceStep(0);
+    setSeedanceMaxStep(0);
   };
 
   // ── Determine current steps for progress bar ──────
@@ -388,80 +404,92 @@ function VideoWizard() {
 
           <div className="mx-auto max-w-2xl">
             {/* ── HeyGen Wizard Steps ─────────────── */}
+            {/* Components stay mounted (hidden via CSS) to preserve state when going back */}
             {pipeline === "heygen" && (
               <>
-                {heygenStep === 0 && (
+                <div className={heygenStep === 0 ? "" : "hidden"}>
                   <ScriptGenerator onScriptSelected={handleHeygenScriptSelected} />
+                </div>
+                {heygenMaxStep >= 1 && (
+                  <div className={heygenStep === 1 ? "" : "hidden"}>
+                    <AvatarSetup
+                      campaignType={heygenState.campaignType}
+                      aspectRatio={heygenState.aspectRatio}
+                      onAspectRatioChange={(ratio) =>
+                        setHeygenState((prev) => ({ ...prev, aspectRatio: ratio }))
+                      }
+                      initialPersonImageUrl={initialImageUrl}
+                      initialPersonImageId={initialImageId}
+                      onCompositionReady={handleHeygenCompositionReady}
+                    />
+                  </div>
                 )}
-                {heygenStep === 1 && (
-                  <AvatarSetup
-                    campaignType={heygenState.campaignType}
-                    aspectRatio={heygenState.aspectRatio}
-                    onAspectRatioChange={(ratio) =>
-                      setHeygenState((prev) => ({ ...prev, aspectRatio: ratio }))
-                    }
-                    initialPersonImageUrl={initialImageUrl}
-                    initialPersonImageId={initialImageId}
-                    onCompositionReady={handleHeygenCompositionReady}
-                  />
+                {heygenMaxStep >= 2 && (
+                  <div className={heygenStep === 2 ? "" : "hidden"}>
+                    <VoiceAndStyle
+                      initialAspectRatio={heygenState.aspectRatio}
+                      isEducational={["educational", "brand-story", "faq", "myths", "product-knowledge"].includes(heygenState.campaignType)}
+                      onStyleReady={handleHeygenStyleReady}
+                    />
+                  </div>
                 )}
-                {heygenStep === 2 && (
-                  <VoiceAndStyle
-                    initialAspectRatio={heygenState.aspectRatio}
-                    isEducational={["educational", "brand-story", "faq", "product-knowledge"].includes(heygenState.campaignType)}
-                    onStyleReady={handleHeygenStyleReady}
-                  />
-                )}
-                {heygenStep === 3 && heygenState.script && (
-                  <GenerateVideo
-                    script={heygenState.script}
-                    editedScriptText={heygenState.editedScriptText}
-                    personImageUrl={heygenState.personImageUrl!}
-                    personImageId={heygenState.personImageId}
-                    productImageUrl={heygenState.productImageUrl}
-                    pose={heygenState.pose}
-                    voiceId={heygenState.voiceId!}
-                    aspectRatio={heygenState.aspectRatio}
-                    composedImageUrl={heygenState.composedImageUrl}
-                    usePrecomposedImage={heygenState.preComposed}
-                    campaignType={heygenState.campaignType}
-                    tone={heygenState.tone}
-                    duration={heygenState.duration}
-                    captionMethod={heygenState.captionMethod}
-                    onReset={handleHeygenReset}
-                  />
+                {heygenMaxStep >= 3 && heygenState.script && (
+                  <div className={heygenStep === 3 ? "" : "hidden"}>
+                    <GenerateVideo
+                      script={heygenState.script}
+                      editedScriptText={heygenState.editedScriptText}
+                      personImageUrl={heygenState.personImageUrl!}
+                      personImageId={heygenState.personImageId}
+                      productImageUrl={heygenState.productImageUrl}
+                      pose={heygenState.pose}
+                      voiceId={heygenState.voiceId!}
+                      aspectRatio={heygenState.aspectRatio}
+                      composedImageUrl={heygenState.composedImageUrl}
+                      usePrecomposedImage={heygenState.preComposed}
+                      campaignType={heygenState.campaignType}
+                      tone={heygenState.tone}
+                      duration={heygenState.duration}
+                      captionMethod={heygenState.captionMethod}
+                      onReset={handleHeygenReset}
+                    />
+                  </div>
                 )}
               </>
             )}
 
             {/* ── Seedance Wizard Steps ───────────── */}
+            {/* Components stay mounted (hidden via CSS) to preserve state when going back */}
             {pipeline === "seedance" && (
               <>
-                {seedanceStep === 0 && (
+                <div className={seedanceStep === 0 ? "" : "hidden"}>
                   <SeedanceScriptStep onScriptSelected={handleSeedanceScriptSelected} />
+                </div>
+                {seedanceMaxStep >= 1 && (
+                  <div className={seedanceStep === 1 ? "" : "hidden"}>
+                    <SeedanceAvatarStep
+                      initialPersonImageUrl={initialImageUrl}
+                      onAvatarReady={handleSeedanceAvatarReady}
+                    />
+                  </div>
                 )}
-                {seedanceStep === 1 && (
-                  <SeedanceAvatarStep
-                    initialPersonImageUrl={initialImageUrl}
-                    onAvatarReady={handleSeedanceAvatarReady}
-                  />
-                )}
-                {seedanceStep === 2 && seedanceState.script && (
-                  <SeedanceGenerateStep
-                    script={seedanceState.script}
-                    editedScriptText={seedanceState.editedScriptText}
-                    campaignType={seedanceState.campaignType}
-                    tone={seedanceState.tone}
-                    duration={seedanceState.duration}
-                    personImageUrl={seedanceState.personImageUrl!}
-                    productImageUrl={seedanceState.productImageUrl!}
-                    audioMode={seedanceState.audioMode}
-                    audioUrl={seedanceState.audioUrl}
-                    scene={seedanceState.scene}
-                    vibe={seedanceState.vibe}
-                    personDescription={seedanceState.personDescription}
-                    onReset={handleSeedanceReset}
-                  />
+                {seedanceMaxStep >= 2 && seedanceState.script && (
+                  <div className={seedanceStep === 2 ? "" : "hidden"}>
+                    <SeedanceGenerateStep
+                      script={seedanceState.script}
+                      editedScriptText={seedanceState.editedScriptText}
+                      campaignType={seedanceState.campaignType}
+                      tone={seedanceState.tone}
+                      duration={seedanceState.duration}
+                      personImageUrl={seedanceState.personImageUrl!}
+                      productImageUrl={seedanceState.productImageUrl!}
+                      audioMode={seedanceState.audioMode}
+                      audioUrl={seedanceState.audioUrl}
+                      scene={seedanceState.scene}
+                      vibe={seedanceState.vibe}
+                      personDescription={seedanceState.personDescription}
+                      onReset={handleSeedanceReset}
+                    />
+                  </div>
                 )}
               </>
             )}
