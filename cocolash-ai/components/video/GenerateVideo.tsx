@@ -47,6 +47,7 @@ const EDUCATIONAL_CAMPAIGNS = new Set([
 interface GenerateVideoProps {
   script: ScriptResult;
   editedScriptText?: string;
+  scriptId?: string;
   personImageUrl: string;
   personImageId?: string;
   productImageUrl?: string | null;
@@ -88,6 +89,7 @@ export function GenerateVideo(props: GenerateVideoProps) {
   const {
     script,
     editedScriptText,
+    scriptId,
     personImageUrl,
     personImageId,
     productImageUrl,
@@ -180,6 +182,7 @@ export function GenerateVideo(props: GenerateVideoProps) {
     try {
       setPipelineStep(0);
 
+      const useScriptId = scriptId && !editedScriptText;
       const res = await fetch("/api/videos/generate", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -196,7 +199,7 @@ export function GenerateVideo(props: GenerateVideoProps) {
           ...(usePrecomposedImage && composedImageUrl
             ? { composedImageUrl }
             : {}),
-          scriptText,
+          ...(useScriptId ? { scriptId } : { scriptText }),
         }),
       });
 

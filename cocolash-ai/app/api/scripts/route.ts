@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/server";
 import { generateVideoScript } from "@/lib/openrouter/captions";
+import { CAMPAIGN_CONCEPT_POOLS } from "@/lib/prompts/scripts/templates";
 import type {
   CampaignType,
   ScriptTone,
@@ -28,7 +29,9 @@ const VALID_DURATIONS: VideoDuration[] = [15, 30, 60, 90];
  * POST /api/scripts
  *
  * Generates 3 UGC video script variations using Claude via OpenRouter.
- * Optionally saves scripts to the database when `save: true` is passed.
+ * Always persists scripts to the database. When no campaignFocus is
+ * provided, auto-selects a concept from CAMPAIGN_CONCEPT_POOLS and
+ * fetches recent hooks to avoid repetition.
  */
 export async function POST(request: NextRequest) {
   try {
@@ -43,7 +46,7 @@ export async function POST(request: NextRequest) {
       specialOffer,
       campaignFocus,
       customInstructions,
-      save,
+      excludeHooks,
     } = body as {
       campaignType?: CampaignType;
       tone?: ScriptTone;
@@ -54,7 +57,7 @@ export async function POST(request: NextRequest) {
       specialOffer?: string;
       campaignFocus?: string;
       customInstructions?: string;
-      save?: boolean;
+      excludeHooks?: string[];
     };
 
     if (!campaignType || !VALID_CAMPAIGN_TYPES.includes(campaignType)) {
@@ -79,6 +82,38 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    let autoConcept: string | undefined;
+    let noveltySeed: string | undefined;
+    let recentScriptSummaries: string[] | undefined;
+
+    const supabase = await createAdminClient();
+
+    if (!campaignFocus) {
+      const pool = CAMPAIGN_CONCEPT_POOLS[campaignType];
+      if (pool && pool.length > 0) {
+        autoConcept = pool[Math.floor(Math.random() * pool.length)];
+      }
+
+      noveltySeed = `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+
+      const { data: recentRows } = await supabase
+        .from("video_scripts")
+        .select("hook_text")
+        .eq("campaign_type", campaignType)
+        .order("created_at", { ascending: false })
+        .limit(10);
+
+      const dbHooks = (recentRows ?? [])
+        .map((r: { hook_text: string | null }) => r.hook_text)
+        .filter((h): h is string => Boolean(h));
+
+      if (excludeHooks && excludeHooks.length > 0) {
+        recentScriptSummaries = [...excludeHooks, ...dbHooks];
+      } else if (dbHooks.length > 0) {
+        recentScriptSummaries = dbHooks;
+      }
+    }
+
     const scripts = await generateVideoScript({
       campaignType,
       tone,
@@ -89,34 +124,42 @@ export async function POST(request: NextRequest) {
       specialOffer,
       campaignFocus,
       customInstructions,
+      autoConcept,
+      noveltySeed,
+      recentScriptSummaries,
     });
+
+    const dateStr = new Date().toLocaleDateString("en-US", {
+      month: "short",
+      day: "numeric",
+    });
+    const templateLabel = campaignType
+      .split("-")
+      .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
+      .join(" ");
+
+    const inserts = scripts.map((s, i) => ({
+      title: `${templateLabel} - ${tone.charAt(0).toUpperCase() + tone.slice(1)} - ${durationNum}s - ${dateStr} (#${i + 1})`,
+      campaign_type: campaignType,
+      tone,
+      duration_seconds: durationNum,
+      script_text: s.full_script,
+      hook_text: s.hook,
+      cta_text: s.cta,
+      is_template: false,
+    }));
 
     let savedIds: string[] | null = null;
 
-    if (save) {
-      const supabase = await createAdminClient();
+    const { data, error } = await supabase
+      .from("video_scripts")
+      .insert(inserts)
+      .select("id");
 
-      const inserts = scripts.map((s, i) => ({
-        title: `${campaignType} — ${tone} — ${durationNum}s (#${i + 1})`,
-        campaign_type: campaignType,
-        tone,
-        duration_seconds: durationNum,
-        script_text: s.full_script,
-        hook_text: s.hook,
-        cta_text: s.cta,
-        is_template: false,
-      }));
-
-      const { data, error } = await supabase
-        .from("video_scripts")
-        .insert(inserts)
-        .select("id");
-
-      if (error) {
-        console.error("[scripts] Save error:", error);
-      } else {
-        savedIds = (data ?? []).map((r: { id: string }) => r.id);
-      }
+    if (error) {
+      console.error("[scripts] Save error:", error);
+    } else {
+      savedIds = (data ?? []).map((r: { id: string }) => r.id);
     }
 
     return NextResponse.json({

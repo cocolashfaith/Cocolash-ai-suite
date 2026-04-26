@@ -59,6 +59,7 @@ const SEEDANCE_STEPS = [
 interface HeyGenWizardState {
   script: ScriptResult | null;
   editedScriptText?: string;
+  scriptId?: string;
   campaignType: CampaignType;
   tone: ScriptTone;
   duration: VideoDuration;
@@ -94,6 +95,7 @@ const DEFAULT_HEYGEN_STATE: HeyGenWizardState = {
 interface SeedanceWizardState {
   script: ScriptResult | null;
   editedScriptText?: string;
+  scriptId?: string;
   campaignType: CampaignType;
   tone: ScriptTone;
   duration: VideoDuration;
@@ -192,13 +194,14 @@ function VideoWizard() {
   // ── HeyGen callbacks ─────────────────────────────
   const handleHeygenScriptSelected = (
     script: ScriptResult,
-    meta: { campaignType: CampaignType; tone: ScriptTone; duration: VideoDuration },
+    meta: { campaignType: CampaignType; tone: ScriptTone; duration: VideoDuration; scriptId?: string },
     editedText?: string
   ) => {
     setHeygenState((prev) => ({
       ...prev,
       script,
       editedScriptText: editedText,
+      scriptId: meta.scriptId,
       campaignType: meta.campaignType,
       tone: meta.tone,
       duration: meta.duration,
@@ -254,13 +257,14 @@ function VideoWizard() {
   // ── Seedance callbacks ────────────────────────────
   const handleSeedanceScriptSelected = (
     script: ScriptResult,
-    meta: { campaignType: CampaignType; tone: ScriptTone; duration: VideoDuration },
+    meta: { campaignType: CampaignType; tone: ScriptTone; duration: VideoDuration; scriptId?: string },
     editedText?: string
   ) => {
     setSeedanceState((prev) => ({
       ...prev,
       script,
       editedScriptText: editedText,
+      scriptId: meta.scriptId,
       campaignType: meta.campaignType,
       tone: meta.tone,
       duration: meta.duration,
@@ -438,6 +442,7 @@ function VideoWizard() {
                     <GenerateVideo
                       script={heygenState.script}
                       editedScriptText={heygenState.editedScriptText}
+                      scriptId={heygenState.scriptId}
                       personImageUrl={heygenState.personImageUrl!}
                       personImageId={heygenState.personImageId}
                       productImageUrl={heygenState.productImageUrl}

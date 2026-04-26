@@ -3,7 +3,8 @@
  *
  * Burns styled captions onto videos server-side using Shotstack's cloud
  * rendering infrastructure. Takes a video URL + SRT URL, renders with
- * white-pill styled captions, and returns the captioned MP4.
+ * pop-animated white text captions (active word highlighted in Golden
+ * Brown #ce9765), and returns the captioned MP4.
  *
  * Uses the stage (sandbox) endpoint for dev, production for live.
  * Env: SHOTSTACK_API_KEY, SHOTSTACK_ENV (optional, defaults to "stage")
@@ -47,7 +48,7 @@ export async function submitCaptionRender(
   opts: CaptionRenderOptions
 ): Promise<string> {
   const { apiKey, baseUrl } = getConfig();
-  const { videoUrl, srtUrl, durationSeconds, aspectRatio = "9:16" } = opts;
+  const { videoUrl, srtUrl, aspectRatio = "9:16" } = opts;
 
   const sizeMap: Record<string, { width: number; height: number }> = {
     "9:16": { width: 1080, height: 1920 },
@@ -61,15 +62,13 @@ export async function submitCaptionRender(
   // https://shotstack.io/docs/guide/architecting-an-application/rich-captions/
   //
   // Design:
-  //   • Font: Montserrat ExtraBold — simple, clean, TikTok-style
-  //   • Per-word white pill via `font.background` (tight, only around text)
+  //   • Font: Montserrat ExtraBold 72px — bold, readable on 1080×1920
+  //   • Plain white text, NO background pill — clean TikTok aesthetic
+  //   • No stroke/outline; subtle drop shadow only for light contrast help
   //   • `animation.style: "pop"` — each word scales in as it's spoken
-  //   • Active word: golden pill (#ce9765) with white text via `active.font.*`
-  //   • Positioned at the bottom via `align.vertical: "bottom"`
-  //
-  // Important: `rich-caption` does NOT support an asset-level `background`
-  // object. The pill look comes from `font.background` (a color string
-  // applied behind each word).
+  //   • Active word stays white; pop animation provides the emphasis
+  //   • Centered horizontally and lowered into the mid-lower hand area via
+  //     clip offset.y: -0.23 on portrait avatar videos
   //
   // Font family MUST match the filename of the TTF (minus .ttf) for custom
   // fonts loaded from URL — docs show this pattern with hash URLs.
@@ -88,13 +87,20 @@ export async function submitCaptionRender(
               src: srtUrl,
               font: {
                 family: "Montserrat-ExtraBold",
-                size: 34,
-                color: "#111111",
+                size: 72,
+                color: "#FFFFFF",
                 weight: 800,
                 opacity: 1,
-                background: "#FFFFFF",
+              },
+              shadow: {
+                offsetX: 0,
+                offsetY: 4,
+                blur: 8,
+                color: "#000000",
+                opacity: 0.5,
               },
               align: {
+                horizontal: "center",
                 vertical: "bottom",
               },
               animation: {
@@ -103,13 +109,12 @@ export async function submitCaptionRender(
               active: {
                 font: {
                   color: "#FFFFFF",
-                  background: "#ce9765",
                 },
               },
             },
             start: 0,
             length: "end",
-            offset: { x: 0, y: 0 },
+            offset: { x: 0, y: -0.23 },
           },
         ],
       },
@@ -182,12 +187,32 @@ export async function pollRenderStatus(
   const { apiKey, baseUrl } = getConfig();
 
   for (let attempt = 1; attempt <= maxAttempts; attempt++) {
-    const res = await fetch(`${baseUrl}/render/${renderId}`, {
-      headers: { "x-api-key": apiKey },
-    });
+    let res: Response;
+    try {
+      res = await fetch(`${baseUrl}/render/${renderId}`, {
+        headers: { "x-api-key": apiKey },
+      });
+    } catch (err) {
+      if (attempt < maxAttempts && isTransientNetworkError(err)) {
+        const message = err instanceof Error ? err.message : String(err);
+        console.warn(
+          `${LOG} Render ${renderId} status poll attempt ${attempt}/${maxAttempts} failed (${message}), retrying…`
+        );
+        await sleep(intervalMs);
+        continue;
+      }
+      throw err;
+    }
 
     if (!res.ok) {
       const text = await res.text();
+      if (attempt < maxAttempts && isRetryableStatus(res.status)) {
+        console.warn(
+          `${LOG} Render ${renderId} status check returned ${res.status} (attempt ${attempt}/${maxAttempts}), retrying…`
+        );
+        await sleep(intervalMs);
+        continue;
+      }
       throw new Error(`Shotstack status check failed (${res.status}): ${text}`);
     }
 
@@ -271,15 +296,12 @@ export async function uploadSrtToCloudinary(
 
   // Retry Cloudinary upload up to 4 times on transient network errors
   const maxAttempts = 4;
-  let lastError: unknown;
   for (let attempt = 1; attempt <= maxAttempts; attempt++) {
     try {
       return await doUpload();
     } catch (err) {
-      lastError = err;
       const msg = err instanceof Error ? err.message : String(err);
-      const isNetworkErr = /ECONNRESET|ENOTFOUND|ETIMEDOUT|socket hang up|fetch failed|terminated/i.test(msg);
-      if (attempt < maxAttempts && isNetworkErr) {
+      if (attempt < maxAttempts && isTransientNetworkError(err)) {
         const delay = 1500 * attempt;
         console.warn(`${LOG} SRT upload attempt ${attempt}/${maxAttempts} failed (${msg}), retrying in ${delay}ms…`);
         await new Promise((r) => setTimeout(r, delay));
@@ -288,7 +310,7 @@ export async function uploadSrtToCloudinary(
       throw err;
     }
   }
-  throw lastError;
+  throw new Error("SRT upload failed after retries");
 }
 
 // ── Convenience: Full Pipeline ───────────────────────────────
@@ -332,4 +354,19 @@ export async function burnCaptionsWithShotstack(opts: {
 
 function sleep(ms: number): Promise<void> {
   return new Promise((r) => setTimeout(r, ms));
+}
+
+function isRetryableStatus(status: number): boolean {
+  return status === 408 || status === 425 || status === 429 || status >= 500;
+}
+
+function isTransientNetworkError(error: unknown): boolean {
+  const message = error instanceof Error ? error.message : String(error);
+  const cause =
+    error instanceof Error && "cause" in error
+      ? String((error as Error & { cause?: unknown }).cause)
+      : "";
+  return /ECONNRESET|ENOTFOUND|ETIMEDOUT|UND_ERR_CONNECT_TIMEOUT|ConnectTimeoutError|socket hang up|fetch failed|terminated/i.test(
+    `${message} ${cause}`
+  );
 }

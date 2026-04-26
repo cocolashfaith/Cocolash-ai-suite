@@ -229,6 +229,7 @@ async function runPostProcessing(
   };
 
   let finalVideoUrl: string | null = null;
+  let processedVideoUrl: string | null = null;
   let thumbnailUrl: string | null = null;
   let hasCaptions = video.has_captions;
 
@@ -243,6 +244,7 @@ async function runPostProcessing(
       });
 
       finalVideoUrl = processed.videoUrl;
+      processedVideoUrl = processed.videoUrl;
       thumbnailUrl = processed.thumbnailUrl;
       updateData.thumbnail_url = thumbnailUrl;
 
@@ -272,8 +274,9 @@ async function runPostProcessing(
       }
     } catch (processError) {
       console.error("[videos/status] Post-processing error:", processError);
-      // Fall back to HeyGen's captioned URL (if any), then raw.
-      finalVideoUrl = heygenCaptionUrl ?? rawVideoUrl;
+      // Keep the durable Cloudinary processed URL if it already exists. Falling
+      // back to HeyGen's raw URL can point users at an expiring source asset.
+      finalVideoUrl = processedVideoUrl ?? heygenCaptionUrl ?? rawVideoUrl;
       thumbnailUrl = heygenStatus.thumbnail_url ?? null;
       updateData.thumbnail_url = thumbnailUrl;
     }
@@ -295,15 +298,20 @@ async function runPostProcessing(
 
   if (updateError) {
     console.error("[videos/status] DB update error:", updateError);
+    throw new Error(`DB update failed: ${updateError.message}`);
   }
 
-  const costEstimate = calculateVideoCost({
-    duration: heygenDuration ?? 30,
-    addCaptions: hasCaptions,
-    addWatermark: video.has_watermark,
-    needsScriptGeneration: !!video.script_id,
-  });
-  await recordActualCost(id, costEstimate.total);
+  try {
+    const costEstimate = calculateVideoCost({
+      duration: heygenDuration ?? 30,
+      addCaptions: hasCaptions,
+      addWatermark: video.has_watermark,
+      needsScriptGeneration: !!video.script_id,
+    });
+    await recordActualCost(id, costEstimate.total);
+  } catch (costError) {
+    console.error("[videos/status] Cost recording failed (non-fatal):", costError);
+  }
 
   return {
     ...video,
@@ -365,7 +373,7 @@ async function tryRepairCaptions(
       tags: ["cocolash", "brand-content", "captioned", "shotstack"],
     });
 
-    await supabase
+    const { error: updateError } = await supabase
       .from("generated_videos")
       .update({
         heygen_status: "completed",
@@ -373,6 +381,10 @@ async function tryRepairCaptions(
         has_captions: true,
       })
       .eq("id", id);
+
+    if (updateError) {
+      throw new Error(`Repair DB update failed: ${updateError.message}`);
+    }
 
     return {
       ...video,
@@ -382,11 +394,19 @@ async function tryRepairCaptions(
     };
   } catch (err) {
     console.error("[videos/status] Caption repair failed:", err);
-    await supabase
+    // Stop automatic repair from submitting a fresh paid Shotstack render on
+    // every poll if the caption payload/source is persistently failing.
+    const { error: clearError } = await supabase
       .from("generated_videos")
-      .update({ heygen_status: "completed" })
+      .update({
+        heygen_status: "completed",
+        caption_srt: null,
+      })
       .eq("id", id);
-    return { ...video, heygen_status: "completed" };
+    if (clearError) {
+      console.error("[videos/status] Failed to clear failed caption repair:", clearError);
+    }
+    return { ...video, heygen_status: "completed", caption_srt: null };
   }
 }
 
