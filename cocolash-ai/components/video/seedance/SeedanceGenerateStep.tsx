@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useRef, useCallback } from "react";
+import { useState, useEffect, useRef, useCallback, type ReactNode } from "react";
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
@@ -17,8 +17,15 @@ import {
   Lock,
   Unlock,
 } from "lucide-react";
-import type { SeedanceAspectRatio } from "@/lib/seedance/types";
-import type { SeedanceAudioMode } from "@/lib/seedance/types";
+import type {
+  SeedanceAspectRatio,
+  SeedanceAudioMode,
+  SeedanceDuration,
+  SeedanceGenerationType,
+  SeedanceMode,
+  SeedanceMultiFramePrompt,
+  SeedanceResolution,
+} from "@/lib/seedance/types";
 import { calculateSeedanceCost, calculateVideoCost } from "@/lib/costs/estimates";
 import type { UGCScene, UGCVibe } from "@/lib/seedance/ugc-image-prompt";
 import type {
@@ -44,15 +51,77 @@ interface SeedanceGenerateStepProps {
   onReset: () => void;
 }
 
+type EnhancorUiMode = SeedanceMode | "text-to-video";
+
+const ENHANCOR_MODES: {
+  value: EnhancorUiMode;
+  title: string;
+  description: string;
+  badge: string;
+}[] = [
+  {
+    value: "ugc",
+    title: "UGC",
+    description: "Default one-avatar + one-product workflow.",
+    badge: "Default",
+  },
+  {
+    value: "multi_reference",
+    title: "Multi-reference",
+    description: "Blend image, video, and audio references.",
+    badge: "Refs",
+  },
+  {
+    value: "multi_frame",
+    title: "Multi-frame",
+    description: "Build a short sequence from multiple timed prompts.",
+    badge: "Scenes",
+  },
+  {
+    value: "lipsyncing",
+    title: "Lip-sync",
+    description: "Use voice audio for talking or lip-sync style output.",
+    badge: "Audio",
+  },
+  {
+    value: "first_n_last_frames",
+    title: "First + last frame",
+    description: "Guide the transition between start and end images.",
+    badge: "Frames",
+  },
+  {
+    value: "text-to-video",
+    title: "Text-to-video",
+    description: "Prompt-only generation with no media references sent.",
+    badge: "Prompt",
+  },
+];
+
 const ASPECT_RATIOS: { value: SeedanceAspectRatio; label: string; desc: string }[] = [
   { value: "9:16", label: "9:16", desc: "TikTok / Reels" },
   { value: "1:1", label: "1:1", desc: "Square" },
   { value: "16:9", label: "16:9", desc: "Landscape" },
+  { value: "3:4", label: "3:4", desc: "Portrait" },
+  { value: "4:3", label: "4:3", desc: "Classic" },
+  { value: "21:9", label: "21:9", desc: "Cinematic" },
+];
+
+const RESOLUTIONS: { value: SeedanceResolution; label: string }[] = [
+  { value: "480p", label: "480p" },
+  { value: "720p", label: "720p" },
+];
+
+const DURATIONS: { value: SeedanceDuration; label: string }[] = [
+  { value: "5", label: "5s" },
+  { value: "8", label: "8s" },
+  { value: "10", label: "10s" },
+  { value: "15", label: "15s" },
 ];
 
 const STATUS_LABELS: Record<string, string> = {
   pending: "Preparing...",
   processing: "Generating UGC video...",
+  captioning: "Processing & finalizing...",
   completed: "Complete!",
   failed: "Failed",
 };
@@ -82,6 +151,24 @@ export function SeedanceGenerateStep(props: SeedanceGenerateStepProps) {
 
   const [aspectRatio, setAspectRatio] = useState<SeedanceAspectRatio>("9:16");
   const [fixedLens, setFixedLens] = useState(false);
+  const [enhancorMode, setEnhancorMode] = useState<EnhancorUiMode>("ugc");
+  const [resolution, setResolution] = useState<SeedanceResolution>("720p");
+  const [seedanceDuration, setSeedanceDuration] = useState<SeedanceDuration>(
+    duration <= 5 ? "5" : duration <= 8 ? "8" : duration <= 10 ? "10" : "15"
+  );
+  const [fullAccess, setFullAccess] = useState(true);
+  const [ugcProductsText, setUgcProductsText] = useState("");
+  const [ugcInfluencersText, setUgcInfluencersText] = useState("");
+  const [referenceImagesText, setReferenceImagesText] = useState("");
+  const [referenceVideosText, setReferenceVideosText] = useState("");
+  const [referenceAudiosText, setReferenceAudiosText] = useState("");
+  const [firstFrameImage, setFirstFrameImage] = useState(personImageUrl);
+  const [lastFrameImage, setLastFrameImage] = useState("");
+  const [lipsyncingAudio, setLipsyncingAudio] = useState(audioUrl ?? "");
+  const [multiFramePrompts, setMultiFramePrompts] = useState<SeedanceMultiFramePrompt[]>([
+    { prompt: "Wide opening shot showing the creator and product in a natural UGC setting", duration: 5 },
+    { prompt: "Close-up product moment with a confident smile and clear beauty result", duration: 5 },
+  ]);
   const [isGenerating, setIsGenerating] = useState(false);
   const [videoId, setVideoId] = useState<string | null>(null);
   const [status, setStatus] = useState<HeyGenVideoStatus | null>(null);
@@ -109,6 +196,7 @@ export function SeedanceGenerateStep(props: SeedanceGenerateStepProps) {
         setProgress(data.progress ?? 0);
 
         if (data.status === "processing") setPipelineStep(1);
+        if (data.status === "captioning") setPipelineStep(2);
 
         if (data.status === "completed") {
           stopPolling();
@@ -141,6 +229,27 @@ export function SeedanceGenerateStep(props: SeedanceGenerateStepProps) {
 
     try {
       const scriptText = editedScriptText || script.full_script;
+      const generationType: SeedanceGenerationType =
+        enhancorMode === "text-to-video" ? "text-to-video" : "image-to-video";
+      const seedanceMode: SeedanceMode =
+        enhancorMode === "text-to-video" ? "ugc" : enhancorMode;
+      const extraImages = parseUrlList(referenceImagesText);
+      const extraVideos = parseUrlList(referenceVideosText);
+      const extraAudios = parseUrlList(referenceAudiosText);
+      const extraProducts = parseUrlList(ugcProductsText);
+      const extraInfluencers = parseUrlList(ugcInfluencersText);
+      const defaultImages = [personImageUrl, productImageUrl, ...extraImages].filter(Boolean);
+      const defaultAudios = audioUrl ? [audioUrl, ...extraAudios] : extraAudios;
+      const cleanedMultiFramePrompts = multiFramePrompts
+        .map((item) => ({ prompt: item.prompt.trim(), duration: item.duration }))
+        .filter((item) => item.prompt.length > 0 && item.duration > 0);
+
+      if (enhancorMode === "multi_frame" && cleanedMultiFramePrompts.length === 0) {
+        throw new Error("Add at least one multi-frame prompt.");
+      }
+      if (enhancorMode === "lipsyncing" && defaultAudios.length === 0 && !lipsyncingAudio.trim()) {
+        throw new Error("Add or upload an audio URL for lip-sync mode.");
+      }
 
       const res = await fetch("/api/seedance/generate", {
         method: "POST",
@@ -155,6 +264,39 @@ export function SeedanceGenerateStep(props: SeedanceGenerateStepProps) {
           audioMode,
           audioUrl,
           aspectRatio,
+          seedanceDuration,
+          resolution,
+          generationType,
+          seedanceMode,
+          fullAccess,
+          products: enhancorMode === "ugc" ? [productImageUrl, ...extraProducts] : undefined,
+          influencers: enhancorMode === "ugc" ? [personImageUrl, ...extraInfluencers] : undefined,
+          images:
+            enhancorMode === "multi_reference" || enhancorMode === "lipsyncing"
+              ? defaultImages
+              : undefined,
+          videos:
+            enhancorMode === "multi_reference" ||
+            enhancorMode === "lipsyncing" ||
+            enhancorMode === "first_n_last_frames" ||
+            enhancorMode === "multi_frame"
+              ? extraVideos
+              : undefined,
+          audios:
+            enhancorMode === "multi_reference" ||
+            enhancorMode === "lipsyncing" ||
+            enhancorMode === "first_n_last_frames" ||
+            enhancorMode === "multi_frame"
+              ? defaultAudios
+              : undefined,
+          firstFrameImage:
+            enhancorMode === "first_n_last_frames" ? firstFrameImage : undefined,
+          lastFrameImage:
+            enhancorMode === "first_n_last_frames" ? lastFrameImage.trim() : undefined,
+          lipsyncingAudio:
+            enhancorMode === "lipsyncing" ? lipsyncingAudio.trim() || audioUrl : undefined,
+          multiFramePrompts:
+            enhancorMode === "multi_frame" ? cleanedMultiFramePrompts : undefined,
           fixedLens,
           generateAudio: true,
           scene,
@@ -178,30 +320,40 @@ export function SeedanceGenerateStep(props: SeedanceGenerateStepProps) {
       setPipelineStep(1);
       toast.success("Video submitted to Seedance 2.0!");
       pollStatus(data.videoId);
-    } catch {
-      setError("Network error — please try again.");
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Network error — please try again.";
+      setError(message);
       setStatus("failed");
       setIsGenerating(false);
-      toast.error("Network error");
+      toast.error(message);
     }
   };
 
   const scriptText = editedScriptText || script.full_script;
-  const seedanceDuration = duration <= 5 ? 5 : duration <= 8 ? 8 : duration <= 10 ? 10 : 15;
+  const seedanceDurationNumber = parseInt(seedanceDuration, 10);
 
   const seedanceCost = calculateSeedanceCost({
-    duration: seedanceDuration,
+    duration: seedanceDurationNumber,
     includeScript: true,
     includeImageGen: true,
     includePostProcessing: true,
   });
 
   const heygenCost = calculateVideoCost({
-    duration: seedanceDuration,
+    duration: seedanceDurationNumber,
     addCaptions: true,
     addWatermark: true,
     needsScriptGeneration: true,
   });
+
+  const updateMultiFramePrompt = (
+    index: number,
+    nextPrompt: SeedanceMultiFramePrompt
+  ) => {
+    setMultiFramePrompts((prev) =>
+      prev.map((item, frameIndex) => (frameIndex === index ? nextPrompt : item))
+    );
+  };
 
   return (
     <div className="space-y-6">
@@ -214,6 +366,8 @@ export function SeedanceGenerateStep(props: SeedanceGenerateStepProps) {
               <SummaryRow label="Campaign" value={campaignType} />
               <SummaryRow label="Tone" value={tone} />
               <SummaryRow label="Duration" value={`${duration}s (Seedance: ${seedanceDuration}s)`} />
+              <SummaryRow label="Enhancor Mode" value={getModeTitle(enhancorMode)} />
+              <SummaryRow label="Resolution" value={resolution} />
               <SummaryRow label="Audio Mode" value={audioMode === "script-in-prompt" ? "AI Speaks" : "Uploaded Audio"} />
               <SummaryRow label="Scene" value={scene} />
               <SummaryRow label="Vibe" value={vibe} />
@@ -239,6 +393,244 @@ export function SeedanceGenerateStep(props: SeedanceGenerateStepProps) {
               <p className="line-clamp-4 whitespace-pre-wrap text-xs text-coco-brown-medium">{scriptText}</p>
             </div>
           </div>
+
+          {/* Enhancor mode */}
+          <div className="space-y-3">
+            <div>
+              <label className="text-sm font-semibold text-coco-brown">Enhancor API Mode</label>
+              <p className="mt-1 text-xs text-coco-brown-medium/60">
+                Default is UGC: one avatar image + one product image. Switch modes to expose the full Seedance Full Access API inputs.
+              </p>
+            </div>
+            <div className="grid gap-3 sm:grid-cols-2">
+              {ENHANCOR_MODES.map((mode) => (
+                <button
+                  key={mode.value}
+                  type="button"
+                  onClick={() => setEnhancorMode(mode.value)}
+                  className={cn(
+                    "rounded-xl border-2 bg-white p-3 text-left transition-all",
+                    enhancorMode === mode.value
+                      ? "border-coco-golden bg-coco-golden/10 shadow-sm"
+                      : "border-coco-beige-dark hover:border-coco-golden/40"
+                  )}
+                >
+                  <div className="flex items-center justify-between gap-2">
+                    <p className={cn("text-sm font-bold", enhancorMode === mode.value ? "text-coco-golden" : "text-coco-brown")}>
+                      {mode.title}
+                    </p>
+                    <span className="rounded-full bg-coco-beige px-2 py-0.5 text-[10px] font-semibold text-coco-brown-medium">
+                      {mode.badge}
+                    </span>
+                  </div>
+                  <p className="mt-1 text-[11px] leading-relaxed text-coco-brown-medium/60">
+                    {mode.description}
+                  </p>
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Core API controls */}
+          <div className="grid gap-4 sm:grid-cols-2">
+            <OptionGroup label="Resolution">
+              <div className="grid grid-cols-2 gap-2">
+                {RESOLUTIONS.map((item) => (
+                  <PillButton
+                    key={item.value}
+                    isSelected={resolution === item.value}
+                    onClick={() => setResolution(item.value)}
+                  >
+                    {item.label}
+                  </PillButton>
+                ))}
+              </div>
+            </OptionGroup>
+            <OptionGroup label="Seedance Duration">
+              <div className="grid grid-cols-4 gap-2">
+                {DURATIONS.map((item) => (
+                  <PillButton
+                    key={item.value}
+                    isSelected={seedanceDuration === item.value}
+                    onClick={() => setSeedanceDuration(item.value)}
+                  >
+                    {item.label}
+                  </PillButton>
+                ))}
+              </div>
+            </OptionGroup>
+          </div>
+
+          <div className="flex items-center justify-between rounded-xl border-2 border-coco-beige-dark bg-white p-4">
+            <div>
+              <p className="text-sm font-semibold text-coco-brown">Full Access</p>
+              <p className="mt-1 text-xs text-coco-brown-medium/60">
+                Keep enabled for human faces and influencer/avatar generation.
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={() => setFullAccess(!fullAccess)}
+              className={cn("flex h-6 w-11 items-center rounded-full transition-colors", fullAccess ? "bg-coco-golden" : "bg-coco-beige-dark")}
+            >
+              <div className={cn("h-5 w-5 rounded-full bg-white shadow transition-transform", fullAccess ? "translate-x-5" : "translate-x-0.5")} />
+            </button>
+          </div>
+
+          {enhancorMode === "ugc" && (
+            <div className="space-y-3 rounded-xl border-2 border-coco-beige-dark bg-white p-4">
+              <div>
+                <p className="text-sm font-semibold text-coco-brown">UGC Inputs</p>
+                <p className="mt-1 text-xs text-coco-brown-medium/60">
+                  The selected product and avatar are sent by default. Add optional extra product or influencer image URLs below.
+                </p>
+              </div>
+              <UrlTextarea
+                label="Extra product URLs"
+                value={ugcProductsText}
+                onChange={setUgcProductsText}
+                placeholder="https://example.com/second-product.png"
+              />
+              <UrlTextarea
+                label="Extra influencer URLs"
+                value={ugcInfluencersText}
+                onChange={setUgcInfluencersText}
+                placeholder="https://example.com/second-influencer.png"
+              />
+            </div>
+          )}
+
+          {/* Mode-specific inputs */}
+          {enhancorMode !== "ugc" && enhancorMode !== "text-to-video" && (
+            <div className="space-y-3 rounded-xl border-2 border-coco-beige-dark bg-white p-4">
+              <div>
+                <p className="text-sm font-semibold text-coco-brown">Mode-specific References</p>
+                <p className="mt-1 text-xs text-coco-brown-medium/60">
+                  Add public URLs, one per line. The selected avatar/product are included automatically where useful.
+                </p>
+              </div>
+
+              {(enhancorMode === "multi_reference" || enhancorMode === "lipsyncing") && (
+                <UrlTextarea
+                  label="Extra images"
+                  value={referenceImagesText}
+                  onChange={setReferenceImagesText}
+                  placeholder="https://example.com/reference-1.png"
+                />
+              )}
+
+              {(enhancorMode === "multi_reference" ||
+                enhancorMode === "lipsyncing" ||
+                enhancorMode === "first_n_last_frames" ||
+                enhancorMode === "multi_frame") && (
+                <UrlTextarea
+                  label="Reference videos"
+                  value={referenceVideosText}
+                  onChange={setReferenceVideosText}
+                  placeholder="https://example.com/reference-motion.mp4"
+                />
+              )}
+
+              {(enhancorMode === "multi_reference" ||
+                enhancorMode === "lipsyncing" ||
+                enhancorMode === "first_n_last_frames" ||
+                enhancorMode === "multi_frame") && (
+                <UrlTextarea
+                  label="Reference audios"
+                  value={referenceAudiosText}
+                  onChange={setReferenceAudiosText}
+                  placeholder="https://example.com/voiceover.mp3"
+                />
+              )}
+
+              {enhancorMode === "first_n_last_frames" && (
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <UrlInput
+                    label="First frame image"
+                    value={firstFrameImage}
+                    onChange={setFirstFrameImage}
+                    placeholder="Defaults to selected avatar image"
+                  />
+                  <UrlInput
+                    label="Last frame image"
+                    value={lastFrameImage}
+                    onChange={setLastFrameImage}
+                    placeholder="https://example.com/end-frame.png"
+                  />
+                </div>
+              )}
+
+              {enhancorMode === "lipsyncing" && (
+                <UrlInput
+                  label="Dedicated lip-sync audio"
+                  value={lipsyncingAudio}
+                  onChange={setLipsyncingAudio}
+                  placeholder="Defaults to uploaded audio if available"
+                />
+              )}
+
+              {enhancorMode === "multi_frame" && (
+                <div className="space-y-3">
+                  <div className="flex items-center justify-between">
+                    <p className="text-xs font-semibold text-coco-brown">Multi-frame prompts</p>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={() =>
+                        setMultiFramePrompts((prev) => [
+                          ...prev,
+                          { prompt: "", duration: 5 },
+                        ])
+                      }
+                      className="h-8 text-xs"
+                    >
+                      Add frame
+                    </Button>
+                  </div>
+                  {multiFramePrompts.map((item, index) => (
+                    <div key={index} className="grid gap-2 rounded-lg bg-coco-beige/30 p-3 sm:grid-cols-[1fr_90px_auto]">
+                      <input
+                        value={item.prompt}
+                        onChange={(event) =>
+                          updateMultiFramePrompt(index, {
+                            ...item,
+                            prompt: event.target.value,
+                          })
+                        }
+                        placeholder={`Frame ${index + 1} prompt`}
+                        className="rounded-lg border border-coco-beige-dark bg-white px-3 py-2 text-xs text-coco-brown outline-none focus:border-coco-golden"
+                      />
+                      <input
+                        type="number"
+                        min={1}
+                        max={15}
+                        value={item.duration}
+                        onChange={(event) =>
+                          updateMultiFramePrompt(index, {
+                            ...item,
+                            duration: Number(event.target.value),
+                          })
+                        }
+                        className="rounded-lg border border-coco-beige-dark bg-white px-3 py-2 text-xs text-coco-brown outline-none focus:border-coco-golden"
+                      />
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setMultiFramePrompts((prev) =>
+                            prev.filter((_, frameIndex) => frameIndex !== index)
+                          )
+                        }
+                        className="rounded-lg px-2 text-xs font-medium text-red-500 hover:bg-red-50"
+                      >
+                        Remove
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
 
           {/* Aspect ratio */}
           <div className="space-y-2">
@@ -413,6 +805,106 @@ function CostRow({ label, value }: { label: string; value: number }) {
     <div className="flex items-center justify-between">
       <span className="text-[11px] text-coco-brown-medium/50">{label}</span>
       <span className="text-[11px] font-medium text-coco-brown-medium">${value.toFixed(4)}</span>
+    </div>
+  );
+}
+
+function parseUrlList(value: string): string[] {
+  return value
+    .split(/\r?\n|,/)
+    .map((item) => item.trim())
+    .filter(Boolean);
+}
+
+function getModeTitle(mode: EnhancorUiMode): string {
+  return ENHANCOR_MODES.find((item) => item.value === mode)?.title ?? mode;
+}
+
+function OptionGroup({
+  label,
+  children,
+}: {
+  label: string;
+  children: ReactNode;
+}) {
+  return (
+    <div className="space-y-2">
+      <label className="text-sm font-semibold text-coco-brown">{label}</label>
+      {children}
+    </div>
+  );
+}
+
+function PillButton({
+  isSelected,
+  onClick,
+  children,
+}: {
+  isSelected: boolean;
+  onClick: () => void;
+  children: ReactNode;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={cn(
+        "rounded-xl border-2 py-2 text-center text-xs font-bold transition-all",
+        isSelected
+          ? "border-coco-golden bg-coco-golden/10 text-coco-golden"
+          : "border-coco-beige-dark bg-white text-coco-brown-medium hover:border-coco-golden/40"
+      )}
+    >
+      {children}
+    </button>
+  );
+}
+
+function UrlTextarea({
+  label,
+  value,
+  onChange,
+  placeholder,
+}: {
+  label: string;
+  value: string;
+  onChange: (value: string) => void;
+  placeholder: string;
+}) {
+  return (
+    <div className="space-y-1.5">
+      <label className="text-xs font-semibold text-coco-brown">{label}</label>
+      <textarea
+        value={value}
+        onChange={(event) => onChange(event.target.value)}
+        placeholder={placeholder}
+        rows={3}
+        className="w-full rounded-lg border border-coco-beige-dark bg-white px-3 py-2 text-xs text-coco-brown outline-none transition-colors placeholder:text-coco-brown-medium/30 focus:border-coco-golden"
+      />
+    </div>
+  );
+}
+
+function UrlInput({
+  label,
+  value,
+  onChange,
+  placeholder,
+}: {
+  label: string;
+  value: string;
+  onChange: (value: string) => void;
+  placeholder: string;
+}) {
+  return (
+    <div className="space-y-1.5">
+      <label className="text-xs font-semibold text-coco-brown">{label}</label>
+      <input
+        value={value}
+        onChange={(event) => onChange(event.target.value)}
+        placeholder={placeholder}
+        className="w-full rounded-lg border border-coco-beige-dark bg-white px-3 py-2 text-xs text-coco-brown outline-none transition-colors placeholder:text-coco-brown-medium/30 focus:border-coco-golden"
+      />
     </div>
   );
 }

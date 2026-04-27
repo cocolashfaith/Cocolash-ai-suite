@@ -15,7 +15,7 @@ import { updateSession } from "@/lib/supabase/middleware";
 export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
-  const publicPaths = ["/login", "/api/auth", "/auth"];
+  const publicPaths = ["/login", "/api/auth", "/auth", "/api/seedance/webhook"];
   const isPublicPath = publicPaths.some((path) => pathname.startsWith(path));
 
   // Refresh Supabase session on every request (keeps tokens fresh)

@@ -9,7 +9,11 @@ import {
   buildScriptUserPrompt,
   type ScriptUserPromptParams,
 } from "@/lib/prompts/scripts/user";
-import type { CaptionVariation, Platform, ScriptResult } from "@/lib/types";
+import {
+  buildSeedanceScriptSystemPrompt,
+  buildSeedanceScriptUserPrompt,
+} from "@/lib/prompts/scripts/seedance";
+import type { CaptionVariation, ScriptResult } from "@/lib/types";
 import { PLATFORM_LIMITS } from "@/lib/constants/posting-times";
 
 const MODEL = "anthropic/claude-sonnet-4.6";
@@ -151,18 +155,20 @@ interface RawScriptOutput {
   style_match: number;
 }
 
-interface ParsedScriptResponse {
-  scripts: RawScriptOutput[];
-}
-
 /**
  * Generates 3 UGC video script variations using Claude via OpenRouter.
  */
 export async function generateVideoScript(
   params: ScriptUserPromptParams
 ): Promise<ScriptResult[]> {
-  const systemPrompt = buildScriptSystemPrompt();
-  const userPrompt = buildScriptUserPrompt(params);
+  const systemPrompt =
+    params.pipeline === "seedance"
+      ? buildSeedanceScriptSystemPrompt()
+      : buildScriptSystemPrompt();
+  const userPrompt =
+    params.pipeline === "seedance"
+      ? buildSeedanceScriptUserPrompt(params)
+      : buildScriptUserPrompt(params);
 
   const client = getOpenRouterClient();
   const completion = await openrouterRequest(() =>

@@ -47,10 +47,12 @@ export async function POST(request: NextRequest) {
       campaignFocus,
       customInstructions,
       excludeHooks,
+      pipeline = "heygen",
     } = body as {
       campaignType?: CampaignType;
       tone?: ScriptTone;
       duration?: number;
+      pipeline?: "heygen" | "seedance";
       productName?: string;
       keyFeatures?: string[];
       targetAudience?: string;
@@ -78,6 +80,22 @@ export async function POST(request: NextRequest) {
     if (!VALID_DURATIONS.includes(durationNum as VideoDuration)) {
       return NextResponse.json(
         { error: `duration must be one of: ${VALID_DURATIONS.join(", ")}` },
+        { status: 400 }
+      );
+    }
+
+    const promptInputErrors = validatePromptInputs({
+      productName,
+      keyFeatures,
+      targetAudience,
+      specialOffer,
+      campaignFocus,
+      customInstructions,
+      excludeHooks,
+    });
+    if (promptInputErrors.length > 0) {
+      return NextResponse.json(
+        { error: promptInputErrors.join("; ") },
         { status: 400 }
       );
     }
@@ -118,6 +136,7 @@ export async function POST(request: NextRequest) {
       campaignType,
       tone,
       duration: durationNum as VideoDuration,
+      pipeline,
       productName,
       keyFeatures,
       targetAudience,
@@ -169,10 +188,53 @@ export async function POST(request: NextRequest) {
     });
   } catch (error: unknown) {
     console.error("[scripts] Error:", error);
-    const message =
-      error instanceof Error ? error.message : "Script generation failed";
-    return NextResponse.json({ error: message }, { status: 500 });
+    return NextResponse.json(
+      { error: "Script generation failed. Please try again." },
+      { status: 500 }
+    );
   }
+}
+
+function validatePromptInputs(input: {
+  productName?: string;
+  keyFeatures?: string[];
+  targetAudience?: string;
+  specialOffer?: string;
+  campaignFocus?: string;
+  customInstructions?: string;
+  excludeHooks?: string[];
+}): string[] {
+  const errors: string[] = [];
+
+  if (input.productName && input.productName.length > 120) {
+    errors.push("productName must be 120 characters or less");
+  }
+  if (input.targetAudience && input.targetAudience.length > 300) {
+    errors.push("targetAudience must be 300 characters or less");
+  }
+  if (input.specialOffer && input.specialOffer.length > 300) {
+    errors.push("specialOffer must be 300 characters or less");
+  }
+  if (input.campaignFocus && input.campaignFocus.length > 500) {
+    errors.push("campaignFocus must be 500 characters or less");
+  }
+  if (input.customInstructions && input.customInstructions.length > 1200) {
+    errors.push("customInstructions must be 1200 characters or less");
+  }
+  if (input.keyFeatures && input.keyFeatures.length > 12) {
+    errors.push("keyFeatures cannot include more than 12 items");
+  }
+  if (input.keyFeatures?.some((feature) => feature.length > 160)) {
+    errors.push("each keyFeature must be 160 characters or less");
+  }
+  if (input.excludeHooks && input.excludeHooks.length > 20) {
+    errors.push("excludeHooks cannot include more than 20 items");
+  }
+  if (input.excludeHooks?.some((hook) => hook.length > 240)) {
+    errors.push("each excludeHook must be 240 characters or less");
+  }
+
+  return errors;
 }
 
 /**

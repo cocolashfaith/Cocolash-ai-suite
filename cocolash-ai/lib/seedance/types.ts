@@ -1,7 +1,8 @@
 /**
  * Seedance 2.0 API — Type Definitions
  *
- * Types for the Kie.ai Seedance 2.0 API used for UGC-style video generation.
+ * Types for the Enhancor.ai Seedance 2.0 Full Access API used for
+ * UGC-style video generation.
  * Covers task creation, status polling, and app-level video request types.
  */
 
@@ -9,34 +10,80 @@ import type { CampaignType, ScriptTone, VideoDuration } from "../types";
 
 // ── Seedance API Request Types ───────────────────────────────
 
-export type SeedanceAspectRatio = "9:16" | "1:1" | "16:9";
+export type SeedanceAspectRatio =
+  | "9:16"
+  | "1:1"
+  | "16:9"
+  | "4:3"
+  | "3:4"
+  | "21:9";
 export type SeedanceResolution = "480p" | "720p";
 export type SeedanceDuration = "5" | "8" | "10" | "15";
+export type SeedanceGenerationType = "text-to-video" | "image-to-video";
+export type SeedanceMode =
+  | "ugc"
+  | "multi_reference"
+  | "multi_frame"
+  | "lipsyncing"
+  | "first_n_last_frames";
+
+export interface SeedanceMultiFramePrompt {
+  prompt: string;
+  duration: number;
+}
 
 export interface SeedanceInput {
+  type?: SeedanceGenerationType;
+  mode?: SeedanceMode;
   prompt: string;
   first_frame_url?: string;
   last_frame_url?: string;
   reference_image_urls?: string[];
   reference_video_urls?: string[];
   reference_audio_urls?: string[];
+  products?: string[];
+  influencers?: string[];
+  images?: string[];
+  videos?: string[];
+  audios?: string[];
+  first_frame_image?: string;
+  last_frame_image?: string;
+  lipsyncing_audio?: string;
+  multi_frame_prompts?: SeedanceMultiFramePrompt[];
   aspect_ratio: SeedanceAspectRatio;
   resolution: SeedanceResolution;
   duration: SeedanceDuration;
+  full_access?: boolean;
   fixed_lens?: boolean;
   generate_audio?: boolean;
 }
 
 export interface SeedanceCreateTaskRequest {
-  model: "bytedance/seedance-2";
-  callBackUrl?: string;
-  input: SeedanceInput;
+  type: SeedanceGenerationType;
+  mode?: SeedanceMode;
+  prompt?: string;
+  duration?: SeedanceDuration;
+  resolution: SeedanceResolution;
+  aspect_ratio: SeedanceAspectRatio;
+  webhook_url: string;
+  full_access?: boolean;
+  products?: string[];
+  influencers?: string[];
+  images?: string[];
+  videos?: string[];
+  audios?: string[];
+  first_frame_image?: string;
+  last_frame_image?: string;
+  lipsyncing_audio?: string;
+  multi_frame_prompts?: SeedanceMultiFramePrompt[];
 }
 
 // ── Seedance API Response Types ──────────────────────────────
 
 export type SeedanceTaskStatus =
   | "PENDING"
+  | "IN_QUEUE"
+  | "IN_PROGRESS"
   | "PROCESSING"
   | "COMPLETED"
   | "FAILED";
@@ -46,7 +93,28 @@ export interface SeedanceTaskResponse {
   status: SeedanceTaskStatus;
   output?: {
     video_url?: string;
+    thumbnail_url?: string;
   };
+  error?: string;
+}
+
+export interface SeedanceQueueResponse {
+  requestId?: string;
+  request_id?: string;
+  id?: string;
+  data?: {
+    requestId?: string;
+    request_id?: string;
+    id?: string;
+  };
+}
+
+export interface SeedanceWebhookPayload {
+  request_id?: string;
+  requestId?: string;
+  status?: SeedanceTaskStatus | string;
+  result?: string;
+  thumbnail?: string;
   error?: string;
 }
 
@@ -64,6 +132,20 @@ export interface SeedanceVideoRequest {
   audioMode: SeedanceAudioMode;
   audioUrl?: string;
   aspectRatio: SeedanceAspectRatio;
+  seedanceDuration?: SeedanceDuration;
+  resolution?: SeedanceResolution;
+  generationType?: SeedanceGenerationType;
+  seedanceMode?: SeedanceMode;
+  fullAccess?: boolean;
+  products?: string[];
+  influencers?: string[];
+  images?: string[];
+  videos?: string[];
+  audios?: string[];
+  firstFrameImage?: string;
+  lastFrameImage?: string;
+  lipsyncingAudio?: string;
+  multiFramePrompts?: SeedanceMultiFramePrompt[];
   fixedLens: boolean;
   generateAudio: boolean;
 }

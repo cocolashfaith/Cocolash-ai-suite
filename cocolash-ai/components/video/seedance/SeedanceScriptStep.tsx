@@ -114,6 +114,7 @@ export function SeedanceScriptStep({ onScriptSelected }: SeedanceScriptStepProps
           campaignType,
           tone,
           duration,
+          pipeline: "seedance",
           ...(excludeHooks ? { excludeHooks } : {}),
         }),
       });

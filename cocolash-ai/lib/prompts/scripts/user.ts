@@ -15,6 +15,7 @@ export interface ScriptUserPromptParams {
   campaignType: CampaignType;
   tone: ScriptTone;
   duration: VideoDuration;
+  pipeline?: "heygen" | "seedance";
   productName?: string;
   keyFeatures?: string[];
   targetAudience?: string;

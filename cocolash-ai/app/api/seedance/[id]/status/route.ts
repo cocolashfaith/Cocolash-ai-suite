@@ -1,10 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/server";
 import { querySeedanceTask } from "@/lib/seedance/client";
+import { completeSeedanceVideo } from "@/lib/seedance/completion";
 import { SeedanceError } from "@/lib/seedance/types";
-import { processVideo } from "@/lib/video/processor";
-import { SEEDANCE_COSTS } from "@/lib/seedance/types";
-import { recordActualCost } from "@/lib/costs/tracker";
 import type { GeneratedVideo, VideoStatusResponse } from "@/lib/types";
 
 /**
@@ -14,7 +12,7 @@ import type { GeneratedVideo, VideoStatusResponse } from "@/lib/types";
  *
  * Flow:
  * 1. Fetch video record from `generated_videos` (pipeline = 'seedance')
- * 2. If status is "processing" or "pending", poll Kie.ai for an update
+ * 2. If status is "processing" or "pending", poll Enhancor for an update
  * 3. On COMPLETED: store raw video URL, run Cloudinary post-processing
  * 4. On FAILED: store error and mark as failed
  * 5. Return VideoStatusResponse (same shape as HeyGen for UI consistency)
@@ -66,16 +64,21 @@ export async function GET(
       );
     }
 
-    // Poll Kie.ai for status update
+    if (typedVideo.heygen_status === "captioning") {
+      return NextResponse.json(buildStatusResponse(typedVideo));
+    }
+
+    // Poll Enhancor for status update. The webhook path can also complete this
+    // record, so polling errors are non-terminal unless Enhancor says FAILED.
     let taskStatus;
     try {
       taskStatus = await querySeedanceTask(typedVideo.seedance_task_id);
     } catch (error) {
-      console.error("[seedance/status] Kie.ai poll error:", error);
+      console.error("[seedance/status] Enhancor poll error:", error);
 
       if (error instanceof SeedanceError) {
         return NextResponse.json(
-          buildStatusResponse(typedVideo, `Kie.ai API error: ${error.message}`)
+          buildStatusResponse(typedVideo, "Failed to check video status")
         );
       }
 
@@ -86,69 +89,18 @@ export async function GET(
 
     if (taskStatus.status === "COMPLETED") {
       const rawVideoUrl = taskStatus.output?.video_url ?? null;
-
-      const updateData: Record<string, unknown> = {
-        heygen_status: "completed",
-        raw_video_url: rawVideoUrl,
-        completed_at: new Date().toISOString(),
-      };
-
-      // Run Cloudinary post-processing
-      if (rawVideoUrl) {
-        try {
-          let scriptText: string | undefined;
-          if (typedVideo.script_id) {
-            const { data: script } = await supabase
-              .from("video_scripts")
-              .select("script_text")
-              .eq("id", typedVideo.script_id)
-              .single();
-            scriptText = script?.script_text ?? undefined;
-          }
-
-          const processed = await processVideo({
-            rawVideoUrl,
-            title: "CocoLash Seedance Video",
-            scriptText,
-            durationSeconds: typedVideo.duration_seconds ?? undefined,
-            addWatermark: false,
-            addCaptions: false,
-          });
-
-          updateData.final_video_url = processed.videoUrl;
-          updateData.thumbnail_url = processed.thumbnailUrl;
-        } catch (processError) {
-          console.error("[seedance/status] Post-processing error:", processError);
-          updateData.final_video_url = rawVideoUrl;
-          updateData.thumbnail_url = null;
-        }
+      if (!rawVideoUrl) {
+        return NextResponse.json(
+          buildStatusResponse(typedVideo, "Enhancor completed without a video URL")
+        );
       }
 
-      const { error: updateError } = await supabase
-        .from("generated_videos")
-        .update(updateData)
-        .eq("id", id);
-
-      if (updateError) {
-        console.error("[seedance/status] DB update error:", updateError);
-      }
-
-      // Record cost
-      const durationSec = typedVideo.duration_seconds ?? 15;
-      const totalCost =
-        durationSec * SEEDANCE_COSTS.COST_PER_SECOND_720P_NO_VIDEO +
-        SEEDANCE_COSTS.POST_PROCESSING;
-      await recordActualCost(id, totalCost);
-
-      const updatedVideo: GeneratedVideo = {
-        ...typedVideo,
-        heygen_status: "completed",
-        raw_video_url: (updateData.raw_video_url as string) ?? null,
-        final_video_url: (updateData.final_video_url as string) ?? null,
-        thumbnail_url: (updateData.thumbnail_url as string) ?? null,
-        completed_at: updateData.completed_at as string,
-      };
-
+      const updatedVideo = await completeSeedanceVideo({
+        supabase,
+        video: typedVideo,
+        rawVideoUrl,
+        thumbnailUrl: taskStatus.output?.thumbnail_url ?? null,
+      });
       return NextResponse.json(buildStatusResponse(updatedVideo));
     }
 
@@ -171,9 +123,9 @@ export async function GET(
       );
     }
 
-    // PENDING or PROCESSING — update status if changed
+    // PENDING / IN_QUEUE / IN_PROGRESS / PROCESSING — update status if changed
     const mappedStatus =
-      taskStatus.status === "PROCESSING" ? "processing" : "pending";
+      taskStatus.status === "PENDING" ? "pending" : "processing";
 
     if (mappedStatus !== typedVideo.heygen_status) {
       await supabase
@@ -210,6 +162,8 @@ function buildStatusResponse(
       video.final_video_url ?? video.raw_video_url ?? undefined;
     response.thumbnailUrl = video.thumbnail_url ?? undefined;
     response.progress = 100;
+  } else if (video.heygen_status === "captioning") {
+    response.progress = 85;
   } else if (video.heygen_status === "processing") {
     response.progress = 50;
   } else if (video.heygen_status === "pending") {
