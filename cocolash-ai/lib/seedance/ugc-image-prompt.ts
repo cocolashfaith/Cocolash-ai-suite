@@ -156,7 +156,6 @@ const IMPERFECTIONS = [
   "Slight shadow under chin from phone angle",
   "Minimal natural redness on nose and cheeks",
   "A small blemish near jawline",
-  "Phone notification bar faintly visible at very top edge",
 ];
 
 // ── Negative Prompt (constant) ───────────────────────────────
@@ -165,17 +164,15 @@ const NEGATIVE_PROMPT =
   "CGI, 3D render, studio lighting, professional photography, DSLR, ring light reflection, " +
   "beauty filter, retouched skin, perfect smooth skin, symmetrical face, model pose, " +
   "photoshoot aesthetic, glamour shot, heavy makeup, HDR, overprocessed, text, watermark, " +
-  "logo, hyper-glamorous, stock photo, bokeh circles, lens flare, vignette";
+  "logo, hyper-glamorous, stock photo, bokeh circles, lens flare, vignette, phone screen, " +
+  "iPhone screenshot, iOS interface, status bar, notification bar, app header, black bars, " +
+  "file name text, share icon, menu icon, browser chrome, image viewer UI, phone frame";
 
 // ── Helper: Pick Random Subset ───────────────────────────────
 
 function pickRandom<T>(arr: T[], count: number): T[] {
   const shuffled = [...arr].sort(() => Math.random() - 0.5);
   return shuffled.slice(0, count);
-}
-
-function randomDigits(length: number): string {
-  return Array.from({ length }, () => Math.floor(Math.random() * 10)).join("");
 }
 
 // ── Main Prompt Builder ──────────────────────────────────────
@@ -213,11 +210,8 @@ export function buildUGCImagePrompt(params: UGCImageParams): {
   const selectedImperfections = pickRandom(IMPERFECTIONS, imperfectionCount);
   const imperfectionText = selectedImperfections.join(". ") + ".";
 
-  // iPhone filename trick
-  const fakeFilename = `IMG_${randomDigits(4)}.HEIC`;
-
   const prompt = [
-    `Raw, unedited front-facing smartphone camera photo of a ${ageRange}-year-old ${ethnicity} woman with ${skinTone.toLowerCase()} skin and ${hairStyle.toLowerCase()} hair.`,
+    `Raw, unedited front-facing smartphone camera photo of a ${ageRange}-year-old ${ethnicity} woman with ${skinTone.toLowerCase()} skin and ${hairStyle.toLowerCase()} hair. This is the actual camera photo itself, not a screenshot, not an iPhone Photos app viewer, and not a phone screen.`,
     "",
     `She is in ${sceneData.description}. ${sceneData.lighting}.`,
     "",
@@ -226,9 +220,7 @@ export function buildUGCImagePrompt(params: UGCImageParams): {
     productDetail.trimEnd(),
     lashDetail,
     "",
-    `Authentic iPhone selfie aesthetic, candid and slightly off-center framing, camera held at eye level. Visible natural skin texture including pores, subtle under-eye texture, and flyaway hairs. Slight natural facial asymmetry. Muted, realistic skin tones with no color grading. ${imperfectionText}`,
-    "",
-    fakeFilename,
+    `Authentic smartphone selfie aesthetic, candid and slightly off-center framing, camera held at eye level. The final image must fill the full frame edge-to-edge with only the real scene and person visible. No iPhone UI, no status bar, no black top/bottom bars, no file name, no buttons, no icons, no app chrome. Visible natural skin texture including pores, subtle under-eye texture, and flyaway hairs. Slight natural facial asymmetry. Muted, realistic skin tones with no color grading. ${imperfectionText}`,
   ]
     .filter((line) => line !== undefined)
     .join("\n")

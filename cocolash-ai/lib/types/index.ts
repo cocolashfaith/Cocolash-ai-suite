@@ -555,6 +555,7 @@ export type VideoBackgroundType = "solid" | "gradient" | "image";
 export interface VideoScript {
   id: string;
   title: string | null;
+  pipeline: VideoPipeline;
   campaign_type: CampaignType;
   tone: ScriptTone;
   duration_seconds: number;

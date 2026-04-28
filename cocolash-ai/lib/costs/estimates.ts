@@ -24,6 +24,7 @@ export const API_COSTS = {
   },
   seedance: {
     videoGeneration720pPerSecond: 0.205,
+    videoGeneration1080pPerSecond: 0.205,
   },
   elevenlabs: {
     ttsPerVideo30s: 0.20,
@@ -104,11 +105,12 @@ export function calculateVideoCost(params: {
 
 export function calculateSeedanceCost(params: {
   duration: number;
+  resolution?: "480p" | "720p" | "1080p";
   includeScript: boolean;
   includeImageGen: boolean;
   includePostProcessing: boolean;
 }): VideoCostEstimate {
-  const { duration, includeScript, includeImageGen, includePostProcessing } =
+  const { duration, resolution = "720p", includeScript, includeImageGen, includePostProcessing } =
     params;
 
   const scriptGeneration = includeScript
@@ -119,8 +121,11 @@ export function calculateSeedanceCost(params: {
     ? API_COSTS.gemini.imageGeneration
     : 0;
 
-  const videoGeneration =
-    duration * API_COSTS.seedance.videoGeneration720pPerSecond;
+  const videoCostPerSecond =
+    resolution === "1080p"
+      ? API_COSTS.seedance.videoGeneration1080pPerSecond
+      : API_COSTS.seedance.videoGeneration720pPerSecond;
+  const videoGeneration = duration * videoCostPerSecond;
 
   let postProcessing = 0;
   if (includePostProcessing) {

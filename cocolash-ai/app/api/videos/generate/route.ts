@@ -79,6 +79,12 @@ export async function POST(request: NextRequest) {
     const clientScriptText = typeof (body as Record<string, unknown>).scriptText === "string"
       ? ((body as Record<string, unknown>).scriptText as string).trim()
       : null;
+    if (clientScriptText && clientScriptText.length > 2500) {
+      return NextResponse.json(
+        { error: "scriptText must be 2500 characters or less" },
+        { status: 400 }
+      );
+    }
 
     const supabase = await createAdminClient();
 
@@ -91,6 +97,7 @@ export async function POST(request: NextRequest) {
         .from("video_scripts")
         .select("script_text")
         .eq("id", scriptId)
+        .eq("pipeline", "heygen")
         .single();
 
       if (scriptError || !existingScript) {
@@ -108,10 +115,12 @@ export async function POST(request: NextRequest) {
         .from("video_scripts")
         .insert({
           title: `${campaignType} — ${tone} — ${duration}s`,
+          pipeline: "heygen",
           campaign_type: campaignType,
           tone,
           duration_seconds: duration,
           script_text: scriptText,
+          hook_text: scriptText.slice(0, 120),
           is_template: false,
         })
         .select("id")
@@ -132,6 +141,7 @@ export async function POST(request: NextRequest) {
         .from("video_scripts")
         .insert({
           title: `Auto — ${campaignType} — ${tone} — ${duration}s`,
+          pipeline: "heygen",
           campaign_type: campaignType,
           tone,
           duration_seconds: duration,

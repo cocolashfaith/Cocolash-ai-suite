@@ -17,7 +17,7 @@ export type SeedanceAspectRatio =
   | "4:3"
   | "3:4"
   | "21:9";
-export type SeedanceResolution = "480p" | "720p";
+export type SeedanceResolution = "480p" | "720p" | "1080p";
 export type SeedanceDuration = "5" | "8" | "10" | "15";
 export type SeedanceGenerationType = "text-to-video" | "image-to-video";
 export type SeedanceMode =
@@ -54,6 +54,7 @@ export interface SeedanceInput {
   resolution: SeedanceResolution;
   duration: SeedanceDuration;
   full_access?: boolean;
+  fast_mode?: boolean;
   fixed_lens?: boolean;
   generate_audio?: boolean;
 }
@@ -67,6 +68,7 @@ export interface SeedanceCreateTaskRequest {
   aspect_ratio: SeedanceAspectRatio;
   webhook_url: string;
   full_access?: boolean;
+  fast_mode?: boolean;
   products?: string[];
   influencers?: string[];
   images?: string[];
@@ -137,6 +139,7 @@ export interface SeedanceVideoRequest {
   generationType?: SeedanceGenerationType;
   seedanceMode?: SeedanceMode;
   fullAccess?: boolean;
+  fastMode?: boolean;
   products?: string[];
   influencers?: string[];
   images?: string[];
@@ -154,6 +157,7 @@ export interface SeedanceVideoRequest {
 
 export const SEEDANCE_COSTS = {
   COST_PER_SECOND_720P_NO_VIDEO: 0.205,
+  COST_PER_SECOND_1080P_NO_VIDEO: 0.205,
   SCRIPT_GENERATION: 0.016,
   IMAGE_GENERATION: 0.04,
   POST_PROCESSING: 0.015,

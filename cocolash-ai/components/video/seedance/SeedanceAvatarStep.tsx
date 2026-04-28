@@ -21,6 +21,7 @@ import {
   Play,
   Pause,
   X,
+  RefreshCw,
 } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { uploadProductImage } from "@/lib/supabase/storage";
@@ -357,6 +358,7 @@ export function SeedanceAvatarStep({
 
             <div className="flex gap-3">
               <Button
+                type="button"
                 onClick={handleGenerateAvatar}
                 disabled={isGeneratingAvatar}
                 className="flex-1 gap-2 bg-coco-brown py-5 text-sm font-semibold text-white shadow-md hover:bg-coco-brown-light disabled:opacity-50"
@@ -364,6 +366,8 @@ export function SeedanceAvatarStep({
               >
                 {isGeneratingAvatar ? (
                   <><Loader2 className="h-4 w-4 animate-spin" />Generating...</>
+                ) : generatedPersonUrl ? (
+                  <><RefreshCw className="h-4 w-4" />Regenerate UGC Avatar</>
                 ) : (
                   <><Sparkles className="h-4 w-4" />Generate UGC Avatar</>
                 )}
@@ -375,7 +379,30 @@ export function SeedanceAvatarStep({
             </div>
 
             {generatedPersonUrl && (
-              <div className="overflow-hidden rounded-xl border-2 border-coco-golden/30">
+              <div className="overflow-hidden rounded-xl border-2 border-coco-golden/30 bg-white">
+                <div className="flex items-center justify-between border-b border-coco-beige px-3 py-2">
+                  <div>
+                    <p className="text-xs font-semibold text-coco-brown">Generated avatar</p>
+                    <p className="text-[10px] text-coco-brown-medium/50">
+                      Not quite right? Generate a new variation with the same settings.
+                    </p>
+                  </div>
+                  <Button
+                    type="button"
+                    onClick={handleGenerateAvatar}
+                    disabled={isGeneratingAvatar}
+                    variant="outline"
+                    size="sm"
+                    className="gap-1.5 text-xs"
+                  >
+                    {isGeneratingAvatar ? (
+                      <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                    ) : (
+                      <RefreshCw className="h-3.5 w-3.5" />
+                    )}
+                    Regenerate
+                  </Button>
+                </div>
                 <div className="aspect-[9/16] max-h-80 bg-coco-beige-light">
                   <img src={generatedPersonUrl} alt="UGC Avatar" className="h-full w-full object-cover" />
                 </div>

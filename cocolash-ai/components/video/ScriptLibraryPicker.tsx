@@ -3,15 +3,17 @@
 import { useState, useEffect } from "react";
 import { cn } from "@/lib/utils";
 import { Loader2, Clock, Library } from "lucide-react";
-import type { VideoScript, CampaignType } from "@/lib/types";
+import type { VideoScript, CampaignType, VideoPipeline } from "@/lib/types";
 
 interface ScriptLibraryPickerProps {
   campaignType?: CampaignType;
+  pipeline: VideoPipeline;
   onSelect: (script: VideoScript) => void;
 }
 
 export function ScriptLibraryPicker({
   campaignType,
+  pipeline,
   onSelect,
 }: ScriptLibraryPickerProps) {
   const [scripts, setScripts] = useState<VideoScript[]>([]);
@@ -22,7 +24,7 @@ export function ScriptLibraryPicker({
     const fetchScripts = async () => {
       setLoading(true);
       try {
-        const params = new URLSearchParams({ limit: "20" });
+        const params = new URLSearchParams({ limit: "20", pipeline });
         if (campaignType) params.set("campaignType", campaignType);
         const res = await fetch(`/api/scripts?${params}`);
         const data = await res.json();
@@ -36,7 +38,7 @@ export function ScriptLibraryPicker({
       }
     };
     fetchScripts();
-  }, [campaignType]);
+  }, [campaignType, pipeline]);
 
   if (loading) {
     return (

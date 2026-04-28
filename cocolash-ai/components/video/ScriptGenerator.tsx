@@ -16,6 +16,8 @@ import {
   RefreshCw,
   Library,
   FileEdit,
+  Save,
+  Check,
 } from "lucide-react";
 import { ScriptVariations } from "./ScriptVariations";
 import { ScriptLibraryPicker } from "./ScriptLibraryPicker";
@@ -112,15 +114,20 @@ export function ScriptGenerator({ onScriptSelected }: ScriptGeneratorProps) {
   const [isGenerating, setIsGenerating] = useState(false);
   const [scripts, setScripts] = useState<ScriptResult[]>([]);
   const [scriptIds, setScriptIds] = useState<string[]>([]);
+  const [savedScriptTexts, setSavedScriptTexts] = useState<Record<number, string>>({});
   const [selectedIndex, setSelectedIndex] = useState<number | null>(null);
   const [isEditing, setIsEditing] = useState(false);
   const [editedText, setEditedText] = useState("");
+  const [savingIndex, setSavingIndex] = useState<number | null>(null);
   const [campaignFocus, setCampaignFocus] = useState("");
   const [customInstructions, setCustomInstructions] = useState("");
   const [showAdvanced, setShowAdvanced] = useState(false);
 
   // Manual mode state
   const [manualText, setManualText] = useState("");
+  const [manualSavedId, setManualSavedId] = useState<string | null>(null);
+  const [manualSavedText, setManualSavedText] = useState("");
+  const [isSavingManual, setIsSavingManual] = useState(false);
 
   // Library mode state
   const [libraryScript, setLibraryScript] = useState<VideoScript | null>(null);
@@ -153,6 +160,7 @@ export function ScriptGenerator({ onScriptSelected }: ScriptGeneratorProps) {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
+          pipeline: "heygen",
           campaignType,
           tone,
           duration,
@@ -170,6 +178,7 @@ export function ScriptGenerator({ onScriptSelected }: ScriptGeneratorProps) {
 
       setScripts(data.scripts);
       setScriptIds(data.savedIds ?? []);
+      setSavedScriptTexts({});
       toast.success("3 script variations generated!");
     } catch {
       toast.error("Network error — please try again.");
@@ -187,13 +196,63 @@ export function ScriptGenerator({ onScriptSelected }: ScriptGeneratorProps) {
   const handleUseScript = () => {
     if (selectedIndex === null) return;
     const script = scripts[selectedIndex];
-    const finalText = isEditing ? editedText : undefined;
-    const scriptId = !isEditing ? scriptIds[selectedIndex] : undefined;
+    const currentText = (isEditing ? editedText : script.full_script).trim();
+    const scriptId =
+      scriptIds[selectedIndex] && savedScriptTexts[selectedIndex] === currentText
+        ? scriptIds[selectedIndex]
+        : undefined;
+    const finalText =
+      (scriptId || currentText === script.full_script.trim()) ? undefined : currentText;
     onScriptSelected(
       script,
       { campaignType, tone, duration, scriptId },
       finalText
     );
+  };
+
+  const handleSaveSelectedScript = async () => {
+    if (selectedIndex === null) return;
+    const script = scripts[selectedIndex];
+    const currentText = (isEditing ? editedText : script.full_script).trim();
+    if (!currentText) {
+      toast.error("Please add script text before saving.");
+      return;
+    }
+
+    setSavingIndex(selectedIndex);
+    try {
+      const res = await fetch("/api/scripts", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "save",
+          pipeline: "heygen",
+          campaignType,
+          tone,
+          duration,
+          scriptText: currentText,
+          hookText: script.hook,
+          ctaText: script.cta,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        toast.error(data.error || "Failed to save script");
+        return;
+      }
+
+      setScriptIds((prev) => {
+        const next = [...prev];
+        next[selectedIndex] = data.savedId;
+        return next;
+      });
+      setSavedScriptTexts((prev) => ({ ...prev, [selectedIndex]: currentText }));
+      toast.success("Script saved to agent library");
+    } catch {
+      toast.error("Network error — please try again.");
+    } finally {
+      setSavingIndex(null);
+    }
   };
 
   const handleLibrarySelect = (vs: VideoScript) => {
@@ -248,7 +307,48 @@ export function ScriptGenerator({ onScriptSelected }: ScriptGeneratorProps) {
       estimated_duration: duration,
       style_match: 1,
     };
-    onScriptSelected(script, { campaignType, tone, duration }, trimmed);
+    const scriptId = manualSavedId && manualSavedText === trimmed ? manualSavedId : undefined;
+    onScriptSelected(script, { campaignType, tone, duration, scriptId }, scriptId ? undefined : trimmed);
+  };
+
+  const handleSaveManualScript = async () => {
+    const trimmed = manualText.trim();
+    if (!trimmed) {
+      toast.error("Please write or paste a script first.");
+      return;
+    }
+
+    const sentences = trimmed.split(/[.!?]+/).filter((s) => s.trim().length > 5);
+    setIsSavingManual(true);
+    try {
+      const res = await fetch("/api/scripts", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "save",
+          pipeline: "heygen",
+          campaignType,
+          tone,
+          duration,
+          scriptText: trimmed,
+          hookText: sentences[0]?.trim() ?? trimmed.slice(0, 120),
+          ctaText: sentences.length > 1 ? sentences[sentences.length - 1]?.trim() : undefined,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        toast.error(data.error || "Failed to save script");
+        return;
+      }
+
+      setManualSavedId(data.savedId);
+      setManualSavedText(trimmed);
+      toast.success("Script saved to agent library");
+    } catch {
+      toast.error("Network error — please try again.");
+    } finally {
+      setIsSavingManual(false);
+    }
   };
 
   return (
@@ -487,13 +587,41 @@ export function ScriptGenerator({ onScriptSelected }: ScriptGeneratorProps) {
                 </div>
               )}
 
-              <Button
-                onClick={handleUseScript}
-                className="w-full gap-2 bg-coco-golden py-5 text-sm font-semibold text-white shadow-lg transition-all hover:bg-coco-golden-dark hover:shadow-xl"
-                size="lg"
-              >
-                Use This Script →
-              </Button>
+              <div className="grid gap-2 sm:grid-cols-2">
+                <Button
+                  onClick={handleSaveSelectedScript}
+                  disabled={savingIndex === selectedIndex}
+                  variant="outline"
+                  className="gap-2 border-coco-golden/40 bg-white py-5 text-sm font-semibold text-coco-brown hover:bg-coco-golden/10"
+                  size="lg"
+                >
+                  {savingIndex === selectedIndex ? (
+                    <>
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                      Saving...
+                    </>
+                  ) : scriptIds[selectedIndex] &&
+                    savedScriptTexts[selectedIndex] ===
+                      (isEditing ? editedText.trim() : scripts[selectedIndex].full_script.trim()) ? (
+                    <>
+                      <Check className="h-4 w-4" />
+                      Saved
+                    </>
+                  ) : (
+                    <>
+                      <Save className="h-4 w-4" />
+                      Save Script
+                    </>
+                  )}
+                </Button>
+                <Button
+                  onClick={handleUseScript}
+                  className="gap-2 bg-coco-golden py-5 text-sm font-semibold text-white shadow-lg transition-all hover:bg-coco-golden-dark hover:shadow-xl"
+                  size="lg"
+                >
+                  Use This Script →
+                </Button>
+              </div>
             </div>
           )}
         </>
@@ -504,6 +632,7 @@ export function ScriptGenerator({ onScriptSelected }: ScriptGeneratorProps) {
         <>
           <ScriptLibraryPicker
             campaignType={campaignType}
+            pipeline="heygen"
             onSelect={handleLibrarySelect}
           />
 
@@ -600,14 +729,40 @@ export function ScriptGenerator({ onScriptSelected }: ScriptGeneratorProps) {
             </p>
           </div>
 
-          <Button
-            onClick={handleUseManualScript}
-            disabled={!manualText.trim()}
-            className="w-full gap-2 bg-coco-golden py-5 text-sm font-semibold text-white shadow-lg transition-all hover:bg-coco-golden-dark hover:shadow-xl disabled:opacity-50"
-            size="lg"
-          >
-            Use This Script →
-          </Button>
+          <div className="grid gap-2 sm:grid-cols-2">
+            <Button
+              onClick={handleSaveManualScript}
+              disabled={!manualText.trim() || isSavingManual}
+              variant="outline"
+              className="gap-2 border-coco-golden/40 bg-white py-5 text-sm font-semibold text-coco-brown hover:bg-coco-golden/10 disabled:opacity-50"
+              size="lg"
+            >
+              {isSavingManual ? (
+                <>
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                  Saving...
+                </>
+              ) : manualSavedId && manualSavedText === manualText.trim() ? (
+                <>
+                  <Check className="h-4 w-4" />
+                  Saved
+                </>
+              ) : (
+                <>
+                  <Save className="h-4 w-4" />
+                  Save Script
+                </>
+              )}
+            </Button>
+            <Button
+              onClick={handleUseManualScript}
+              disabled={!manualText.trim()}
+              className="gap-2 bg-coco-golden py-5 text-sm font-semibold text-white shadow-lg transition-all hover:bg-coco-golden-dark hover:shadow-xl disabled:opacity-50"
+              size="lg"
+            >
+              Use This Script →
+            </Button>
+          </div>
         </>
       )}
     </div>

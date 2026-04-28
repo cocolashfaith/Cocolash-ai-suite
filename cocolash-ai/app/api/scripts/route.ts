@@ -5,6 +5,7 @@ import { CAMPAIGN_CONCEPT_POOLS } from "@/lib/prompts/scripts/templates";
 import type {
   CampaignType,
   ScriptTone,
+  VideoPipeline,
   VideoDuration,
   VideoScript,
 } from "@/lib/types";
@@ -24,14 +25,13 @@ const VALID_CAMPAIGN_TYPES: CampaignType[] = [
 
 const VALID_TONES: ScriptTone[] = ["casual", "energetic", "calm", "professional"];
 const VALID_DURATIONS: VideoDuration[] = [15, 30, 60, 90];
+const VALID_PIPELINES: VideoPipeline[] = ["heygen", "seedance"];
 
 /**
  * POST /api/scripts
  *
- * Generates 3 UGC video script variations using Claude via OpenRouter.
- * Always persists scripts to the database. When no campaignFocus is
- * provided, auto-selects a concept from CAMPAIGN_CONCEPT_POOLS and
- * fetches recent hooks to avoid repetition.
+ * Generates 3 UGC video script variations or saves a selected script.
+ * Generated variations are not persisted until the user explicitly saves one.
  */
 export async function POST(request: NextRequest) {
   try {
@@ -48,11 +48,21 @@ export async function POST(request: NextRequest) {
       customInstructions,
       excludeHooks,
       pipeline = "heygen",
+      action = "generate",
+      scriptText,
+      hookText,
+      ctaText,
+      title,
     } = body as {
       campaignType?: CampaignType;
       tone?: ScriptTone;
       duration?: number;
-      pipeline?: "heygen" | "seedance";
+      pipeline?: VideoPipeline;
+      action?: "generate" | "save";
+      scriptText?: string;
+      hookText?: string;
+      ctaText?: string;
+      title?: string;
       productName?: string;
       keyFeatures?: string[];
       targetAudience?: string;
@@ -76,10 +86,78 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    if (!VALID_PIPELINES.includes(pipeline)) {
+      return NextResponse.json(
+        { error: `pipeline must be one of: ${VALID_PIPELINES.join(", ")}` },
+        { status: 400 }
+      );
+    }
+
     const durationNum = Number(duration);
     if (!VALID_DURATIONS.includes(durationNum as VideoDuration)) {
       return NextResponse.json(
         { error: `duration must be one of: ${VALID_DURATIONS.join(", ")}` },
+        { status: 400 }
+      );
+    }
+
+    if (action === "save") {
+      const trimmedScript = scriptText?.trim();
+      if (!trimmedScript) {
+        return NextResponse.json(
+          { error: "scriptText is required" },
+          { status: 400 }
+        );
+      }
+      if (trimmedScript.length > 2500) {
+        return NextResponse.json(
+          { error: "scriptText must be 2500 characters or less" },
+          { status: 400 }
+        );
+      }
+
+      const supabase = await createAdminClient();
+      const dateStr = new Date().toLocaleDateString("en-US", {
+        month: "short",
+        day: "numeric",
+      });
+      const templateLabel = formatCampaignLabel(campaignType);
+      const defaultTitle = `${pipeline === "seedance" ? "Seedance" : "Agent"} — ${templateLabel} — ${tone} — ${durationNum}s — ${dateStr}`;
+
+      const { data, error } = await supabase
+        .from("video_scripts")
+        .insert({
+          title: title?.trim().slice(0, 200) || defaultTitle,
+          pipeline,
+          campaign_type: campaignType,
+          tone,
+          duration_seconds: durationNum,
+          script_text: trimmedScript,
+          hook_text: hookText?.trim().slice(0, 240) || trimmedScript.slice(0, 120),
+          cta_text: ctaText?.trim().slice(0, 240) || null,
+          is_template: false,
+        })
+        .select("*")
+        .single();
+
+      if (error || !data) {
+        console.error("[scripts] Save error:", error);
+        return NextResponse.json(
+          { error: "Failed to save script" },
+          { status: 500 }
+        );
+      }
+
+      return NextResponse.json({
+        success: true,
+        script: data as VideoScript,
+        savedId: data.id,
+      });
+    }
+
+    if (action !== "generate") {
+      return NextResponse.json(
+        { error: "action must be generate or save" },
         { status: 400 }
       );
     }
@@ -118,6 +196,7 @@ export async function POST(request: NextRequest) {
         .from("video_scripts")
         .select("hook_text")
         .eq("campaign_type", campaignType)
+        .eq("pipeline", pipeline)
         .order("created_at", { ascending: false })
         .limit(10);
 
@@ -148,43 +227,10 @@ export async function POST(request: NextRequest) {
       recentScriptSummaries,
     });
 
-    const dateStr = new Date().toLocaleDateString("en-US", {
-      month: "short",
-      day: "numeric",
-    });
-    const templateLabel = campaignType
-      .split("-")
-      .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
-      .join(" ");
-
-    const inserts = scripts.map((s, i) => ({
-      title: `${templateLabel} - ${tone.charAt(0).toUpperCase() + tone.slice(1)} - ${durationNum}s - ${dateStr} (#${i + 1})`,
-      campaign_type: campaignType,
-      tone,
-      duration_seconds: durationNum,
-      script_text: s.full_script,
-      hook_text: s.hook,
-      cta_text: s.cta,
-      is_template: false,
-    }));
-
-    let savedIds: string[] | null = null;
-
-    const { data, error } = await supabase
-      .from("video_scripts")
-      .insert(inserts)
-      .select("id");
-
-    if (error) {
-      console.error("[scripts] Save error:", error);
-    } else {
-      savedIds = (data ?? []).map((r: { id: string }) => r.id);
-    }
-
     return NextResponse.json({
       success: true,
       scripts,
-      savedIds,
+      savedIds: [],
     });
   } catch (error: unknown) {
     console.error("[scripts] Error:", error);
@@ -237,6 +283,13 @@ function validatePromptInputs(input: {
   return errors;
 }
 
+function formatCampaignLabel(campaignType: CampaignType): string {
+  return campaignType
+    .split("-")
+    .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
+    .join(" ");
+}
+
 /**
  * GET /api/scripts
  *
@@ -247,14 +300,23 @@ export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url);
     const campaignType = searchParams.get("campaignType");
+    const pipeline = searchParams.get("pipeline") ?? "heygen";
     const limit = Math.min(Number(searchParams.get("limit") ?? 50), 100);
     const offset = Number(searchParams.get("offset") ?? 0);
+
+    if (!VALID_PIPELINES.includes(pipeline as VideoPipeline)) {
+      return NextResponse.json(
+        { error: `pipeline must be one of: ${VALID_PIPELINES.join(", ")}` },
+        { status: 400 }
+      );
+    }
 
     const supabase = await createAdminClient();
 
     let query = supabase
       .from("video_scripts")
       .select("*", { count: "exact" })
+      .eq("pipeline", pipeline)
       .order("created_at", { ascending: false })
       .range(offset, offset + limit - 1);
 

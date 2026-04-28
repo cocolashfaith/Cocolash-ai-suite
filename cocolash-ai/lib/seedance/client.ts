@@ -185,6 +185,7 @@ function buildEnhancorQueueRequest(
       aspect_ratio: input.aspect_ratio,
       webhook_url: webhookUrl,
       full_access: input.full_access,
+      fast_mode: input.fast_mode,
     };
   }
 
@@ -196,6 +197,7 @@ function buildEnhancorQueueRequest(
       aspect_ratio: input.aspect_ratio,
       webhook_url: webhookUrl,
       full_access: input.full_access,
+      fast_mode: input.fast_mode,
       multi_frame_prompts: input.multi_frame_prompts ?? [],
       ...(input.videos && input.videos.length > 0 && { videos: input.videos }),
       ...(input.audios && input.audios.length > 0 && { audios: input.audios }),
@@ -212,6 +214,7 @@ function buildEnhancorQueueRequest(
       aspect_ratio: input.aspect_ratio,
       webhook_url: webhookUrl,
       full_access: input.full_access,
+      fast_mode: input.fast_mode,
       first_frame_image: input.first_frame_image ?? input.first_frame_url,
       ...(input.last_frame_image && { last_frame_image: input.last_frame_image }),
       ...(input.videos && input.videos.length > 0 && { videos: input.videos }),
@@ -233,6 +236,7 @@ function buildEnhancorQueueRequest(
       aspect_ratio: input.aspect_ratio,
       webhook_url: webhookUrl,
       full_access: input.full_access,
+      fast_mode: input.fast_mode,
       ...(input.images && input.images.length > 0 && { images: input.images }),
       ...(input.videos && input.videos.length > 0 && { videos: input.videos }),
       ...(input.audios && input.audios.length > 0 && { audios: input.audios }),
@@ -260,6 +264,7 @@ function buildEnhancorQueueRequest(
       aspect_ratio: input.aspect_ratio,
       webhook_url: webhookUrl,
       full_access: input.full_access,
+      fast_mode: input.fast_mode,
       ...(images.length > 0 && { images }),
       ...(input.videos && input.videos.length > 0 && { videos: input.videos }),
       ...(input.audios && input.audios.length > 0 && { audios: input.audios }),
@@ -291,6 +296,7 @@ function buildEnhancorQueueRequest(
       aspect_ratio: input.aspect_ratio,
       webhook_url: webhookUrl,
       full_access: input.full_access ?? true,
+      fast_mode: input.fast_mode,
       ...(images.length > 0 && { images }),
       ...(videoUrls.length > 0 && { videos: videoUrls }),
       ...(audioUrls.length > 0 && { audios: audioUrls }),
@@ -306,6 +312,7 @@ function buildEnhancorQueueRequest(
     aspect_ratio: input.aspect_ratio,
     webhook_url: webhookUrl,
     full_access: input.full_access ?? true,
+    fast_mode: input.fast_mode,
     ...(productImages.length > 0 && { products: productImages }),
     ...(influencerImages.length > 0 && { influencers: influencerImages }),
   };

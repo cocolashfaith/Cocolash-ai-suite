@@ -109,6 +109,7 @@ const ASPECT_RATIOS: { value: SeedanceAspectRatio; label: string; desc: string }
 const RESOLUTIONS: { value: SeedanceResolution; label: string }[] = [
   { value: "480p", label: "480p" },
   { value: "720p", label: "720p" },
+  { value: "1080p", label: "1080p" },
 ];
 
 const DURATIONS: { value: SeedanceDuration; label: string }[] = [
@@ -157,6 +158,7 @@ export function SeedanceGenerateStep(props: SeedanceGenerateStepProps) {
     duration <= 5 ? "5" : duration <= 8 ? "8" : duration <= 10 ? "10" : "15"
   );
   const [fullAccess, setFullAccess] = useState(true);
+  const [fastMode, setFastMode] = useState(false);
   const [ugcProductsText, setUgcProductsText] = useState("");
   const [ugcInfluencersText, setUgcInfluencersText] = useState("");
   const [referenceImagesText, setReferenceImagesText] = useState("");
@@ -184,6 +186,19 @@ export function SeedanceGenerateStep(props: SeedanceGenerateStepProps) {
   }, []);
 
   useEffect(() => () => stopPolling(), [stopPolling]);
+
+  useEffect(() => {
+    if (resolution !== "1080p") {
+      return;
+    }
+
+    if (aspectRatio !== "16:9") {
+      setAspectRatio("16:9");
+    }
+    if (fastMode) {
+      setFastMode(false);
+    }
+  }, [aspectRatio, fastMode, resolution]);
 
   const pollStatus = useCallback((id: string) => {
     pollRef.current = setInterval(async () => {
@@ -266,6 +281,7 @@ export function SeedanceGenerateStep(props: SeedanceGenerateStepProps) {
           aspectRatio,
           seedanceDuration,
           resolution,
+          fastMode,
           generationType,
           seedanceMode,
           fullAccess,
@@ -334,6 +350,7 @@ export function SeedanceGenerateStep(props: SeedanceGenerateStepProps) {
 
   const seedanceCost = calculateSeedanceCost({
     duration: seedanceDurationNumber,
+    resolution,
     includeScript: true,
     includeImageGen: true,
     includePostProcessing: true,
@@ -368,6 +385,7 @@ export function SeedanceGenerateStep(props: SeedanceGenerateStepProps) {
               <SummaryRow label="Duration" value={`${duration}s (Seedance: ${seedanceDuration}s)`} />
               <SummaryRow label="Enhancor Mode" value={getModeTitle(enhancorMode)} />
               <SummaryRow label="Resolution" value={resolution} />
+              <SummaryRow label="Fast Mode" value={fastMode ? "On" : "Off"} />
               <SummaryRow label="Audio Mode" value={audioMode === "script-in-prompt" ? "AI Speaks" : "Uploaded Audio"} />
               <SummaryRow label="Scene" value={scene} />
               <SummaryRow label="Vibe" value={vibe} />
@@ -434,7 +452,7 @@ export function SeedanceGenerateStep(props: SeedanceGenerateStepProps) {
           {/* Core API controls */}
           <div className="grid gap-4 sm:grid-cols-2">
             <OptionGroup label="Resolution">
-              <div className="grid grid-cols-2 gap-2">
+              <div className="grid grid-cols-3 gap-2">
                 {RESOLUTIONS.map((item) => (
                   <PillButton
                     key={item.value}
@@ -445,6 +463,10 @@ export function SeedanceGenerateStep(props: SeedanceGenerateStepProps) {
                   </PillButton>
                 ))}
               </div>
+              <p className="mt-2 text-[11px] leading-relaxed text-coco-brown-medium/50">
+                1080p is supported only for 16:9 output with Fast Mode turned off.
+                Selecting 1080p will automatically use those documented settings.
+              </p>
             </OptionGroup>
             <OptionGroup label="Seedance Duration">
               <div className="grid grid-cols-4 gap-2">
@@ -461,6 +483,7 @@ export function SeedanceGenerateStep(props: SeedanceGenerateStepProps) {
             </OptionGroup>
           </div>
 
+          <div className="grid gap-3 sm:grid-cols-2">
           <div className="flex items-center justify-between rounded-xl border-2 border-coco-beige-dark bg-white p-4">
             <div>
               <p className="text-sm font-semibold text-coco-brown">Full Access</p>
@@ -475,6 +498,27 @@ export function SeedanceGenerateStep(props: SeedanceGenerateStepProps) {
             >
               <div className={cn("h-5 w-5 rounded-full bg-white shadow transition-transform", fullAccess ? "translate-x-5" : "translate-x-0.5")} />
             </button>
+          </div>
+
+          <div className="flex items-center justify-between rounded-xl border-2 border-coco-beige-dark bg-white p-4">
+            <div>
+              <p className="text-sm font-semibold text-coco-brown">Fast Mode</p>
+              <p className="mt-1 text-xs text-coco-brown-medium/60">
+                Faster generation. Disabled automatically for 1080p.
+              </p>
+            </div>
+            <button
+              type="button"
+              disabled={resolution === "1080p"}
+              onClick={() => setFastMode(!fastMode)}
+              className={cn(
+                "flex h-6 w-11 items-center rounded-full transition-colors disabled:cursor-not-allowed disabled:opacity-50",
+                fastMode ? "bg-coco-golden" : "bg-coco-beige-dark"
+              )}
+            >
+              <div className={cn("h-5 w-5 rounded-full bg-white shadow transition-transform", fastMode ? "translate-x-5" : "translate-x-0.5")} />
+            </button>
+          </div>
           </div>
 
           {enhancorMode === "ugc" && (
@@ -636,13 +680,16 @@ export function SeedanceGenerateStep(props: SeedanceGenerateStepProps) {
           <div className="space-y-2">
             <label className="text-sm font-semibold text-coco-brown">Aspect Ratio</label>
             <div className="grid grid-cols-3 gap-3">
-              {ASPECT_RATIOS.map((ar) => (
+              {ASPECT_RATIOS.map((ar) => {
+                const isDisabledFor1080p = resolution === "1080p" && ar.value !== "16:9";
+                return (
                 <button
                   key={ar.value}
                   type="button"
+                  disabled={isDisabledFor1080p}
                   onClick={() => setAspectRatio(ar.value)}
                   className={cn(
-                    "rounded-xl border-2 py-3 text-center transition-all",
+                    "rounded-xl border-2 py-3 text-center transition-all disabled:cursor-not-allowed disabled:opacity-40",
                     aspectRatio === ar.value
                       ? "border-coco-golden bg-coco-golden/10 shadow-sm"
                       : "border-coco-beige-dark bg-white hover:border-coco-golden/40"
@@ -651,8 +698,14 @@ export function SeedanceGenerateStep(props: SeedanceGenerateStepProps) {
                   <p className={cn("text-sm font-bold", aspectRatio === ar.value ? "text-coco-golden" : "text-coco-brown-medium")}>{ar.label}</p>
                   <p className="text-[10px] text-coco-brown-medium/60">{ar.desc}</p>
                 </button>
-              ))}
+              );
+              })}
             </div>
+            {resolution === "1080p" && (
+              <p className="text-[11px] text-coco-brown-medium/50">
+                Other aspect ratios are disabled because Enhancor only supports 1080p with 16:9.
+              </p>
+            )}
           </div>
 
           {/* Fixed lens toggle */}

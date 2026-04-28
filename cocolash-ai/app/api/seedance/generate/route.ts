@@ -31,7 +31,7 @@ const VALID_ASPECT_RATIOS: SeedanceAspectRatio[] = [
   "9:16", "1:1", "16:9", "4:3", "3:4", "21:9",
 ];
 const VALID_SEEDANCE_DURATIONS: SeedanceDuration[] = ["5", "8", "10", "15"];
-const VALID_RESOLUTIONS: SeedanceResolution[] = ["480p", "720p"];
+const VALID_RESOLUTIONS: SeedanceResolution[] = ["480p", "720p", "1080p"];
 const VALID_GENERATION_TYPES: SeedanceGenerationType[] = ["text-to-video", "image-to-video"];
 const VALID_SEEDANCE_MODES: SeedanceMode[] = [
   "ugc", "multi_reference", "multi_frame", "lipsyncing", "first_n_last_frames",
@@ -54,6 +54,7 @@ interface SeedanceGenerateBody {
   generationType?: SeedanceGenerationType;
   seedanceMode?: SeedanceMode;
   fullAccess?: boolean;
+  fastMode?: boolean;
   products?: string[];
   influencers?: string[];
   images?: string[];
@@ -110,6 +111,7 @@ export async function POST(request: NextRequest) {
       generationType = "image-to-video",
       seedanceMode = "ugc",
       fullAccess = true,
+      fastMode = false,
       products,
       influencers,
       images,
@@ -137,6 +139,7 @@ export async function POST(request: NextRequest) {
         .from("video_scripts")
         .select("script_text")
         .eq("id", scriptId)
+        .eq("pipeline", "seedance")
         .single();
 
       if (scriptError || !existingScript) {
@@ -160,6 +163,7 @@ export async function POST(request: NextRequest) {
         .from("video_scripts")
         .insert({
           title: `Seedance — ${campaignType} — ${tone} — ${duration}s`,
+          pipeline: "seedance",
           campaign_type: campaignType,
           tone,
           duration_seconds: duration,
@@ -280,6 +284,7 @@ export async function POST(request: NextRequest) {
           resolution,
           duration: seedanceDuration,
           full_access: fullAccess,
+          fast_mode: fastMode,
           fixed_lens: fixedLens,
           generate_audio: generateAudio,
         },
@@ -296,8 +301,12 @@ export async function POST(request: NextRequest) {
         .eq("id", videoId);
 
       const durationNum = parseInt(seedanceDuration, 10);
+      const videoCostPerSecond =
+        resolution === "1080p"
+          ? SEEDANCE_COSTS.COST_PER_SECOND_1080P_NO_VIDEO
+          : SEEDANCE_COSTS.COST_PER_SECOND_720P_NO_VIDEO;
       const estimatedCost =
-        durationNum * SEEDANCE_COSTS.COST_PER_SECOND_720P_NO_VIDEO +
+        durationNum * videoCostPerSecond +
         SEEDANCE_COSTS.SCRIPT_GENERATION +
         SEEDANCE_COSTS.IMAGE_GENERATION +
         SEEDANCE_COSTS.POST_PROCESSING;
@@ -366,6 +375,17 @@ function validateRequest(body: Partial<SeedanceGenerateBody>): string[] {
   }
   if (body.resolution && !VALID_RESOLUTIONS.includes(body.resolution)) {
     errors.push(`resolution must be one of: ${VALID_RESOLUTIONS.join(", ")}`);
+  }
+  if (
+    body.resolution === "1080p" &&
+    body.aspectRatio &&
+    VALID_ASPECT_RATIOS.includes(body.aspectRatio) &&
+    body.aspectRatio !== "16:9"
+  ) {
+    errors.push("1080p resolution is only supported with 16:9 aspect ratio");
+  }
+  if (body.resolution === "1080p" && body.fastMode) {
+    errors.push("1080p resolution requires fastMode to be disabled");
   }
   if (
     body.generationType &&
