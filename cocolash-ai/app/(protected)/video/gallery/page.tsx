@@ -205,10 +205,11 @@ export default function VideoGalleryPage() {
       {!loading && videos.length > 0 && (
         <>
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-            {videos.map((video) => (
+            {videos.map((video, index) => (
               <VideoCard
                 key={video.id}
                 video={video}
+                eager={index < 3}
                 onClick={() => openModal(video)}
               />
             ))}

@@ -19,6 +19,7 @@ const EDUCATIONAL_CAMPAIGNS = new Set([
 interface VideoCardProps {
   video: GeneratedVideo;
   onClick: () => void;
+  eager?: boolean;
 }
 
 const CAMPAIGN_LABELS: Record<string, string> = {
@@ -42,7 +43,7 @@ const STATUS_CONFIG: Record<string, { label: string; className: string; icon: Re
   failed: { label: "Failed", className: "bg-red-500/80 text-white", icon: AlertCircle },
 };
 
-export function VideoCard({ video, onClick }: VideoCardProps) {
+export function VideoCard({ video, onClick, eager = false }: VideoCardProps) {
   const [loaded, setLoaded] = useState(false);
 
   const thumbnailUrl = video.thumbnail_url || video.composed_image_url || video.person_image_url;
@@ -80,6 +81,9 @@ export function VideoCard({ video, onClick }: VideoCardProps) {
                 alt="Video thumbnail"
                 fill
                 sizes="(max-width: 640px) 100vw, (max-width: 1024px) 50vw, 33vw"
+                preload={eager}
+                loading={eager ? "eager" : "lazy"}
+                fetchPriority={eager ? "high" : "auto"}
                 className={cn(
                   "object-cover transition-all duration-300 group-hover:scale-105",
                   loaded ? "opacity-100" : "opacity-0"

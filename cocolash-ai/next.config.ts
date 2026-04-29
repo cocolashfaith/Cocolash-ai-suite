@@ -1,8 +1,16 @@
 import type { NextConfig } from "next";
 
-const supabaseHostname = process.env.NEXT_PUBLIC_SUPABASE_URL
-  ? new URL(process.env.NEXT_PUBLIC_SUPABASE_URL).hostname
-  : "*.supabase.co";
+function getSupabaseHostname(): string {
+  try {
+    return process.env.NEXT_PUBLIC_SUPABASE_URL
+      ? new URL(process.env.NEXT_PUBLIC_SUPABASE_URL).hostname
+      : "*.supabase.co";
+  } catch {
+    return "*.supabase.co";
+  }
+}
+
+const supabaseHostname = getSupabaseHostname();
 
 const nextConfig: NextConfig = {
   images: {
@@ -18,7 +26,8 @@ const nextConfig: NextConfig = {
       },
       {
         protocol: "https",
-        hostname: "files.heygen.ai",
+        // HeyGen uses multiple controlled CDN subdomains, e.g. files.heygen.ai and files2.heygen.ai.
+        hostname: "**.heygen.ai",
       },
     ],
   },
