@@ -51,3 +51,6 @@ scripts/test-*
 
 # FFmpeg WASM core binaries (copied from @ffmpeg/core at install time)
 public/ffmpeg/
+
+# Brand assets (client-confidential — do not commit)
+public/brand/
