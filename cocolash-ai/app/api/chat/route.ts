@@ -25,6 +25,7 @@ import { ChatError } from "@/lib/chat/error";
 import { isBusinessHours } from "@/lib/chat/hours";
 import { classifyIntent } from "@/lib/chat/intent";
 import { retrieve } from "@/lib/chat/retrieve";
+import { buildProductContext } from "@/lib/chat/product-context";
 import { streamChat } from "@/lib/openrouter/chat";
 import { composeSystemPrompt, DEFAULT_VOICE_FRAGMENTS } from "@/lib/chat/voice";
 import {
@@ -138,12 +139,17 @@ export async function POST(req: NextRequest): Promise<Response> {
     content: body.message,
   });
 
-  // Run intent + retrieval in parallel.
+  // Run intent + retrieval + history in parallel.
   const [intentResult, retrieveResult, history] = await Promise.all([
     classifyIntent(body.message),
     retrieve(supabase, body.message, { topK: settings.default_top_k }),
     listMessagesForSession(supabase, session.id, 20).catch(() => []),
   ]);
+
+  // Build live product context (Phase 4). Best-effort: failure is silent.
+  const productContext = await buildProductContext(body.message, retrieveResult.chunks).catch(
+    () => ({ cards: [], promptText: "" })
+  );
 
   // Don't-know guardrail (RAG-05): force lead_capture when no chunk passes
   // the threshold.
@@ -159,6 +165,7 @@ export async function POST(req: NextRequest): Promise<Response> {
     fragments,
     retrievedChunks: retrieveResult.noConfidentMatch ? [] : retrieveResult.chunks,
     isBusinessHours: isBusinessHours(),
+    productContext: productContext.promptText,
   });
 
   // Convert the persisted history (which already includes the user turn we
@@ -189,6 +196,10 @@ export async function POST(req: NextRequest): Promise<Response> {
           noConfidentMatch: retrieveResult.noConfidentMatch,
         })
       );
+
+      if (productContext.cards.length > 0) {
+        controller.enqueue(sseFrame("products", { products: productContext.cards }));
+      }
 
       const { tokens, done } = streamChat({
         systemPrompt,
