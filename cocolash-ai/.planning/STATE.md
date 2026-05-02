@@ -3,9 +3,9 @@ milestone: v3.0
 milestone_name: AI Sales Assistant + Virtual Try-On
 status: planning
 progress:
-  phases_completed: 0
+  phases_completed: 1
   phases_total: 9
-  requirements_completed: 0
+  requirements_completed: 6
   requirements_total: 57
 last_updated: 2026-05-02
 ---
@@ -21,10 +21,10 @@ See: `.planning/PROJECT.md` (updated 2026-05-02)
 
 ## Current Position
 
-Phase: 1 — Foundation: Schema, RAG ingest, brand voice (not started)
-Plan: —
-Status: Roadmap defined; awaiting user approval to start Phase 1
-Last activity: 2026-05-02 — ROADMAP.md drafted (9 phases, 57 requirements mapped)
+Phase: 2 — Core chat API + streaming + intent + eval (starting)
+Plan: Phase 1 complete (code-only); 3/6 success criteria pending user deploy
+Status: Executing autonomously per user authorization
+Last activity: 2026-05-02 — Phase 1 closed; 8 atomic commits; 15/15 tests pass
 
 ## Accumulated Context
 
@@ -34,7 +34,17 @@ Last activity: 2026-05-02 — ROADMAP.md drafted (9 phases, 57 requirements mapp
 
 ### Active blockers
 
-- None. Storefront API token, store domain, store admin access, product images, and discount codes are all in hand as of 2026-05-02.
+**User-side deploy steps required to fully validate Phase 1:**
+1. `supabase db push` (apply `20260502_chatbot_foundation.sql`)
+2. Set `OPENAI_API_KEY` in `.env.local`
+3. Create Supabase Storage buckets `chat-kb-uploads` and `chat-selfies` (private)
+4. Run `npx tsx scripts/chat-ingest.ts` (expect 62 chunks)
+
+Phases 2+ proceed in code; verification of the live API requires the
+above deploy first. See `.planning/phases/01-foundation/01-VERIFICATION.md`.
+
+Other dependencies (still in hand):
+- Storefront API token, store domain, store admin access, product images, discount codes — all confirmed available 2026-05-02.
 
 ### Pending todos
 
