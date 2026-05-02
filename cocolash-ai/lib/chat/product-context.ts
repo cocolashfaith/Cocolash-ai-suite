@@ -27,6 +27,19 @@ import type { KnowledgeChunk } from "./types";
 
 const MAX_PRODUCTS_PER_TURN = 3;
 
+/**
+ * Keyword → real Shopify handle. Lazy, populated on first miss via
+ * Storefront search. Persists for the process lifetime so Faith can
+ * rename products without a redeploy. `null` records a confirmed miss
+ * to avoid re-searching for words that aren't products.
+ */
+const STYLE_HANDLE_CACHE = new Map<string, string | null>();
+
+const STYLE_KEYWORDS = [
+  "violet", "peony", "jasmine", "iris", "daisy",
+  "dahlia", "poppy", "marigold", "orchid", "rose", "sorrel",
+] as const;
+
 export interface ProductContextResult {
   /** Compact cards for SSE; rendered inline by the widget. */
   cards: ProductCard[];
@@ -36,21 +49,77 @@ export interface ProductContextResult {
 
 export async function buildProductContext(
   message: string,
-  chunks: ReadonlyArray<KnowledgeChunk>
+  chunks: ReadonlyArray<KnowledgeChunk>,
+  recentAssistantText: string = "",
+  discountCode: string | null = null
 ): Promise<ProductContextResult> {
-  const handles = extractHandles(message, chunks);
+  const handles = extractHandles(message, chunks, recentAssistantText);
   if (handles.length === 0) return { cards: [], promptText: "" };
 
-  // 1. Fetch the candidates.
+  // Phase 11 fix #2: when the user's message names exactly ONE product, only
+  // surface that one card. Asking "tell me about Dahlia" should NOT pad the
+  // result with two unrelated retrieval-derived candidates.
+  const userKeywords = (STYLE_KEYWORDS as ReadonlyArray<string>).filter(
+    (s) => message.toLowerCase().includes(s)
+  );
+  const isSingleProductRequest = userKeywords.length === 1;
+
+  // 1. Fetch the candidates by direct handle.
   let candidates: ProductCard[] = [];
   try {
     const products = await getProductsByHandles(handles);
-    candidates = products.map(productToCard);
+    candidates = products.map((p) => productToCard(p, discountCode));
   } catch {
     return { cards: [], promptText: "" };
   }
 
+  // 1b. For any short style keyword that didn't resolve directly (e.g.
+  // "dahlia" → store handle is `dahlia-lash-extensions`), fall back to
+  // Storefront search. Cached per process so we hit Shopify at most once
+  // per keyword.
+  const resolvedHandles = new Set(candidates.map((c) => c.handle));
+  const unresolvedKeywords = handles.filter(
+    (h) =>
+      (STYLE_KEYWORDS as ReadonlyArray<string>).includes(h) &&
+      !resolvedHandles.has(h)
+  );
+  if (unresolvedKeywords.length > 0) {
+    const found = await Promise.all(
+      unresolvedKeywords.map((kw) => resolveStyleHandle(kw))
+    );
+    const realHandles = found.filter((h): h is string => h !== null && !resolvedHandles.has(h));
+    if (realHandles.length > 0) {
+      try {
+        const extra = await getProductsByHandles(realHandles);
+        for (const p of extra) {
+          const card = productToCard(p, discountCode);
+          if (!resolvedHandles.has(card.handle)) {
+            candidates.push(card);
+            resolvedHandles.add(card.handle);
+          }
+        }
+      } catch {
+        // best-effort; ignore
+      }
+    }
+  }
+
   // 2. Substitute OOS primaries with in-stock alternatives.
+  // When the user asked about exactly one product, prioritize that product
+  // in the candidate ordering so it lands in the cards array even if other
+  // chunk-derived candidates were collected first.
+  if (isSingleProductRequest) {
+    const targetKw = userKeywords[0];
+    candidates.sort((a, b) => {
+      const aMatches = a.handle.toLowerCase().startsWith(targetKw) || a.title.toLowerCase().startsWith(targetKw);
+      const bMatches = b.handle.toLowerCase().startsWith(targetKw) || b.title.toLowerCase().startsWith(targetKw);
+      if (aMatches && !bMatches) return -1;
+      if (bMatches && !aMatches) return 1;
+      return 0;
+    });
+  }
+
+  const turnCap = isSingleProductRequest ? 1 : MAX_PRODUCTS_PER_TURN;
   const cards: ProductCard[] = [];
   const seen = new Set<string>();
   for (const c of candidates) {
@@ -62,7 +131,7 @@ export async function buildProductContext(
       const alt = await findAlternative(c, chunks);
       if (alt) cards.push(alt);
     }
-    if (cards.length >= MAX_PRODUCTS_PER_TURN) break;
+    if (cards.length >= turnCap) break;
   }
 
   return {
@@ -76,7 +145,11 @@ export async function buildProductContext(
  * the user message. Conservative: prefers handles already in retrieval
  * over keyword guesses.
  */
-function extractHandles(message: string, chunks: ReadonlyArray<KnowledgeChunk>): string[] {
+function extractHandles(
+  message: string,
+  chunks: ReadonlyArray<KnowledgeChunk>,
+  recentAssistantText: string = ""
+): string[] {
   const out: string[] = [];
   const seen = new Set<string>();
 
@@ -96,21 +169,57 @@ function extractHandles(message: string, chunks: ReadonlyArray<KnowledgeChunk>):
     }
   }
 
-  // Lightweight keyword sweep across the System 3 product names. The list
-  // is small and stable.
-  const lower = message.toLowerCase();
-  const styles = [
-    "violet", "peony", "jasmine", "iris", "daisy",
-    "dahlia", "poppy", "marigold", "orchid", "rose", "sorrel",
-  ];
-  for (const s of styles) {
-    if (lower.includes(s) && !seen.has(s)) {
+  // Lightweight keyword sweep across the System 3 product names. Scan the
+  // user message AND the prior assistant turn, so a generic "yes, try it
+  // on" still maps to whichever product Coco just recommended. The keywords
+  // are short style names; buildProductContext resolves them to real
+  // Shopify handles via search.
+  const userLower = message.toLowerCase();
+  for (const s of STYLE_KEYWORDS) {
+    if (userLower.includes(s) && !seen.has(s)) {
       seen.add(s);
       out.push(s);
     }
   }
+  if (recentAssistantText) {
+    const assistantLower = recentAssistantText.toLowerCase();
+    for (const s of STYLE_KEYWORDS) {
+      if (assistantLower.includes(s) && !seen.has(s)) {
+        seen.add(s);
+        out.push(s);
+      }
+    }
+  }
 
   return out.slice(0, MAX_PRODUCTS_PER_TURN * 2); // candidate pool
+}
+
+/**
+ * Resolve a short style keyword (e.g. "dahlia") to its real Shopify handle
+ * (e.g. "dahlia-lash-extensions") via Storefront search. Cached for the
+ * process lifetime; returns `null` if no product matches.
+ */
+async function resolveStyleHandle(keyword: string): Promise<string | null> {
+  if (STYLE_HANDLE_CACHE.has(keyword)) {
+    return STYLE_HANDLE_CACHE.get(keyword) ?? null;
+  }
+  try {
+    const results = await searchProducts(keyword, 5);
+    const lower = keyword.toLowerCase();
+    // Prefer a product whose handle or title actually starts with the
+    // keyword, so "rose" doesn't match "Rose-gold sealant" or similar.
+    const match = results.find((p) => {
+      const h = p.handle?.toLowerCase() ?? "";
+      const t = p.title?.toLowerCase() ?? "";
+      return h.startsWith(lower) || t.startsWith(lower);
+    });
+    const resolved = match?.handle ?? null;
+    STYLE_HANDLE_CACHE.set(keyword, resolved);
+    return resolved;
+  } catch {
+    // Don't cache transient failures; let the next request retry.
+    return null;
+  }
 }
 
 /**

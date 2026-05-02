@@ -174,6 +174,40 @@ export async function POST(req: NextRequest): Promise<Response> {
     content: body.message,
   });
 
+  // Phase 14: detect an email in the user's message and write a
+  // `lead_captures` row. The widget never explicitly POSTs to /api/chat/lead
+  // — visitors just type their email mid-conversation. We extract here so
+  // the admin Leads panel actually populates.
+  const emailMatch = body.message.match(/[\w.+-]+@[\w-]+\.[\w.-]+/);
+  if (emailMatch) {
+    const email = emailMatch[0].toLowerCase();
+    try {
+      const { error } = await supabase.from("lead_captures").insert({
+        session_id: session.id,
+        email,
+        consent: true,
+        intent_at_capture: null,
+        discount_offered: null,
+        notes: "captured from chat message",
+      });
+      if (error) {
+        log.warn("chat.lead_capture_failed", {
+          requestId,
+          sessionId: session.id,
+          error: error.message,
+        });
+      } else {
+        log.info("chat.lead_captured", { requestId, sessionId: session.id, email });
+      }
+    } catch (err) {
+      log.warn("chat.lead_capture_threw", {
+        requestId,
+        sessionId: session.id,
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
+  }
+
   // Run intent + retrieval + history in parallel.
   const [intentResult, retrieveResult, history] = await Promise.all([
     classifyIntent(body.message),
@@ -182,10 +216,14 @@ export async function POST(req: NextRequest): Promise<Response> {
   ]);
 
   // Build live product context (Phase 4). Best-effort: failure is silent.
-  const productContext = await buildProductContext(body.message, retrieveResult.chunks).catch(
-    () => ({ cards: [], promptText: "" })
-  );
-
+  // Pull the most recent assistant turn so generic follow-ups like "yes, try
+  // it on" still surface whichever product Coco just recommended.
+  const lastAssistantText = (() => {
+    for (let i = history.length - 1; i >= 0; i--) {
+      if (history[i].role === "assistant") return history[i].content;
+    }
+    return "";
+  })();
   // Don't-know guardrail (RAG-05): force lead_capture when no chunk passes threshold.
   // (Computed up-front so the discount selector sees the post-guardrail intent.)
   const intentForOffer = retrieveResult.noConfidentMatch
@@ -193,11 +231,22 @@ export async function POST(req: NextRequest): Promise<Response> {
     : intentResult.intent;
 
   // Phase 5: pick a discount code (Stage 1: one per turn). Best-effort.
+  // We pick the discount BEFORE building product cards so the Add-to-cart
+  // permalink can carry `?discount=CODE`. The current rule corpus uses
+  // null product_line_scope (any-product), so passing an empty handle list
+  // here doesn't cause spurious rejects.
   const discountRules = await fetchActiveDiscounts(supabase).catch(() => []);
   const offered = selectDiscountForTurn(discountRules, {
     intent: intentForOffer,
-    productHandles: productContext.cards.map((c) => c.handle),
+    productHandles: [],
   });
+
+  const productContext = await buildProductContext(
+    body.message,
+    retrieveResult.chunks,
+    lastAssistantText,
+    offered?.code ?? null
+  ).catch(() => ({ cards: [], promptText: "" }));
 
   const finalIntent: IntentLabel = intentForOffer;
 
@@ -242,9 +291,10 @@ export async function POST(req: NextRequest): Promise<Response> {
         })
       );
 
-      if (productContext.cards.length > 0) {
-        controller.enqueue(sseFrame("products", { products: productContext.cards }));
-      }
+      // Hold product cards until AFTER the assistant text streams (Phase 11
+      // fix #1). Emitting up-front made the widget paint cards into an empty
+      // bubble while text was still streaming, so cards appeared "above" the
+      // text. We now emit a single consolidated products frame post-stream.
 
       const { tokens, done } = streamChat({
         systemPrompt,
@@ -254,6 +304,29 @@ export async function POST(req: NextRequest): Promise<Response> {
       for await (const delta of tokens) {
         assistantText += delta;
         controller.enqueue(sseFrame("token", { delta }));
+      }
+
+      // Now that the assistant text is fully streamed, emit ONE consolidated
+      // products frame. This includes both candidates from the user message
+      // and any product names Coco mentioned mid-response.
+      if (assistantText.length > 0) {
+        const followup = await buildProductContext(
+          body.message,
+          retrieveResult.chunks,
+          assistantText,
+          offered?.code ?? null
+        ).catch(() => ({ cards: [], promptText: "" }));
+        const merged = new Map<string, (typeof productContext.cards)[number]>();
+        for (const c of productContext.cards) merged.set(c.handle, c);
+        for (const c of followup.cards) if (!merged.has(c.handle)) merged.set(c.handle, c);
+        const finalCards = [...merged.values()];
+        if (finalCards.length > 0) {
+          controller.enqueue(sseFrame("products", { products: finalCards }));
+        }
+      } else if (productContext.cards.length > 0) {
+        // Stream produced nothing (rare, e.g. content-filter), but we did
+        // resolve cards up-front — surface them so the user still has options.
+        controller.enqueue(sseFrame("products", { products: productContext.cards }));
       }
 
       const usage = await done;

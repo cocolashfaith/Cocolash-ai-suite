@@ -165,14 +165,22 @@ query ByHandle($handle: String!) {
 }
 `.trim();
 
-const BY_HANDLES_QUERY = `
-${PRODUCT_FRAGMENT}
-query ByHandles($handles: [String!]!) {
-  nodes: products(first: 20, query: $handles) {
-    nodes { ...Product }
-  }
+/**
+ * Build an aliased multi-handle query at runtime. Shopify Storefront's
+ * `products(query: "handle:foo")` is a fuzzy keyword search and can
+ * return false matches; the only reliable way to batch-fetch by exact
+ * handle is N aliased `productByHandle` calls in one request.
+ */
+function buildByHandlesQuery(count: number): string {
+  const aliases = Array.from({ length: count }, (_, i) =>
+    `p${i}: product(handle: $h${i}) { ...Product }`
+  ).join("\n  ");
+  const params = Array.from({ length: count }, (_, i) => `$h${i}: String!`).join(", ");
+  return `${PRODUCT_FRAGMENT}
+query ByHandles(${params}) {
+  ${aliases}
+}`.trim();
 }
-`.trim();
 
 // ── Public API ────────────────────────────────────────────────
 
@@ -230,12 +238,15 @@ export async function getProductsByHandles(handles: ReadonlyArray<string>): Prom
   if (missing.length === 0) return cached;
 
   try {
-    const queryString = missing.map((h) => `handle:${h}`).join(" OR ");
-    const data = await gqlFetch<{ nodes: { nodes: ShopifyProduct[] } }>(
-      BY_HANDLES_QUERY,
-      { handles: queryString }
-    );
-    const fetched = (data.nodes?.nodes ?? []).map(normalizeProduct);
+    const query = buildByHandlesQuery(missing.length);
+    const variables: Record<string, string> = {};
+    missing.forEach((h, i) => { variables[`h${i}`] = h; });
+    const data = await gqlFetch<Record<string, ShopifyProduct | null>>(query, variables);
+    const fetched: ShopifyProduct[] = [];
+    for (let i = 0; i < missing.length; i++) {
+      const node = data[`p${i}`];
+      if (node) fetched.push(normalizeProduct(node));
+    }
     for (const p of fetched) cache.set(`handle:${p.handle}`, p);
     return [...cached, ...fetched];
   } catch (err) {
@@ -260,20 +271,28 @@ function normalizeProduct(p: ShopifyProduct & { variants: { nodes?: ShopifyProdu
   };
 }
 
-export function cartPermalink(variantId: string, quantity: number = 1, storeDomain?: string): string {
+export function cartPermalink(
+  variantId: string,
+  quantity: number = 1,
+  storeDomain?: string,
+  discountCode?: string | null
+): string {
   // Shopify supports the "online store" /cart/{numericVariantId}:{qty} permalink
   // with optional ?discount=CODE; we extract the numeric ID from the gid string.
   const numericId = variantId.match(/\/(\d+)$/)?.[1] ?? variantId;
   const domain = storeDomain ?? process.env.SHOPIFY_STORE_DOMAIN ?? "cocolash.com";
-  // Strip the `myshopify.com` subdomain in favor of the public domain when set.
   const publicDomain = domain.endsWith(".myshopify.com")
     ? domain
     : domain.replace(/^https?:\/\//, "");
-  return `https://${publicDomain}/cart/${numericId}:${quantity}`;
+  const base = `https://${publicDomain}/cart/${numericId}:${quantity}`;
+  return discountCode ? `${base}?discount=${encodeURIComponent(discountCode)}` : base;
 }
 
 /** Convert a ShopifyProduct into the compact ProductCard shape. */
-export function productToCard(p: ShopifyProduct): ProductCard {
+export function productToCard(
+  p: ShopifyProduct,
+  discountCode?: string | null
+): ProductCard {
   const firstAvailable = p.variants.find((v) => v.availableForSale) ?? p.variants[0];
   const variantId = firstAvailable?.id ?? "";
   return {
@@ -288,7 +307,7 @@ export function productToCard(p: ShopifyProduct): ProductCard {
     currency: p.priceRange.minVariantPrice.currencyCode,
     available: p.availableForSale,
     productUrl: `https://${process.env.SHOPIFY_STORE_DOMAIN ?? "cocolash.com"}/products/${p.handle}`.replace(/(\.myshopify)\.com/, "$1.com"),
-    addToCartUrl: variantId ? cartPermalink(variantId) : "",
+    addToCartUrl: variantId ? cartPermalink(variantId, 1, undefined, discountCode) : "",
   };
 }
 
