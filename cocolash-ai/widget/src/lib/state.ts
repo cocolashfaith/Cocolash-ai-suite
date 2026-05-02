@@ -1,0 +1,110 @@
+/**
+ * Local conversation state for the widget. Persisted to localStorage so
+ * a refresh doesn't blow the session away (D-16).
+ */
+
+import { useEffect, useState } from "preact/hooks";
+
+const STORAGE_KEY = "cocolash:chat:v1";
+const TTL_DAYS = 30;
+
+export interface Message {
+  id: string;
+  role: "user" | "assistant";
+  content: string;
+  createdAt: number;
+  /** Source chunk IDs returned by the server for this assistant turn. */
+  sourceIds?: string[];
+}
+
+export interface PersistedState {
+  sessionId: string | null;
+  messages: Message[];
+  consent: "accepted" | "declined" | null;
+  updatedAt: number;
+}
+
+const defaultState: PersistedState = {
+  sessionId: null,
+  messages: [],
+  consent: null,
+  updatedAt: Date.now(),
+};
+
+function readStorage(): PersistedState {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if (!raw) return defaultState;
+    const parsed = JSON.parse(raw) as PersistedState;
+    const ttlMs = TTL_DAYS * 24 * 60 * 60 * 1000;
+    if (Date.now() - parsed.updatedAt > ttlMs) return defaultState;
+    return {
+      sessionId: parsed.sessionId ?? null,
+      messages: Array.isArray(parsed.messages) ? parsed.messages : [],
+      consent: parsed.consent ?? null,
+      updatedAt: parsed.updatedAt ?? Date.now(),
+    };
+  } catch {
+    return defaultState;
+  }
+}
+
+function writeStorage(state: PersistedState): void {
+  try {
+    localStorage.setItem(
+      STORAGE_KEY,
+      JSON.stringify({ ...state, updatedAt: Date.now() })
+    );
+  } catch {
+    // localStorage may be disabled (private mode); fail silently.
+  }
+}
+
+export function usePersistedState(): {
+  state: PersistedState;
+  setSessionId: (id: string) => void;
+  appendMessage: (m: Message) => void;
+  updateLastAssistant: (delta: string, sourceIds?: string[]) => void;
+  setConsent: (c: "accepted" | "declined") => void;
+  reset: () => void;
+} {
+  const [state, setState] = useState<PersistedState>(() => readStorage());
+
+  useEffect(() => {
+    writeStorage(state);
+  }, [state]);
+
+  return {
+    state,
+    setSessionId: (id) => setState((s) => ({ ...s, sessionId: id })),
+    appendMessage: (m) =>
+      setState((s) => ({ ...s, messages: [...s.messages, m].slice(-50) })),
+    updateLastAssistant: (delta, sourceIds) =>
+      setState((s) => {
+        const messages = s.messages.slice();
+        const last = messages[messages.length - 1];
+        if (last && last.role === "assistant") {
+          messages[messages.length - 1] = {
+            ...last,
+            content: last.content + delta,
+            sourceIds: sourceIds ?? last.sourceIds,
+          };
+        }
+        return { ...s, messages };
+      }),
+    setConsent: (c) => setState((s) => ({ ...s, consent: c })),
+    reset: () => setState({ ...defaultState, updatedAt: Date.now() }),
+  };
+}
+
+export function uuid(): string {
+  if (typeof crypto !== "undefined" && "randomUUID" in crypto) {
+    return crypto.randomUUID();
+  }
+  // Fallback for older browsers (rare; widget targets modern only).
+  return "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g, (c) => {
+    const r = (Math.random() * 16) | 0;
+    const v = c === "x" ? r : (r & 0x3) | 0x8;
+    return v.toString(16);
+  });
+}
