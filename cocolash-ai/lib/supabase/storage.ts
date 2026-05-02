@@ -12,6 +12,10 @@ import { v4 as uuidv4 } from "uuid";
 export const BUCKETS = {
   GENERATED_IMAGES: "generated-images",
   BRAND_ASSETS: "brand-assets",
+  // ── Milestone v3.0 (chatbot) buckets ───────────────────────
+  // Both private; service-role + chat admins only.
+  CHAT_KB_UPLOADS: "chat-kb-uploads",
+  CHAT_SELFIES: "chat-selfies",
 } as const;
 
 // ── Upload Generated Image ────────────────────────────────────
