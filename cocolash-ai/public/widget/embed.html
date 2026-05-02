@@ -1,0 +1,38 @@
+<!--
+  CocoLash AI — Stage 1 chat widget embed snippet
+  ================================================
+  Faith / her team: paste this snippet into theme.liquid (Online Store →
+  Themes → Edit code → Layout → theme.liquid) just before </body>.
+
+  Replace API_BASE_URL with the production deployment URL once known
+  (e.g. https://cocolash-ai.vercel.app or your custom domain).
+
+  The snippet:
+    1. Sets window.COCOLASH_CHAT_CONFIG before loading widget.js so the
+       bundle picks up the API base URL on init.
+    2. Loads widget.js asynchronously so it never blocks the page.
+    3. Mounts the Coco chat widget into a fixed-position Shadow DOM root.
+
+  Stage 2 (Phase 8) replaces this snippet with a Theme App Extension
+  that injects the same config from the Custom App. No code change
+  needed in widget.js.
+-->
+<script>
+  (function () {
+    if (window.COCOLASH_CHAT_CONFIG) return;
+    window.COCOLASH_CHAT_CONFIG = {
+      apiBaseUrl: "API_BASE_URL",
+      shopDomain: window.Shopify && window.Shopify.shop
+        ? window.Shopify.shop
+        : "cocolash.myshopify.com",
+      customerId: window.Shopify && window.Shopify.customer
+        ? String(window.Shopify.customer.id)
+        : undefined
+    };
+    var s = document.createElement("script");
+    s.async = true;
+    s.defer = true;
+    s.src = "API_BASE_URL/widget.js";
+    document.body.appendChild(s);
+  })();
+</script>
