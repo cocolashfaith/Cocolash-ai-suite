@@ -54,6 +54,24 @@ interface GraphQLResponse<T> {
   errors?: Array<{ message: string; extensions?: { code?: string } }>;
 }
 
+/**
+ * Storefront API supports two token types with different headers:
+ *   - Public access token  → `X-Shopify-Storefront-Access-Token`
+ *     (safe in browsers; rate-limited per IP)
+ *   - Private access token → `Shopify-Storefront-Private-Token`
+ *     (server-side only; better rate limits; never expose to clients)
+ *
+ * We auto-detect by the `shpat_` prefix Shopify uses for private tokens
+ * generated via the Headless channel. Either token works; private is
+ * preferred since /api/chat runs server-side.
+ */
+function tokenHeader(token: string): Record<string, string> {
+  if (token.startsWith("shpat_")) {
+    return { "Shopify-Storefront-Private-Token": token };
+  }
+  return { "X-Shopify-Storefront-Access-Token": token };
+}
+
 async function gqlFetch<T>(query: string, variables: Record<string, unknown>): Promise<T> {
   const cfg = readConfig();
   const url = `https://${cfg.storeDomain}/api/${cfg.apiVersion}/graphql.json`;
@@ -64,7 +82,7 @@ async function gqlFetch<T>(query: string, variables: Record<string, unknown>): P
       method: "POST",
       headers: {
         "content-type": "application/json",
-        "x-shopify-storefront-access-token": cfg.token,
+        ...tokenHeader(cfg.token),
         accept: "application/json",
       },
       body: JSON.stringify({ query, variables }),
