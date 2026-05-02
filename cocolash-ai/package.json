@@ -9,7 +9,9 @@
     "lint": "eslint",
     "test": "vitest run",
     "test:watch": "vitest",
-    "build:widget": "npm --prefix widget install --no-audit --no-fund && npm --prefix widget run build"
+    "build:widget": "npm --prefix widget install --no-audit --no-fund && npm --prefix widget run build",
+    "eval": "tsx scripts/chat-eval.ts",
+    "eval:dry": "tsx scripts/chat-eval.ts --dry-run"
   },
   "dependencies": {
     "@google/genai": "^1.40.0",

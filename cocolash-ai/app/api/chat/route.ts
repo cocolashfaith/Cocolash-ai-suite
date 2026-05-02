@@ -27,6 +27,9 @@ import { classifyIntent } from "@/lib/chat/intent";
 import { retrieve } from "@/lib/chat/retrieve";
 import { buildProductContext } from "@/lib/chat/product-context";
 import { fetchActiveDiscounts, selectDiscountForTurn } from "@/lib/chat/discount";
+import { preflight } from "@/lib/chat/preflight";
+import { chatRateLimiter } from "@/lib/chat/rate-limit";
+import { log } from "@/lib/log";
 import { streamChat } from "@/lib/openrouter/chat";
 import { composeSystemPrompt, DEFAULT_VOICE_FRAGMENTS } from "@/lib/chat/voice";
 import {
@@ -112,17 +115,48 @@ export async function POST(req: NextRequest): Promise<Response> {
     }
   })();
 
-  // Load settings + kill-switch check.
-  const settings = await getChatSettings(supabase);
-  if (!settings.bot_enabled) {
+  // Phase 9 preflight: kill-switch + cost-cap.
+  const pre = await preflight(supabase);
+  if (!pre.canProceed) {
+    log.warn("chat.preflight_block", {
+      requestId,
+      reason: pre.reason,
+      spentToday: pre.spentToday,
+      capUsd: pre.capUsd,
+    });
+    const message =
+      pre.reason === "cost_cap_exceeded"
+        ? "Coco's hit her daily limit — back tomorrow!"
+        : "Coco is taking a quick break. Please try again later.";
     return new Response(
-      JSON.stringify({
-        error: "bot_disabled",
-        message: "Coco is taking a quick break. Please try again later.",
-      }),
+      JSON.stringify({ error: pre.reason ?? "bot_disabled", message }),
       { status: 503, headers: { "content-type": "application/json" } }
     );
   }
+
+  // Phase 9 rate limit: 30 / 5 min per session (or IP).
+  const rateKey = body.sessionId ?? req.headers.get("x-forwarded-for") ?? "anon";
+  const rl = chatRateLimiter.consume(rateKey);
+  if (!rl.allowed) {
+    log.warn("chat.rate_limited", { requestId, key: rateKey, resetMs: rl.resetMs });
+    return new Response(
+      JSON.stringify({
+        error: "rate_limited",
+        message: "Slow down a sec gorgeous — try again in a moment.",
+        retryAfterMs: rl.resetMs,
+      }),
+      {
+        status: 429,
+        headers: {
+          "content-type": "application/json",
+          "retry-after": String(Math.ceil(rl.resetMs / 1000)),
+        },
+      }
+    );
+  }
+
+  // Load settings (we still need voice_fragments + default_top_k below).
+  const settings = await getChatSettings(supabase);
 
   // Resolve / create session.
   const session = body.sessionId
@@ -276,20 +310,19 @@ export async function POST(req: NextRequest): Promise<Response> {
           latencyMs: Date.now() - start,
         })
       );
-      // OPS-02 scaffolding: one structured stdout line per request. Replaced
-      // by lib/log.ts in Phase 9.
-      process.stdout.write(
-        JSON.stringify({
-          source: "chat",
-          requestId,
-          sessionId: session.id,
-          intent: finalIntent,
-          retrievedChunkIds: retrieveResult.chunks.map((c) => c.id),
-          tokensIn: usage.inputTokens,
-          tokensOut: usage.outputTokens,
-          latencyMs: Date.now() - start,
-        }) + "\n"
-      );
+      log.info("chat.completed", {
+        requestId,
+        sessionId: session.id,
+        intent: finalIntent,
+        retrievedChunkIds: retrieveResult.chunks.map((c) => c.id),
+        productHandles: productContext.cards.map((c) => c.handle),
+        offeredCode: offered?.code ?? null,
+        tokensIn: usage.inputTokens,
+        tokensOut: usage.outputTokens,
+        latencyMs: Date.now() - start,
+        spentTodayUsd: pre.spentToday,
+        capUsd: pre.capUsd,
+      });
     } catch (err: unknown) {
       const ce = err instanceof ChatError
         ? err
