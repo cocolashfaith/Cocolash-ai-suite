@@ -1,34 +1,35 @@
 /**
- * lib/chat/embeddings.ts — OpenAI embedding wrapper for the chatbot RAG.
+ * lib/chat/embeddings.ts — Embedding wrapper for the chatbot RAG.
  *
- * Uses OpenAI's text-embedding-3-small (1536-dim, $0.02/1M tokens) per
- * decision D-18 in .planning/phases/01-foundation/01-CONTEXT.md.
+ * Routes through OpenRouter (`/api/v1/embeddings`) reusing the existing
+ * `OPENROUTER_API_KEY`. The OpenAI SDK is OpenAI-compatible and points at
+ * OpenRouter via `lib/openrouter/client.ts`. Model id is namespaced as
+ * `openai/text-embedding-3-small` (1536-dim, ~$0.02 / 1M tokens).
  *
- * NOTE: distinct from lib/openrouter/client.ts which talks to OpenRouter for
- * Claude chat completions. OpenRouter does not expose OpenAI's embeddings
- * endpoint, so we use the official OpenAI SDK directly here.
+ * Decision D-18 (.planning/phases/01-foundation/01-CONTEXT.md) originally
+ * specified the direct OpenAI endpoint; we consolidated to OpenRouter at the
+ * start of Phase 4 testing to drop a redundant API key. The chunk
+ * embedding_model column still records "text-embedding-3-small" so a future
+ * vendor swap is detectable.
  */
 
-import OpenAI from "openai";
+import { getOpenRouterClient, openrouterRequest } from "../openrouter/client";
 import { ChatError } from "./error";
 
+/** Stored verbatim in `knowledge_chunks.embedding_model`. Drop the `openai/`
+ *  namespace so a future swap (e.g. to `voyage-3-large`) is unambiguous. */
 export const EMBEDDING_MODEL = "text-embedding-3-small";
 export const EMBEDDING_DIMENSIONS = 1536;
+const OPENROUTER_MODEL_ID = "openai/text-embedding-3-small";
 
-let cachedClient: OpenAI | null = null;
-
-function getClient(): OpenAI {
-  if (cachedClient) return cachedClient;
-  const apiKey = process.env.OPENAI_API_KEY;
-  if (!apiKey) {
+function ensureKey(): void {
+  if (!process.env.OPENROUTER_API_KEY) {
     throw new ChatError(
-      "OPENAI_API_KEY is not configured",
+      "OPENROUTER_API_KEY is not configured",
       500,
       "missing_api_key"
     );
   }
-  cachedClient = new OpenAI({ apiKey });
-  return cachedClient;
 }
 
 /**
@@ -36,17 +37,13 @@ function getClient(): OpenAI {
  */
 export async function embed(text: string): Promise<number[]> {
   if (!text || text.trim().length === 0) {
-    throw new ChatError(
-      "Cannot embed empty text",
-      400,
-      "invalid_input"
-    );
+    throw new ChatError("Cannot embed empty text", 400, "invalid_input");
   }
-
-  const client = getClient();
-  return withRetry(async () => {
+  ensureKey();
+  const client = getOpenRouterClient();
+  return openrouterRequest(async () => {
     const res = await client.embeddings.create({
-      model: EMBEDDING_MODEL,
+      model: OPENROUTER_MODEL_ID,
       input: text,
     });
     const vector = res.data[0]?.embedding;
@@ -62,9 +59,9 @@ export async function embed(text: string): Promise<number[]> {
 }
 
 /**
- * Embed many texts in a single API call. OpenAI accepts up to 2048 inputs
- * per request; callers should chunk above that. Returns a vector per input,
- * preserving order.
+ * Embed many texts in a single API call. OpenAI/OpenRouter accept large
+ * batches; we cap at 2048 inputs per request so callers pre-chunk.
+ * Returns a vector per input, preserving order.
  */
 export async function embedMany(texts: ReadonlyArray<string>): Promise<number[][]> {
   if (texts.length === 0) return [];
@@ -77,16 +74,16 @@ export async function embedMany(texts: ReadonlyArray<string>): Promise<number[][
   }
   if (texts.length > 2048) {
     throw new ChatError(
-      `Batch size ${texts.length} exceeds OpenAI 2048-input limit; chunk before calling embedMany`,
+      `Batch size ${texts.length} exceeds 2048-input limit; chunk before calling embedMany`,
       400,
       "invalid_input"
     );
   }
-
-  const client = getClient();
-  return withRetry(async () => {
+  ensureKey();
+  const client = getOpenRouterClient();
+  return openrouterRequest(async () => {
     const res = await client.embeddings.create({
-      model: EMBEDDING_MODEL,
+      model: OPENROUTER_MODEL_ID,
       input: [...texts],
     });
     if (res.data.length !== texts.length) {
@@ -100,42 +97,6 @@ export async function embedMany(texts: ReadonlyArray<string>): Promise<number[][
       .sort((a, b) => a.index - b.index)
       .map((d) => d.embedding);
   });
-}
-
-// ── Retry helper with exponential backoff on 429 / 5xx ────────
-const MAX_RETRIES = 4;
-
-async function withRetry<T>(fn: () => Promise<T>): Promise<T> {
-  let attempt = 0;
-  let lastError: unknown;
-  while (attempt < MAX_RETRIES) {
-    try {
-      return await fn();
-    } catch (err: unknown) {
-      lastError = err;
-      const status = extractStatus(err);
-      const retriable = status === 429 || (status !== undefined && status >= 500);
-      if (!retriable) throw err;
-      const backoffMs = 250 * Math.pow(2, attempt) + Math.floor(Math.random() * 100);
-      await sleep(backoffMs);
-      attempt += 1;
-    }
-  }
-  throw lastError instanceof Error
-    ? lastError
-    : new ChatError("Embedding retries exhausted", 502, "embedding_failed");
-}
-
-function extractStatus(err: unknown): number | undefined {
-  if (err && typeof err === "object" && "status" in err) {
-    const status = (err as { status: unknown }).status;
-    if (typeof status === "number") return status;
-  }
-  return undefined;
-}
-
-function sleep(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 /**
