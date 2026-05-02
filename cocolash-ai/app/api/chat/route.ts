@@ -26,6 +26,7 @@ import { isBusinessHours } from "@/lib/chat/hours";
 import { classifyIntent } from "@/lib/chat/intent";
 import { retrieve } from "@/lib/chat/retrieve";
 import { buildProductContext } from "@/lib/chat/product-context";
+import { fetchActiveDiscounts, selectDiscountForTurn } from "@/lib/chat/discount";
 import { streamChat } from "@/lib/openrouter/chat";
 import { composeSystemPrompt, DEFAULT_VOICE_FRAGMENTS } from "@/lib/chat/voice";
 import {
@@ -151,11 +152,20 @@ export async function POST(req: NextRequest): Promise<Response> {
     () => ({ cards: [], promptText: "" })
   );
 
-  // Don't-know guardrail (RAG-05): force lead_capture when no chunk passes
-  // the threshold.
-  const finalIntent: IntentLabel = retrieveResult.noConfidentMatch
-    ? "lead_capture"
+  // Don't-know guardrail (RAG-05): force lead_capture when no chunk passes threshold.
+  // (Computed up-front so the discount selector sees the post-guardrail intent.)
+  const intentForOffer = retrieveResult.noConfidentMatch
+    ? ("lead_capture" as const)
     : intentResult.intent;
+
+  // Phase 5: pick a discount code (Stage 1: one per turn). Best-effort.
+  const discountRules = await fetchActiveDiscounts(supabase).catch(() => []);
+  const offered = selectDiscountForTurn(discountRules, {
+    intent: intentForOffer,
+    productHandles: productContext.cards.map((c) => c.handle),
+  });
+
+  const finalIntent: IntentLabel = intentForOffer;
 
   // Build the system prompt.
   const fragments: VoiceFragments =
@@ -166,6 +176,7 @@ export async function POST(req: NextRequest): Promise<Response> {
     retrievedChunks: retrieveResult.noConfidentMatch ? [] : retrieveResult.chunks,
     isBusinessHours: isBusinessHours(),
     productContext: productContext.promptText,
+    discountCode: offered ? { code: offered.code, description: offered.description } : null,
   });
 
   // Convert the persisted history (which already includes the user turn we
