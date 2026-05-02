@@ -3,9 +3,9 @@ milestone: v3.0
 milestone_name: AI Sales Assistant + Virtual Try-On
 status: planning
 progress:
-  phases_completed: 1
+  phases_completed: 2
   phases_total: 9
-  requirements_completed: 6
+  requirements_completed: 15
   requirements_total: 57
 last_updated: 2026-05-02
 ---
@@ -21,10 +21,10 @@ See: `.planning/PROJECT.md` (updated 2026-05-02)
 
 ## Current Position
 
-Phase: 2 — Core chat API + streaming + intent + eval (starting)
-Plan: Phase 1 complete (code-only); 3/6 success criteria pending user deploy
+Phase: 3 — Widget v1 + Stage 1 deployment (starting)
+Plan: Phases 1+2 code complete; live verification of both pending user deploy
 Status: Executing autonomously per user authorization
-Last activity: 2026-05-02 — Phase 1 closed; 8 atomic commits; 15/15 tests pass
+Last activity: 2026-05-02 — Phase 2 closed; 47/47 tests pass; /api/chat compiles
 
 ## Accumulated Context
 
