@@ -3,9 +3,9 @@ milestone: v3.0
 milestone_name: AI Sales Assistant + Virtual Try-On
 status: planning
 progress:
-  phases_completed: 7
+  phases_completed: 8
   phases_total: 9
-  requirements_completed: 52
+  requirements_completed: 57
   requirements_total: 57
 last_updated: 2026-05-02
 ---
@@ -21,10 +21,10 @@ See: `.planning/PROJECT.md` (updated 2026-05-02)
 
 ## Current Position
 
-Phase: 8 — Stage 2 Shopify deployment (starting)
-Plan: Phases 1–7 code complete; 88/88 tests; admin dashboard live
+Phase: 9 — Production hardening (final phase)
+Plan: Phases 1–8 code complete; 94/94 tests; all routes registered
 Status: Executing autonomously per user authorization
-Last activity: 2026-05-02 — Phase 7 closed; 8 admin pages + 7 API routes registered
+Last activity: 2026-05-02 — Phase 8 closed; App Proxy + TAE + deploy docs
 
 ## Accumulated Context
 
