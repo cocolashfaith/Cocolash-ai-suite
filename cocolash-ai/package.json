@@ -8,7 +8,8 @@
     "start": "next start",
     "lint": "eslint",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "build:widget": "npm --prefix widget install --no-audit --no-fund && npm --prefix widget run build"
   },
   "dependencies": {
     "@google/genai": "^1.40.0",
