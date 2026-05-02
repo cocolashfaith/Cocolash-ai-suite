@@ -12,7 +12,7 @@
 
 import { useCallback, useState } from "preact/hooks";
 import { postSse } from "./sse";
-import { usePersistedState, uuid, type Message } from "./state";
+import { usePersistedState, uuid, type Message, type ProductCard } from "./state";
 
 export type ChatStatus = "idle" | "sending" | "streaming" | "error";
 
@@ -34,7 +34,7 @@ export interface UseChatOptions {
 }
 
 export function useChat(opts: UseChatOptions): UseChatResult {
-  const { state, setSessionId, appendMessage, updateLastAssistant, setConsent, reset } =
+  const { state, setSessionId, appendMessage, updateLastAssistant, attachProductsToLast, setConsent, reset } =
     usePersistedState();
 
   const [status, setStatus] = useState<ChatStatus>("idle");
@@ -91,6 +91,13 @@ export function useChat(opts: UseChatOptions): UseChatResult {
             } catch {
               // ignore
             }
+          } else if (frame.event === "products") {
+            try {
+              const parsed = JSON.parse(frame.data) as { products: ProductCard[] };
+              if (parsed.products?.length > 0) attachProductsToLast(parsed.products);
+            } catch {
+              // ignore
+            }
           } else if (frame.event === "done") {
             try {
               const parsed = JSON.parse(frame.data) as { sessionId: string };
@@ -118,7 +125,7 @@ export function useChat(opts: UseChatOptions): UseChatResult {
         setStatus("error");
       }
     },
-    [opts.apiBaseUrl, opts.shopDomain, opts.customerId, state.sessionId, status, appendMessage, setSessionId, updateLastAssistant]
+    [opts.apiBaseUrl, opts.shopDomain, opts.customerId, state.sessionId, status, appendMessage, setSessionId, updateLastAssistant, attachProductsToLast]
   );
 
   const acceptConsent = useCallback(() => setConsent("accepted"), [setConsent]);

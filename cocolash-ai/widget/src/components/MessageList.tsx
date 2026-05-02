@@ -1,5 +1,7 @@
+import { Fragment } from "preact";
 import { useEffect, useRef } from "preact/hooks";
 import { Markdown } from "./Markdown";
+import { ProductCards } from "./ProductCards";
 import type { Message } from "../lib/state";
 import type { ChatStatus } from "../lib/useChat";
 
@@ -30,11 +32,13 @@ export function MessageList({ messages, status, errorMessage, greeting }: Messag
         m.role === "user" ? (
           <div key={m.id} class="bubble bubble--user">{m.content}</div>
         ) : (
-          <Markdown
-            key={m.id}
-            text={m.content || (status === "streaming" ? "" : " ")}
-            className="bubble bubble--assistant"
-          />
+          <Fragment key={m.id}>
+            <Markdown
+              text={m.content || (status === "streaming" ? "" : " ")}
+              className="bubble bubble--assistant"
+            />
+            {m.products && m.products.length > 0 ? <ProductCards products={m.products} /> : null}
+          </Fragment>
         )
       )}
       {status === "streaming" && messages[messages.length - 1]?.role === "assistant" && messages[messages.length - 1].content.length === 0 ? (

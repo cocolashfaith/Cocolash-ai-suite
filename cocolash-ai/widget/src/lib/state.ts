@@ -8,6 +8,19 @@ import { useEffect, useState } from "preact/hooks";
 const STORAGE_KEY = "cocolash:chat:v1";
 const TTL_DAYS = 30;
 
+export interface ProductCard {
+  handle: string;
+  title: string;
+  description: string;
+  image: { url: string; alt: string } | null;
+  priceFrom: string;
+  priceTo: string;
+  currency: string;
+  available: boolean;
+  productUrl: string;
+  addToCartUrl: string;
+}
+
 export interface Message {
   id: string;
   role: "user" | "assistant";
@@ -15,6 +28,8 @@ export interface Message {
   createdAt: number;
   /** Source chunk IDs returned by the server for this assistant turn. */
   sourceIds?: string[];
+  /** Live Shopify product cards attached to this assistant turn (Phase 4). */
+  products?: ProductCard[];
 }
 
 export interface PersistedState {
@@ -65,6 +80,7 @@ export function usePersistedState(): {
   setSessionId: (id: string) => void;
   appendMessage: (m: Message) => void;
   updateLastAssistant: (delta: string, sourceIds?: string[]) => void;
+  attachProductsToLast: (products: ProductCard[]) => void;
   setConsent: (c: "accepted" | "declined") => void;
   reset: () => void;
 } {
@@ -89,6 +105,15 @@ export function usePersistedState(): {
             content: last.content + delta,
             sourceIds: sourceIds ?? last.sourceIds,
           };
+        }
+        return { ...s, messages };
+      }),
+    attachProductsToLast: (products) =>
+      setState((s) => {
+        const messages = s.messages.slice();
+        const last = messages[messages.length - 1];
+        if (last && last.role === "assistant") {
+          messages[messages.length - 1] = { ...last, products };
         }
         return { ...s, messages };
       }),
