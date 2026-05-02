@@ -149,16 +149,72 @@ Explicitly excluded from milestone v3.0. Documented to prevent scope creep.
 
 ## Traceability
 
-Maps each v1 requirement to its roadmap phase. Updated by `gsd-roadmapper` during roadmap creation.
+Maps each v1 requirement to its roadmap phase. See `.planning/ROADMAP.md` for full phase details.
 
 | Requirement | Phase | Status |
 |---|---|---|
-| (To be populated by ROADMAP.md) | — | Pending |
+| CHAT-01 | 2, 3 | Pending |
+| CHAT-02 | 2 | Pending |
+| CHAT-03 | 1 | Pending |
+| CHAT-04 | 2, 9 (verification) | Pending |
+| CHAT-05 | 2 | Pending |
+| CHAT-06 | 5 | Pending |
+| CHAT-07 | 5 | Pending |
+| CHAT-08 | 2 | Pending |
+| RAG-01 | 1 | Pending |
+| RAG-02 | 1 | Pending |
+| RAG-03 | 2 | Pending |
+| RAG-04 | 1 | Pending |
+| RAG-05 | 2 | Pending |
+| RAG-06 | 2 | Pending |
+| SHOP-01 | 4 | Pending |
+| SHOP-02 | 4 | Pending |
+| SHOP-03 | 4 | Pending |
+| SHOP-04 | 5 | Pending |
+| SHOP-05 | 8 | Pending |
+| SHOP-06 | 4 | Pending |
+| SHOP-07 | 4 | Pending |
+| SHOP-08 | 4 | Pending |
+| TRYON-01 | 6 | Pending |
+| TRYON-02 | 6 | Pending |
+| TRYON-03 | 6 | Pending |
+| TRYON-04 | 6 | Pending |
+| TRYON-05 | 6 | Pending |
+| TRYON-06 | 6 | Pending |
+| TRYON-07 | 6 | Pending |
+| TRYON-08 | 6 | Pending |
+| LEAD-01 | 5 | Pending |
+| LEAD-02 | 5 | Pending |
+| LEAD-03 | 5 | Pending |
+| LEAD-04 | 5 | Pending |
+| LEAD-05 | 7 | Pending |
+| ADMIN-01 | 7 | Pending |
+| ADMIN-02 | 7 | Pending |
+| ADMIN-03 | 7 | Pending |
+| ADMIN-04 | 7 | Pending |
+| ADMIN-05 | 7 | Pending |
+| ADMIN-06 | 7 | Pending |
+| ADMIN-07 | 7 | Pending |
+| ADMIN-08 | 7 | Pending |
+| ADMIN-09 | 7 | Pending |
+| DEPLOY-01 | 3 | Pending |
+| DEPLOY-02 | 8 | Pending |
+| DEPLOY-03 | 8 | Pending |
+| DEPLOY-04 | 8 | Pending |
+| DEPLOY-05 | 3 | Pending |
+| DEPLOY-06 | 3 | Pending |
+| OPS-01 | 9 | Pending |
+| OPS-02 | 2, 9 (verification) | Pending |
+| OPS-03 | 1 | Pending |
+| OPS-04 | 3 | Pending |
+| OPS-05 | 6 | Pending |
+| OPS-06 | 1 | Pending |
+| OPS-07 | 4, 8 | Pending |
 
 **Coverage:**
-- v1 requirements: 60 total
-- Mapped to phases: 0 (pending roadmap)
-- Unmapped: 60 ⚠️ (will resolve at roadmap creation)
+- v1 requirements: 57 total
+- Mapped to phases: 57
+- Unmapped: 0 ✓
 
 ---
 

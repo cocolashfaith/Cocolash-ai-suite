@@ -4,9 +4,9 @@ milestone_name: AI Sales Assistant + Virtual Try-On
 status: planning
 progress:
   phases_completed: 0
-  phases_total: 0
+  phases_total: 9
   requirements_completed: 0
-  requirements_total: 0
+  requirements_total: 57
 last_updated: 2026-05-02
 ---
 
@@ -21,10 +21,10 @@ See: `.planning/PROJECT.md` (updated 2026-05-02)
 
 ## Current Position
 
-Phase: Not started (defining requirements)
+Phase: 1 — Foundation: Schema, RAG ingest, brand voice (not started)
 Plan: —
-Status: Defining requirements
-Last activity: 2026-05-02 — Milestone v3.0 started
+Status: Roadmap defined; awaiting user approval to start Phase 1
+Last activity: 2026-05-02 — ROADMAP.md drafted (9 phases, 57 requirements mapped)
 
 ## Accumulated Context
 
