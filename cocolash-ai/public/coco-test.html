@@ -1,0 +1,44 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Coco Widget — Local Test</title>
+    <style>
+      body {
+        font-family: -apple-system, system-ui, sans-serif;
+        max-width: 720px;
+        margin: 60px auto;
+        padding: 0 24px;
+        color: #222;
+      }
+      h1 { font-size: 24px; }
+      p { line-height: 1.5; }
+      code { background: #f4f4f4; padding: 2px 6px; border-radius: 4px; }
+    </style>
+  </head>
+  <body>
+    <h1>Coco — Local Widget Test</h1>
+    <p>
+      The Coco chat bubble should appear in the bottom-right corner. Click it
+      to chat with Faith's AI sales assistant.
+    </p>
+    <p>
+      If nothing appears, open DevTools console — any errors there tell us
+      exactly what's wrong.
+    </p>
+
+    <script>
+      window.COCOLASH_CHAT_CONFIG = {
+        apiBaseUrl: window.location.origin,
+        shopDomain: "cocolashco.myshopify.com",
+      };
+      // Cache-bust the bundle on every reload during local testing so we
+      // never serve a stale widget.js out of disk cache.
+      const s = document.createElement("script");
+      s.src = `/widget.js?v=${Date.now()}`;
+      s.defer = true;
+      document.head.appendChild(s);
+    </script>
+  </body>
+</html>
