@@ -10,9 +10,10 @@ interface MessageListProps {
   status: ChatStatus;
   errorMessage: string | null;
   greeting: string;
+  onTryOn?: (handle: string, title: string) => void;
 }
 
-export function MessageList({ messages, status, errorMessage, greeting }: MessageListProps) {
+export function MessageList({ messages, status, errorMessage, greeting, onTryOn }: MessageListProps) {
   const ref = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -37,7 +38,14 @@ export function MessageList({ messages, status, errorMessage, greeting }: Messag
               text={m.content || (status === "streaming" ? "" : " ")}
               className="bubble bubble--assistant"
             />
-            {m.products && m.products.length > 0 ? <ProductCards products={m.products} /> : null}
+            {m.products && m.products.length > 0 ? (
+              <ProductCards products={m.products} onTryOn={onTryOn} />
+            ) : null}
+            {m.tryonImageUrl ? (
+              <div class="tryon-result">
+                <img src={m.tryonImageUrl} alt="Try-on preview" loading="lazy" />
+              </div>
+            ) : null}
           </Fragment>
         )
       )}

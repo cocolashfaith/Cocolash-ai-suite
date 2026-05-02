@@ -18,10 +18,12 @@ export type ChatStatus = "idle" | "sending" | "streaming" | "error";
 
 export interface UseChatResult {
   messages: Message[];
+  sessionId: string | null;
   consent: "accepted" | "declined" | null;
   status: ChatStatus;
   errorMessage: string | null;
   send: (message: string) => Promise<void>;
+  appendTryOnResult: (composedUrl: string, productTitle: string) => void;
   acceptConsent: () => void;
   declineConsent: () => void;
   reset: () => void;
@@ -34,7 +36,7 @@ export interface UseChatOptions {
 }
 
 export function useChat(opts: UseChatOptions): UseChatResult {
-  const { state, setSessionId, appendMessage, updateLastAssistant, attachProductsToLast, setConsent, reset } =
+  const { state, setSessionId, appendMessage, updateLastAssistant, attachProductsToLast, appendTryOnResult, setConsent, reset } =
     usePersistedState();
 
   const [status, setStatus] = useState<ChatStatus>("idle");
@@ -133,10 +135,12 @@ export function useChat(opts: UseChatOptions): UseChatResult {
 
   return {
     messages: state.messages,
+    sessionId: state.sessionId,
     consent: state.consent,
     status,
     errorMessage,
     send,
+    appendTryOnResult,
     acceptConsent,
     declineConsent,
     reset,

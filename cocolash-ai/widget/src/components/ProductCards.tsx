@@ -13,6 +13,7 @@ interface ProductCard {
 
 interface ProductCardsProps {
   products: ProductCard[];
+  onTryOn?: (handle: string, title: string) => void;
 }
 
 function priceLabel(p: ProductCard): string {
@@ -20,7 +21,7 @@ function priceLabel(p: ProductCard): string {
   return `$${p.priceFrom}–$${p.priceTo}`;
 }
 
-export function ProductCards({ products }: ProductCardsProps) {
+export function ProductCards({ products, onTryOn }: ProductCardsProps) {
   if (products.length === 0) return null;
   return (
     <div class="products" role="list">
@@ -64,6 +65,15 @@ export function ProductCards({ products }: ProductCardsProps) {
                 </a>
               ) : null}
             </div>
+            {onTryOn ? (
+              <button
+                type="button"
+                class="product-card__tryon"
+                onClick={() => onTryOn(p.handle, p.title)}
+              >
+                ✨ See it on you
+              </button>
+            ) : null}
           </div>
         </article>
       ))}

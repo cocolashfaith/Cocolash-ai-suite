@@ -30,6 +30,8 @@ export interface Message {
   sourceIds?: string[];
   /** Live Shopify product cards attached to this assistant turn (Phase 4). */
   products?: ProductCard[];
+  /** Composed try-on image URL attached to this assistant turn (Phase 6). */
+  tryonImageUrl?: string;
 }
 
 export interface PersistedState {
@@ -81,6 +83,7 @@ export function usePersistedState(): {
   appendMessage: (m: Message) => void;
   updateLastAssistant: (delta: string, sourceIds?: string[]) => void;
   attachProductsToLast: (products: ProductCard[]) => void;
+  appendTryOnResult: (composedUrl: string, productTitle: string) => void;
   setConsent: (c: "accepted" | "declined") => void;
   reset: () => void;
 } {
@@ -115,6 +118,20 @@ export function usePersistedState(): {
         if (last && last.role === "assistant") {
           messages[messages.length - 1] = { ...last, products };
         }
+        return { ...s, messages };
+      }),
+    appendTryOnResult: (composedUrl, productTitle) =>
+      setState((s) => {
+        const messages = [
+          ...s.messages,
+          {
+            id: uuid(),
+            role: "assistant" as const,
+            content: `Here's how ${productTitle} looks on you 💛`,
+            createdAt: Date.now(),
+            tryonImageUrl: composedUrl,
+          },
+        ].slice(-50);
         return { ...s, messages };
       }),
     setConsent: (c) => setState((s) => ({ ...s, consent: c })),

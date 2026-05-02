@@ -342,6 +342,111 @@ button {
 
 .product-card__btn--primary:hover { background: #1c0f08; }
 
+.product-card__tryon {
+  margin-top: 6px;
+  font-size: 11px;
+  color: var(--coco-brown-medium);
+  background: transparent;
+  text-decoration: underline;
+  align-self: flex-start;
+}
+
+.product-card__tryon:hover { color: var(--coco-brown); }
+
+/* ── Try-on dialog ───────────────────────────────────── */
+
+.tryon-overlay {
+  position: absolute;
+  inset: 0;
+  background: rgba(40, 21, 14, 0.55);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 10;
+  padding: 20px;
+  animation: fade-in 200ms ease;
+}
+
+@keyframes fade-in { from { opacity: 0; } to { opacity: 1; } }
+
+.tryon-dialog {
+  background: var(--coco-cream);
+  border-radius: 16px;
+  padding: 22px 22px 18px;
+  max-width: 320px;
+  width: 100%;
+  position: relative;
+  box-shadow: var(--coco-shadow);
+}
+
+.tryon-close {
+  position: absolute;
+  top: 8px;
+  right: 12px;
+  font-size: 24px;
+  line-height: 1;
+  color: var(--coco-brown-medium);
+  width: 28px;
+  height: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.tryon-title {
+  margin: 0 0 8px 0;
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--coco-brown);
+}
+
+.tryon-body {
+  margin: 0 0 14px 0;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--coco-brown-medium);
+}
+
+.tryon-buttons {
+  display: flex;
+  gap: 8px;
+}
+
+.tryon-btn {
+  flex: 1;
+  padding: 9px 14px;
+  border-radius: 10px;
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.tryon-btn--primary { background: var(--coco-brown); color: var(--coco-cream); }
+.tryon-btn--primary:hover { background: #1c0f08; }
+.tryon-btn--secondary { background: transparent; color: var(--coco-brown); border: 1px solid var(--coco-pink); }
+.tryon-btn--secondary:hover { background: var(--coco-pink-soft); }
+
+.tryon-spinner {
+  margin: 18px auto 0;
+  width: 28px;
+  height: 28px;
+  border: 3px solid var(--coco-pink-soft);
+  border-top-color: var(--coco-brown);
+  border-radius: 50%;
+  animation: spin 800ms linear infinite;
+}
+
+@keyframes spin { to { transform: rotate(360deg); } }
+
+.tryon-result {
+  align-self: flex-start;
+  max-width: 240px;
+  border-radius: 12px;
+  overflow: hidden;
+  box-shadow: 0 1px 2px rgba(40, 21, 14, 0.08);
+}
+
+.tryon-result img { width: 100%; display: block; }
+
 /* ── Input ───────────────────────────────────────────── */
 
 .input {

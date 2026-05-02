@@ -4,6 +4,7 @@ import { Header } from "./components/Header";
 import { MessageList } from "./components/MessageList";
 import { MessageInput } from "./components/MessageInput";
 import { ConsentStrip } from "./components/ConsentStrip";
+import { TryOnDialog } from "./components/TryOnDialog";
 import { useChat } from "./lib/useChat";
 
 export interface AppProps {
@@ -28,6 +29,7 @@ export function App(props: AppProps) {
   const [open, setOpen] = useState(false);
   const [showBadge, setShowBadge] = useState(false);
   const [config, setConfig] = useState<ChatConfig>(DEFAULT_CONFIG);
+  const [tryOnTarget, setTryOnTarget] = useState<{ handle: string; title: string } | null>(null);
 
   const chat = useChat({
     apiBaseUrl: props.apiBaseUrl,
@@ -94,7 +96,17 @@ export function App(props: AppProps) {
           status={chat.status}
           errorMessage={chat.errorMessage}
           greeting={config.greeting}
+          onTryOn={(handle, title) => setTryOnTarget({ handle, title })}
         />
+        {tryOnTarget && chat.sessionId ? (
+          <TryOnDialog
+            cfg={{ apiBaseUrl: props.apiBaseUrl, sessionId: chat.sessionId }}
+            productHandle={tryOnTarget.handle}
+            productTitle={tryOnTarget.title}
+            onClose={() => setTryOnTarget(null)}
+            onResult={(composedUrl) => chat.appendTryOnResult(composedUrl, tryOnTarget.title)}
+          />
+        ) : null}
         {chat.consent === null ? (
           <ConsentStrip onAccept={chat.acceptConsent} onDecline={chat.declineConsent} />
         ) : null}
