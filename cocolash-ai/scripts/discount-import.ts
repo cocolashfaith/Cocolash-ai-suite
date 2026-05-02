@@ -82,8 +82,11 @@ function toRangeLiteral(start: string, end: string): string | null {
   const s = (start ?? "").trim();
   const e = (end ?? "").trim();
   if (!s && !e) return null;
-  // tstzrange literal in the form '["...","...")'.
-  return `["${s}","${e}")`;
+  // tstzrange literal: open-ended bounds use infinity / -infinity.
+  // Postgres rejects empty quoted strings ('') as timestamps.
+  const lo = s ? `"${s}"` : "-infinity";
+  const hi = e ? `"${e}"` : "infinity";
+  return `[${lo},${hi})`;
 }
 
 function statusFromCsv(raw: string): "active" | "paused" | "expired" {
