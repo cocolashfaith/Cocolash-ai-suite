@@ -57,7 +57,7 @@ describe("isAboveThreshold", () => {
     expect(isAboveThreshold(0.6)).toBe(true);
   });
   it("treats distance above threshold as not confident", () => {
-    expect(isAboveThreshold(0.61)).toBe(false);
+    expect(isAboveThreshold(0.76)).toBe(false);
     expect(isAboveThreshold(1.0)).toBe(false);
   });
   it("respects custom threshold", () => {

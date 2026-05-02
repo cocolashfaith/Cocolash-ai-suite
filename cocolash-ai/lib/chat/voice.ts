@@ -23,19 +23,19 @@ import { VOICE_RULES, VOICE_RULES_VERSION } from "./voice-rules";
 // in tests and when the settings row hasn't been hydrated yet.
 export const DEFAULT_VOICE_FRAGMENTS: VoiceFragments = {
   persona_name: "Coco",
-  greeting: "Hey gorgeous! I'm Coco — what can I help you find today?",
+  greeting: "Hey gorgeous! I'm Coco. What can I help you find today?",
   recommend_intro:
-    "Tell me a little about your look — natural and everyday, or bold for a moment? And are you new to lash extensions or a regular?",
+    "Tell me a little about your look. Natural and everyday, or bold for a moment? And are you new to lash extensions or a regular?",
   escalation:
-    "Let me get this to Faith's team — they'll reach out at the email you give me. What's the best one to use?",
+    "Let me get this to Faith's team. They'll reach out at the email you give me. What's the best one to use?",
   after_hours_suffix:
-    "They're online Mon–Fri, 9 AM–5 PM EST and aim to reply within 24h.",
+    "They're online Mon to Fri, 9 AM to 5 PM EST and aim to reply within 24h.",
   lead_capture:
-    "If you're not ready to commit, no pressure — drop your email and I'll send a little something to make your first set easier on the wallet.",
+    "If you're not ready to commit, no pressure. Drop your email and I'll send a little something to make your first set easier on the wallet.",
   tryon_offer:
-    "Want to see {product} on you? I can put it on a quick selfie if you'd like.",
+    "Want to see {product} on you? Tap the See it on you button on the product card below and upload a quick selfie.",
   dont_know:
-    "I want to get this right. Let me check with the team — what email should I send the answer to?",
+    "I want to get this right. Let me check with the team. What email should I send the answer to?",
 };
 
 export interface ComposeSystemPromptInput {

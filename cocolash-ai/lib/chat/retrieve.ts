@@ -43,8 +43,23 @@ export interface RetrieveResult {
 }
 
 const DEFAULT_TOP_K = 6;
-const DEFAULT_DISTANCE_THRESHOLD = 0.6;
+// 0.6 was too strict for short follow-up questions like "what curl is dahlia?".
+// 0.75 lets weaker but still-relevant chunks through; the don't-know guardrail
+// still fires for genuinely unrelated queries (distance > 0.75).
+const DEFAULT_DISTANCE_THRESHOLD = 0.75;
 const DEFAULT_TIER_BONUS = 0.05;
+
+/**
+ * The 11 System 3 product styles. When any of these appears in a user query
+ * we force-include that product's KB chunk in retrieval, regardless of the
+ * cosine similarity of the question embedding. Solves Phase 11 issue #2:
+ * the bot would forget product-specific facts on long conversations because
+ * short follow-ups like "what curl is dahlia?" embed poorly.
+ */
+const FORCE_INCLUDE_STYLE_KEYWORDS = [
+  "violet", "peony", "jasmine", "iris", "daisy",
+  "dahlia", "poppy", "marigold", "orchid", "rose", "sorrel",
+] as const;
 
 interface RawMatchRow {
   id: string;
@@ -105,6 +120,33 @@ export async function retrieve(
   }
 
   const rows = (data ?? []) as RawMatchRow[];
+
+  // 2b. Force-include the product chunk for any style keyword in the query.
+  // This is independent of vector similarity — keyword presence is itself
+  // strong evidence the user wants product-specific facts. We pull both
+  // the product_md:<style> and product_csv:<style>* rows.
+  const lower = trimmed.toLowerCase();
+  const matchedStyles = FORCE_INCLUDE_STYLE_KEYWORDS.filter((s) =>
+    lower.includes(s)
+  );
+  if (matchedStyles.length > 0) {
+    // Build an OR of `source_id.eq.product_md:<s>` plus a LIKE on
+    // `product_csv:<s>%` so we catch both naming conventions used during
+    // KB ingest. PostgREST `or` syntax: comma-separated filters.
+    const filters = matchedStyles
+      .flatMap((s) => [`source_id.eq.product_md:${s}`, `source_id.like.product_csv:${s}%`])
+      .join(",");
+    const { data: forced } = await supabase
+      .from("knowledge_chunks")
+      .select("*")
+      .or(filters);
+    const existingIds = new Set(rows.map((r) => r.id));
+    for (const f of (forced ?? []) as Array<RawMatchRow & { embedding: unknown }>) {
+      if (!existingIds.has(f.id)) {
+        rows.push({ ...f, distance: 0 } as RawMatchRow);
+      }
+    }
+  }
 
   // 3. Re-rank with tier weighting and clamp to topK.
   const ranked: RetrievedChunk[] = rows

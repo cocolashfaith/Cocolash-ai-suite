@@ -5,7 +5,18 @@ import { MessageList } from "./components/MessageList";
 import { MessageInput } from "./components/MessageInput";
 import { ConsentStrip } from "./components/ConsentStrip";
 import { TryOnDialog } from "./components/TryOnDialog";
+import { Lightbox } from "./components/Lightbox";
+import { Peek } from "./components/Peek";
 import { useChat } from "./lib/useChat";
+
+const QUICK_REPLY_CHIPS: ReadonlyArray<string> = [
+  "What's most natural?",
+  "Bold for a special event",
+  "How do I apply them?",
+];
+
+const PEEK_DELAY_MS = 1500;
+const PEEK_DISMISS_KEY = "cocolash:peek:dismissed";
 
 export interface AppProps {
   apiBaseUrl: string;
@@ -30,6 +41,8 @@ export function App(props: AppProps) {
   const [showBadge, setShowBadge] = useState(false);
   const [config, setConfig] = useState<ChatConfig>(DEFAULT_CONFIG);
   const [tryOnTarget, setTryOnTarget] = useState<{ handle: string; title: string } | null>(null);
+  const [zoomedImage, setZoomedImage] = useState<string | null>(null);
+  const [peekVisible, setPeekVisible] = useState(false);
 
   const chat = useChat({
     apiBaseUrl: props.apiBaseUrl,
@@ -42,6 +55,47 @@ export function App(props: AppProps) {
     const t = setTimeout(() => setShowBadge(true), 30000);
     return () => clearTimeout(t);
   }, []);
+
+  // Proactive zero-state: pop the quick-reply Peek 1.5s after mount unless
+  // the visitor has already dismissed it this session, has opened the panel,
+  // or has already messaged Coco previously.
+  useEffect(() => {
+    let dismissed = false;
+    try {
+      dismissed = sessionStorage.getItem(PEEK_DISMISS_KEY) === "1";
+    } catch {
+      // sessionStorage may be disabled (private mode)
+    }
+    if (dismissed || open || chat.messages.length > 0) return;
+    const t = setTimeout(() => setPeekVisible(true), PEEK_DELAY_MS);
+    return () => clearTimeout(t);
+  }, [open, chat.messages.length]);
+
+  const dismissPeek = () => {
+    setPeekVisible(false);
+    try {
+      sessionStorage.setItem(PEEK_DISMISS_KEY, "1");
+    } catch {
+      // ignore
+    }
+  };
+
+  const onChipClick = (text: string) => {
+    setPeekVisible(false);
+    setOpen(true);
+    setShowBadge(false);
+    // Send the chip text as the visitor's first message. Consent gate
+    // still applies — if the visitor hasn't accepted yet, the consent
+    // strip blocks the send and the chip text is dropped (acceptable).
+    if (chat.consent === "accepted") {
+      void chat.send(text);
+    } else {
+      // Stage the message: open the panel so consent strip is visible,
+      // and the visitor can re-tap once they accept. We don't auto-fill
+      // the input to avoid surprising them.
+      void chat.send(text);
+    }
+  };
 
   // Fetch live config (greeting + bot_enabled). Falls back to defaults.
   useEffect(() => {
@@ -77,13 +131,24 @@ export function App(props: AppProps) {
 
   if (!open) {
     return (
-      <Fab
-        showBadge={showBadge && chat.messages.length === 0}
-        onClick={() => {
-          setOpen(true);
-          setShowBadge(false);
-        }}
-      />
+      <>
+        {peekVisible ? (
+          <Peek
+            greeting={config.greeting}
+            chips={QUICK_REPLY_CHIPS}
+            onChip={onChipClick}
+            onDismiss={dismissPeek}
+          />
+        ) : null}
+        <Fab
+          showBadge={showBadge && chat.messages.length === 0}
+          onClick={() => {
+            setOpen(true);
+            setShowBadge(false);
+            setPeekVisible(false);
+          }}
+        />
+      </>
     );
   }
 
@@ -97,6 +162,7 @@ export function App(props: AppProps) {
           errorMessage={chat.errorMessage}
           greeting={config.greeting}
           onTryOn={(handle, title) => setTryOnTarget({ handle, title })}
+          onZoom={(url) => setZoomedImage(url)}
         />
         {tryOnTarget && chat.sessionId ? (
           <TryOnDialog
@@ -126,6 +192,13 @@ export function App(props: AppProps) {
         showBadge={false}
         onClick={() => setOpen(false)}
       />
+      {zoomedImage ? (
+        <Lightbox
+          src={zoomedImage}
+          alt="Try-on preview"
+          onClose={() => setZoomedImage(null)}
+        />
+      ) : null}
     </>
   );
 }

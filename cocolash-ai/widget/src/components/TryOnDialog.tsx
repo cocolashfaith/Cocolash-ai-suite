@@ -73,7 +73,7 @@ export function TryOnDialog({ cfg, productHandle, productTitle, onClose, onResul
                 ? "Pick a photo or capture a selfie."
                 : status === "uploading"
                   ? "Sending your photo securely…"
-                  : "Coco's working her magic — this can take 10–30 seconds."}
+                  : "Coco's working her magic. This can take 10 to 30 seconds."}
             </p>
             <div class="tryon-spinner" aria-hidden="true" />
           </>

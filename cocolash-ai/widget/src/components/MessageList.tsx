@@ -11,9 +11,10 @@ interface MessageListProps {
   errorMessage: string | null;
   greeting: string;
   onTryOn?: (handle: string, title: string) => void;
+  onZoom?: (url: string) => void;
 }
 
-export function MessageList({ messages, status, errorMessage, greeting, onTryOn }: MessageListProps) {
+export function MessageList({ messages, status, errorMessage, greeting, onTryOn, onZoom }: MessageListProps) {
   const ref = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -42,9 +43,40 @@ export function MessageList({ messages, status, errorMessage, greeting, onTryOn 
               <ProductCards products={m.products} onTryOn={onTryOn} />
             ) : null}
             {m.tryonImageUrl ? (
-              <div class="tryon-result">
-                <img src={m.tryonImageUrl} alt="Try-on preview" loading="lazy" />
-              </div>
+              <button
+                type="button"
+                class="tryon-result tryon-result--button"
+                onClick={() => onZoom?.(m.tryonImageUrl!)}
+                aria-label="Tap to view full size"
+              >
+                <img
+                  src={m.tryonImageUrl}
+                  alt="Try-on preview"
+                  referrerpolicy="no-referrer"
+                  decoding="async"
+                  onLoad={(e) => {
+                    console.log("[Coco] try-on image loaded:", m.tryonImageUrl);
+                    // Re-scroll the chat to the bottom now that the image has
+                    // measurable height; the message-array effect fires before
+                    // the lazy load and would otherwise leave the image below
+                    // the visible scroll area.
+                    const list = (e.currentTarget as HTMLElement).closest(".messages") as HTMLElement | null;
+                    if (list) list.scrollTop = list.scrollHeight;
+                  }}
+                  onError={(e) => {
+                    const img = e.currentTarget as HTMLImageElement;
+                    console.error("[Coco] try-on image failed to load:", img.src);
+                    img.style.display = "none";
+                    const fallback = document.createElement("a");
+                    fallback.href = img.src;
+                    fallback.textContent = "Open try-on preview";
+                    fallback.target = "_blank";
+                    fallback.rel = "noopener noreferrer";
+                    fallback.style.cssText = "display:block;padding:12px;background:#f4f4f4;border-radius:8px;text-decoration:underline;";
+                    img.parentElement?.appendChild(fallback);
+                  }}
+                />
+              </button>
             ) : null}
           </Fragment>
         )

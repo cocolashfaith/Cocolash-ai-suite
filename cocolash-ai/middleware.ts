@@ -24,6 +24,7 @@ export async function middleware(request: NextRequest) {
     "/api/chat",         // anonymous visitor traffic from cocolash.com
     "/api/chat/config",
     "/widget.js",
+    "/coco-test.html",
   ];
   const isPublicPath = publicPaths.some((path) => pathname.startsWith(path));
 

@@ -22,6 +22,10 @@ declare global {
   }
 }
 
+// Bumped on every build that ships a behavior change. Logged on boot so a
+// QA tester can confirm the cached bundle is the latest one.
+const WIDGET_VERSION = "v3.0.10-tryon-render";
+
 function bootstrap(): void {
   const cfg = window.COCOLASH_CHAT_CONFIG;
   if (!cfg || typeof cfg.apiBaseUrl !== "string") {
@@ -29,6 +33,7 @@ function bootstrap(): void {
     // COCOLASH_CHAT_CONFIG before loading widget.js.
     return;
   }
+  console.log(`[Coco] widget ${WIDGET_VERSION} mounting`);
 
   // Idempotent mount: if a previous bundle already mounted, do nothing.
   if (document.getElementById("cocolash-chat-host") !== null) return;

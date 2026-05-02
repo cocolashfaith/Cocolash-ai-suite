@@ -89,8 +89,12 @@ export function usePersistedState(): {
 } {
   const [state, setState] = useState<PersistedState>(() => readStorage());
 
+  // Debounce localStorage writes so token-by-token streaming updates don't
+  // thrash main-thread serialization (which makes the bubble look chunky).
+  // Persistence within ~200ms of the last update is plenty for refresh-survival.
   useEffect(() => {
-    writeStorage(state);
+    const t = setTimeout(() => writeStorage(state), 200);
+    return () => clearTimeout(t);
   }, [state]);
 
   return {
@@ -120,7 +124,8 @@ export function usePersistedState(): {
         }
         return { ...s, messages };
       }),
-    appendTryOnResult: (composedUrl, productTitle) =>
+    appendTryOnResult: (composedUrl, productTitle) => {
+      console.log("[Coco] appendTryOnResult called:", { composedUrl, productTitle });
       setState((s) => {
         const messages = [
           ...s.messages,
@@ -133,7 +138,8 @@ export function usePersistedState(): {
           },
         ].slice(-50);
         return { ...s, messages };
-      }),
+      });
+    },
     setConsent: (c) => setState((s) => ({ ...s, consent: c })),
     reset: () => setState({ ...defaultState, updatedAt: Date.now() }),
   };
