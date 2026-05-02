@@ -1,0 +1,47 @@
+{% comment %}
+  CocoLash AI Chat — Theme App Extension block.
+  Faith enables this in Online Store → Customize → App embeds.
+  The block injects a tiny boot script that loads /widget.js from the
+  CocoLash AI Studio deployment and mounts the chat widget into a
+  Shadow DOM root.
+{% endcomment %}
+
+{% if block.settings.enabled %}
+  <script>
+    (function () {
+      if (window.COCOLASH_CHAT_CONFIG) return;
+      window.COCOLASH_CHAT_CONFIG = {
+        apiBaseUrl: {{ block.settings.api_base_url | json }},
+        shopDomain: {{ shop.permanent_domain | json }},
+        customerId: {% if customer %}{{ customer.id | json }}{% else %}undefined{% endif %}
+      };
+      var s = document.createElement("script");
+      s.async = true;
+      s.defer = true;
+      s.src = {{ block.settings.api_base_url | append: "/widget.js" | json }};
+      document.body.appendChild(s);
+    })();
+  </script>
+{% endif %}
+
+{% schema %}
+{
+  "name": "CocoLash AI Chat",
+  "target": "body",
+  "settings": [
+    {
+      "type": "checkbox",
+      "id": "enabled",
+      "label": "Enable CocoLash AI Chat",
+      "default": true
+    },
+    {
+      "type": "text",
+      "id": "api_base_url",
+      "label": "API base URL",
+      "default": "https://cocolash-ai.vercel.app",
+      "info": "Where the widget bundle and chat API live. Don't change unless you know what you're doing."
+    }
+  ]
+}
+{% endschema %}
