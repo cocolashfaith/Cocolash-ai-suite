@@ -46,6 +46,19 @@ describe("isWithinWindow", () => {
       isWithinWindow('["2027-01-01T00:00:00Z","2027-12-31T23:59:59Z")', now)
     ).toBe(false);
   });
+  it("treats 'infinity' upper bound as open-ended", () => {
+    // Phase 14 regression: import script emits 'infinity' literally;
+    // new Date("infinity") returns NaN, so the prior check rejected every
+    // open-ended campaign and no discount ever fired in chat.
+    expect(
+      isWithinWindow('["2026-03-09 16:53:50+00",infinity)', now)
+    ).toBe(true);
+  });
+  it("treats '-infinity' lower bound as open-ended", () => {
+    expect(
+      isWithinWindow('[-infinity,"2099-01-01T00:00:00Z")', now)
+    ).toBe(true);
+  });
 });
 
 describe("isOverLimit", () => {

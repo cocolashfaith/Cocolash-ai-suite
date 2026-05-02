@@ -94,14 +94,26 @@ export async function fetchActiveDiscounts(
 
 export function isWithinWindow(rangeRaw: string | null, now: Date): boolean {
   if (!rangeRaw) return true;
-  // Postgres tstzrange syntax: '["2024-11-04T13:38:20-05:00","2025-12-31T23:59:59-05:00")'
+  // Postgres tstzrange syntax: '["2024-11-04T13:38:20-05:00","2025-12-31T23:59:59-05:00")'.
+  // Open-ended campaigns may serialize as 'infinity' / '-infinity'; treat
+  // those as ±∞ since `new Date("infinity")` returns NaN and would otherwise
+  // reject every rule with an open upper bound.
   const m = rangeRaw.match(/^[\[(]([^,]*),([^)]*)[\])]$/);
   if (!m) return true;
   const startRaw = m[1].replace(/^"/, "").replace(/"$/, "").trim();
   const endRaw = m[2].replace(/^"/, "").replace(/"$/, "").trim();
-  const startOk = startRaw === "" || new Date(startRaw).getTime() <= now.getTime();
-  const endOk = endRaw === "" || new Date(endRaw).getTime() > now.getTime();
-  return startOk && endOk;
+
+  const nowMs = now.getTime();
+  const startMs =
+    startRaw === "" || startRaw === "-infinity"
+      ? -Infinity
+      : new Date(startRaw).getTime();
+  const endMs =
+    endRaw === "" || endRaw === "infinity"
+      ? Infinity
+      : new Date(endRaw).getTime();
+
+  return startMs <= nowMs && nowMs < endMs;
 }
 
 export function isOverLimit(rule: Pick<DiscountRule, "times_used" | "usage_limit_per_code">): boolean {
