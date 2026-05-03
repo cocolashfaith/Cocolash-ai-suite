@@ -11,6 +11,7 @@ const NAV: Array<{ href: string; label: string }> = [
   { href: "/chatbot/admin/transcripts", label: "Transcripts" },
   { href: "/chatbot/admin/analytics", label: "Analytics" },
   { href: "/chatbot/admin/leads", label: "Leads" },
+  { href: "/chatbot/admin/prompts", label: "AI Prompts" },
   { href: "/chatbot/admin/settings", label: "Settings" },
 ];
 

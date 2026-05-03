@@ -97,13 +97,15 @@ const ENHANCOR_MODES: {
   },
 ];
 
+// Enhancor /queue accepts ONLY {16:9, 4:3, 3:4, 9:16} at every resolution
+// (480p / 720p / 1080p). Verified 2026-05-04 via direct curl probe — see
+// .planning/phases/14-audit/evidence/BROKEN-05-1080p-matrix-with-key.txt.
+// 1:1 and 21:9 (and 4:5) are NOT accepted — sending them returns HTTP 400.
 const ASPECT_RATIOS: { value: SeedanceAspectRatio; label: string; desc: string }[] = [
   { value: "9:16", label: "9:16", desc: "TikTok / Reels" },
-  { value: "1:1", label: "1:1", desc: "Square" },
   { value: "16:9", label: "16:9", desc: "Landscape" },
   { value: "3:4", label: "3:4", desc: "Portrait" },
   { value: "4:3", label: "4:3", desc: "Classic" },
-  { value: "21:9", label: "21:9", desc: "Cinematic" },
 ];
 
 const RESOLUTIONS: { value: SeedanceResolution; label: string }[] = [
@@ -187,18 +189,13 @@ export function SeedanceGenerateStep(props: SeedanceGenerateStepProps) {
 
   useEffect(() => () => stopPolling(), [stopPolling]);
 
+  // 1080p disables Fast Mode (per Enhancor docs) but DOES allow all four
+  // aspect ratios (9:16, 16:9, 3:4, 4:3). Verified via curl probe 2026-05-04.
   useEffect(() => {
-    if (resolution !== "1080p") {
-      return;
-    }
-
-    if (aspectRatio !== "16:9") {
-      setAspectRatio("16:9");
-    }
-    if (fastMode) {
+    if (resolution === "1080p" && fastMode) {
       setFastMode(false);
     }
-  }, [aspectRatio, fastMode, resolution]);
+  }, [fastMode, resolution]);
 
   const pollStatus = useCallback((id: string) => {
     pollRef.current = setInterval(async () => {
@@ -464,8 +461,7 @@ export function SeedanceGenerateStep(props: SeedanceGenerateStepProps) {
                 ))}
               </div>
               <p className="mt-2 text-[11px] leading-relaxed text-coco-brown-medium/50">
-                1080p is supported only for 16:9 output with Fast Mode turned off.
-                Selecting 1080p will automatically use those documented settings.
+                1080p disables Fast Mode (per Enhancor) but supports all four aspect ratios. Selecting 1080p will automatically turn Fast Mode off.
               </p>
             </OptionGroup>
             <OptionGroup label="Seedance Duration">
@@ -676,20 +672,17 @@ export function SeedanceGenerateStep(props: SeedanceGenerateStepProps) {
             </div>
           )}
 
-          {/* Aspect ratio */}
+          {/* Aspect ratio — Enhancor accepts {16:9, 4:3, 3:4, 9:16} at every resolution */}
           <div className="space-y-2">
             <label className="text-sm font-semibold text-coco-brown">Aspect Ratio</label>
-            <div className="grid grid-cols-3 gap-3">
-              {ASPECT_RATIOS.map((ar) => {
-                const isDisabledFor1080p = resolution === "1080p" && ar.value !== "16:9";
-                return (
+            <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+              {ASPECT_RATIOS.map((ar) => (
                 <button
                   key={ar.value}
                   type="button"
-                  disabled={isDisabledFor1080p}
                   onClick={() => setAspectRatio(ar.value)}
                   className={cn(
-                    "rounded-xl border-2 py-3 text-center transition-all disabled:cursor-not-allowed disabled:opacity-40",
+                    "rounded-xl border-2 py-3 text-center transition-all",
                     aspectRatio === ar.value
                       ? "border-coco-golden bg-coco-golden/10 shadow-sm"
                       : "border-coco-beige-dark bg-white hover:border-coco-golden/40"
@@ -698,14 +691,8 @@ export function SeedanceGenerateStep(props: SeedanceGenerateStepProps) {
                   <p className={cn("text-sm font-bold", aspectRatio === ar.value ? "text-coco-golden" : "text-coco-brown-medium")}>{ar.label}</p>
                   <p className="text-[10px] text-coco-brown-medium/60">{ar.desc}</p>
                 </button>
-              );
-              })}
+              ))}
             </div>
-            {resolution === "1080p" && (
-              <p className="text-[11px] text-coco-brown-medium/50">
-                Other aspect ratios are disabled because Enhancor only supports 1080p with 16:9.
-              </p>
-            )}
           </div>
 
           {/* Fixed lens toggle */}

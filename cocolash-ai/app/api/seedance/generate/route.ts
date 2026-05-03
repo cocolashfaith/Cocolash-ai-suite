@@ -76,6 +76,14 @@ interface SeedanceGenerateBody {
    * is omitted by the UI.
    */
   productDescription?: string;
+  /**
+   * v4.0 mode-first flow only. When provided, this string is used VERBATIM as
+   * the Seedance prompt — the existing `generateSeedanceDirectorPrompt` planner
+   * is bypassed. The brand-grounding guard still applies as a safety net.
+   * Set by the v4 wizard's Step 3 after the user reviews and approves the
+   * Seedance Director's output.
+   */
+  overridePrompt?: string;
 }
 
 /**
@@ -143,6 +151,7 @@ export async function POST(request: NextRequest) {
       vibe,
       personDescription,
       productDescription: productDescriptionFromBody,
+      overridePrompt,
     } = body as SeedanceGenerateBody;
 
     const productDescription =
@@ -230,11 +239,20 @@ export async function POST(request: NextRequest) {
     };
 
     let seedancePrompt: string;
-    try {
-      seedancePrompt = await generateSeedanceDirectorPrompt(promptPlannerParams);
-    } catch (promptError) {
-      console.error("[seedance/generate] Prompt planner failed, using fallback:", promptError);
-      seedancePrompt = buildSeedanceDirectorPromptFallback(promptPlannerParams);
+    if (overridePrompt && overridePrompt.trim().length > 0) {
+      // v4.0 mode-first flow: user reviewed and approved the Seedance Director's
+      // output in Step 3. Use it verbatim — do NOT re-run the legacy planner.
+      seedancePrompt = overridePrompt.trim();
+      console.log(
+        `[seedance/generate] Using v4 user-approved Director prompt (${seedancePrompt.length} chars)`
+      );
+    } else {
+      try {
+        seedancePrompt = await generateSeedanceDirectorPrompt(promptPlannerParams);
+      } catch (promptError) {
+        console.error("[seedance/generate] Prompt planner failed, using fallback:", promptError);
+        seedancePrompt = buildSeedanceDirectorPromptFallback(promptPlannerParams);
+      }
     }
 
     // Brand-grounding guard. The planner is allowed to rewrite freely, but it

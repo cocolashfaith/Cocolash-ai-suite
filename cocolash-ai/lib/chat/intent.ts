@@ -23,7 +23,7 @@ export const INTENT_LABELS: ReadonlyArray<IntentLabel> = [
   "other",
 ];
 
-const INTENT_SYSTEM_PROMPT = `
+export const INTENT_SYSTEM_PROMPT = `
 You classify a single user message from a CocoLash on-site chatbot visitor
 into ONE of these intents:
 

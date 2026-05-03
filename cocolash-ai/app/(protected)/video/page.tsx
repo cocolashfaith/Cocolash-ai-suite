@@ -21,9 +21,7 @@ import { AvatarSetup } from "@/components/video/AvatarSetup";
 import { VoiceAndStyle } from "@/components/video/VoiceAndStyle";
 import { GenerateVideo } from "@/components/video/GenerateVideo";
 import { PipelineSelector } from "@/components/video/PipelineSelector";
-import { SeedanceScriptStep } from "@/components/video/seedance/SeedanceScriptStep";
-import { SeedanceAvatarStep } from "@/components/video/seedance/SeedanceAvatarStep";
-import { SeedanceGenerateStep } from "@/components/video/seedance/SeedanceGenerateStep";
+import { SeedanceV4Wizard } from "@/components/video/seedance-v4/SeedanceV4Wizard";
 import type {
   ScriptResult,
   CampaignType,
@@ -34,8 +32,8 @@ import type {
   VideoPipeline,
   CaptionMethod,
 } from "@/lib/types";
-import type { SeedanceAudioMode } from "@/lib/seedance/types";
-import type { UGCScene, UGCVibe } from "@/lib/seedance/ugc-image-prompt";
+// v4.0: Seedance wizard owns its own stepper (Script+Mode → Inputs → Prompt Review).
+// HeyGen wizard keeps its 4-step flow unchanged.
 
 // ── HeyGen Wizard Steps ──────────────────────────────────────
 
@@ -44,14 +42,6 @@ const HEYGEN_STEPS = [
   { label: "Avatar", icon: User },
   { label: "Style", icon: Palette },
   { label: "Generate", icon: Film },
-];
-
-// ── Seedance Wizard Steps ────────────────────────────────────
-
-const SEEDANCE_STEPS = [
-  { label: "Script", icon: FileText },
-  { label: "Avatar + Product", icon: Smartphone },
-  { label: "Generate", icon: Sparkles },
 ];
 
 // ── HeyGen Wizard State ──────────────────────────────────────
@@ -90,36 +80,7 @@ const DEFAULT_HEYGEN_STATE: HeyGenWizardState = {
   preComposed: false,
 };
 
-// ── Seedance Wizard State ────────────────────────────────────
-
-interface SeedanceWizardState {
-  script: ScriptResult | null;
-  editedScriptText?: string;
-  scriptId?: string;
-  campaignType: CampaignType;
-  tone: ScriptTone;
-  duration: VideoDuration;
-  personImageUrl: string | null;
-  productImageUrl: string | null;
-  audioMode: SeedanceAudioMode;
-  audioUrl?: string;
-  scene: UGCScene;
-  vibe: UGCVibe;
-  personDescription: string;
-}
-
-const DEFAULT_SEEDANCE_STATE: SeedanceWizardState = {
-  script: null,
-  campaignType: "product-showcase",
-  tone: "casual",
-  duration: 15,
-  personImageUrl: null,
-  productImageUrl: null,
-  audioMode: "script-in-prompt",
-  scene: "casual-bedroom",
-  vibe: "excited-discovery",
-  personDescription: "",
-};
+// v4.0: Seedance wizard state is owned entirely by SeedanceV4Wizard.
 
 // ── Page ─────────────────────────────────────────────────────
 
@@ -160,18 +121,6 @@ function VideoWizard() {
     setHeygenMaxStep((prev) => Math.max(prev, step));
   }, []);
 
-  // ── Seedance state ────────────────────────────────
-  const [seedanceStep, setSeedanceStep] = useState(0);
-  const [seedanceMaxStep, setSeedanceMaxStep] = useState(0);
-  const [seedanceState, setSeedanceState] = useState<SeedanceWizardState>({
-    ...DEFAULT_SEEDANCE_STATE,
-  });
-
-  const advanceSeedanceStep = useCallback((step: number) => {
-    setSeedanceStep(step);
-    setSeedanceMaxStep((prev) => Math.max(prev, step));
-  }, []);
-
   // ── Pipeline selection ────────────────────────────
   const handleSelectPipeline = (p: VideoPipeline) => {
     setPipeline(p);
@@ -181,14 +130,11 @@ function VideoWizard() {
     setPipeline("select");
     setHeygenStep(0);
     setHeygenMaxStep(0);
-    setSeedanceStep(0);
-    setSeedanceMaxStep(0);
     setHeygenState({
       ...DEFAULT_HEYGEN_STATE,
       personImageUrl: initialImageUrl ?? null,
       personImageId: initialImageId,
     });
-    setSeedanceState({ ...DEFAULT_SEEDANCE_STATE });
   };
 
   // ── HeyGen callbacks ─────────────────────────────
@@ -254,56 +200,10 @@ function VideoWizard() {
     setHeygenMaxStep(0);
   };
 
-  // ── Seedance callbacks ────────────────────────────
-  const handleSeedanceScriptSelected = (
-    script: ScriptResult,
-    meta: { campaignType: CampaignType; tone: ScriptTone; duration: VideoDuration; scriptId?: string },
-    editedText?: string
-  ) => {
-    setSeedanceState((prev) => ({
-      ...prev,
-      script,
-      editedScriptText: editedText,
-      scriptId: meta.scriptId,
-      campaignType: meta.campaignType,
-      tone: meta.tone,
-      duration: meta.duration,
-    }));
-    advanceSeedanceStep(1);
-  };
-
-  const handleSeedanceAvatarReady = (data: {
-    personImageUrl: string;
-    productImageUrl: string;
-    audioMode: SeedanceAudioMode;
-    audioUrl?: string;
-    scene: UGCScene;
-    vibe: UGCVibe;
-    personDescription: string;
-  }) => {
-    setSeedanceState((prev) => ({
-      ...prev,
-      personImageUrl: data.personImageUrl,
-      productImageUrl: data.productImageUrl,
-      audioMode: data.audioMode,
-      audioUrl: data.audioUrl,
-      scene: data.scene,
-      vibe: data.vibe,
-      personDescription: data.personDescription,
-    }));
-    advanceSeedanceStep(2);
-  };
-
-  const handleSeedanceReset = () => {
-    setSeedanceState(DEFAULT_SEEDANCE_STATE);
-    setSeedanceStep(0);
-    setSeedanceMaxStep(0);
-  };
-
-  // ── Determine current steps for progress bar ──────
-  const currentSteps = pipeline === "heygen" ? HEYGEN_STEPS : SEEDANCE_STEPS;
-  const currentStep = pipeline === "heygen" ? heygenStep : seedanceStep;
-  const setCurrentStep = pipeline === "heygen" ? setHeygenStep : setSeedanceStep;
+  // ── Determine current steps for progress bar (HeyGen only — Seedance v4 owns its own) ──
+  const currentSteps = HEYGEN_STEPS;
+  const currentStep = heygenStep;
+  const setCurrentStep = setHeygenStep;
 
   return (
     <div>
@@ -355,8 +255,15 @@ function VideoWizard() {
         </div>
       )}
 
-      {/* Progress Steps (HeyGen or Seedance) */}
-      {pipeline !== "select" && (
+      {/* Seedance v4 wizard owns its own stepper */}
+      {pipeline === "seedance" && (
+        <div className="mx-auto max-w-2xl">
+          <SeedanceV4Wizard initialPersonImageUrl={initialImageUrl} />
+        </div>
+      )}
+
+      {/* HeyGen progress steps */}
+      {pipeline === "heygen" && (
         <>
           <div className="mb-8">
             <div className="flex items-center justify-between">
@@ -462,42 +369,6 @@ function VideoWizard() {
               </>
             )}
 
-            {/* ── Seedance Wizard Steps ───────────── */}
-            {/* Components stay mounted (hidden via CSS) to preserve state when going back */}
-            {pipeline === "seedance" && (
-              <>
-                <div className={seedanceStep === 0 ? "" : "hidden"}>
-                  <SeedanceScriptStep onScriptSelected={handleSeedanceScriptSelected} />
-                </div>
-                {seedanceMaxStep >= 1 && (
-                  <div className={seedanceStep === 1 ? "" : "hidden"}>
-                    <SeedanceAvatarStep
-                      initialPersonImageUrl={initialImageUrl}
-                      onAvatarReady={handleSeedanceAvatarReady}
-                    />
-                  </div>
-                )}
-                {seedanceMaxStep >= 2 && seedanceState.script && (
-                  <div className={seedanceStep === 2 ? "" : "hidden"}>
-                    <SeedanceGenerateStep
-                      script={seedanceState.script}
-                      editedScriptText={seedanceState.editedScriptText}
-                      campaignType={seedanceState.campaignType}
-                      tone={seedanceState.tone}
-                      duration={seedanceState.duration}
-                      personImageUrl={seedanceState.personImageUrl!}
-                      productImageUrl={seedanceState.productImageUrl!}
-                      audioMode={seedanceState.audioMode}
-                      audioUrl={seedanceState.audioUrl}
-                      scene={seedanceState.scene}
-                      vibe={seedanceState.vibe}
-                      personDescription={seedanceState.personDescription}
-                      onReset={handleSeedanceReset}
-                    />
-                  </div>
-                )}
-              </>
-            )}
           </div>
         </>
       )}
