@@ -237,6 +237,23 @@ export async function POST(request: NextRequest) {
       seedancePrompt = buildSeedanceDirectorPromptFallback(promptPlannerParams);
     }
 
+    // Brand-grounding guard. The planner is allowed to rewrite freely, but it
+    // must never drop the lash-product anchor. If the resulting prompt doesn't
+    // mention lashes by some recognizable token, prepend a hard directive so
+    // Enhancor's image-to-video model can't drift into other beauty
+    // categories (face mask, serum, sunscreen tube — all observed in QA).
+    const lashHints = ["lash", "lashes", "false-lash", "false lash", "strip lash", "cluster lash"];
+    const promptLower = seedancePrompt.toLowerCase();
+    const mentionsLashes = lashHints.some((h) => promptLower.includes(h));
+    if (!mentionsLashes) {
+      console.warn(
+        "[seedance/generate] Planner output did not mention lashes; prepending hard brand directive"
+      );
+      seedancePrompt =
+        `The product on screen is CocoLash false-lash extension strips — a small cluster lash strip in branded packaging, NOT a tube of cream, NOT a serum bottle, NOT a face mask, NOT skincare. Keep the product visually identifiable as false eyelashes throughout. ` +
+        seedancePrompt;
+    }
+
     // ── Step 3: Create DB record ─────────────────────────────
 
     const { data: videoRecord, error: insertError } = await supabase
@@ -272,6 +289,14 @@ export async function POST(request: NextRequest) {
 
     // ── Step 4: Submit to Enhancor.ai ────────────────────────
     try {
+      console.log("[seedance/generate] Final prompt (full):", seedancePrompt);
+      console.log("[seedance/generate] Reference URLs:", {
+        personImageUrl,
+        productImageUrl,
+        productsArray: products,
+        influencersArray: influencers,
+        productDescription,
+      });
       const referenceImageUrls = [productImageUrl];
       const referenceAudioUrls =
         audioMode === "uploaded-audio" && audioUrl ? [audioUrl] : undefined;

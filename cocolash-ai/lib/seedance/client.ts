@@ -72,6 +72,31 @@ export async function createSeedanceTask(
 
     const body = buildEnhancorQueueRequest(input, webhookUrl);
 
+    // Log the EXACT payload going to Enhancor so we can audit prompt drift
+    // and reference-image correctness. Truncate the prompt in the log line
+    // so the message stays scannable, but include full URLs.
+    console.log("[seedance] Enhancor /queue payload:", JSON.stringify({
+      type: (body as { type?: string }).type,
+      mode: (body as { mode?: string }).mode,
+      duration: (body as { duration?: string | number }).duration,
+      resolution: (body as { resolution?: string }).resolution,
+      aspect_ratio: (body as { aspect_ratio?: string }).aspect_ratio,
+      full_access: (body as { full_access?: boolean }).full_access,
+      prompt_chars: (body as { prompt?: string }).prompt?.length ?? 0,
+      prompt_head: (body as { prompt?: string }).prompt?.slice(0, 240) ?? null,
+      prompt_tail: (body as { prompt?: string }).prompt?.slice(-160) ?? null,
+      products: (body as { products?: string[] }).products,
+      influencers: (body as { influencers?: string[] }).influencers,
+      images: (body as { images?: string[] }).images,
+      videos: (body as { videos?: string[] }).videos,
+      audios: (body as { audios?: string[] }).audios,
+      first_frame_image: (body as { first_frame_image?: string }).first_frame_image,
+      last_frame_image: (body as { last_frame_image?: string }).last_frame_image,
+      lipsyncing_audio: (body as { lipsyncing_audio?: string }).lipsyncing_audio,
+      multi_frame_prompts: (body as { multi_frame_prompts?: unknown[] }).multi_frame_prompts,
+      webhook_url: webhookUrl,
+    }));
+
     const response = await fetch(`${apiBase}/queue`, {
       method: "POST",
       headers: {
