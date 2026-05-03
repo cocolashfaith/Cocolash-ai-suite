@@ -69,7 +69,23 @@ interface SeedanceGenerateBody {
   scene: UGCScene;
   vibe: UGCVibe;
   personDescription: string;
+  /**
+   * Human-readable description of the product the creator should hold,
+   * apply, and talk about. Falls back to a brand-grounded default so the
+   * planner never drifts to skincare/cosmetics-in-general when the field
+   * is omitted by the UI.
+   */
+  productDescription?: string;
 }
+
+/**
+ * Last-resort description used when the request omits `productDescription`.
+ * Without this, the prompt planner sees a raw URL string under "PRODUCT:"
+ * and Claude has to guess what's in the image — which historically drifted
+ * to face masks / generic skincare.
+ */
+const DEFAULT_PRODUCT_DESCRIPTION =
+  "CocoLash DIY false-lash extension strip in its branded packaging — a premium, reusable cluster lash designed for at-home application by CocoLash.";
 
 /**
  * POST /api/seedance/generate
@@ -126,7 +142,14 @@ export async function POST(request: NextRequest) {
       scene,
       vibe,
       personDescription,
+      productDescription: productDescriptionFromBody,
     } = body as SeedanceGenerateBody;
+
+    const productDescription =
+      typeof productDescriptionFromBody === "string" &&
+      productDescriptionFromBody.trim().length > 0
+        ? productDescriptionFromBody.trim()
+        : DEFAULT_PRODUCT_DESCRIPTION;
 
     const supabase = await createAdminClient();
 
@@ -189,7 +212,7 @@ export async function POST(request: NextRequest) {
       campaignType,
       scriptText,
       personDescription,
-      productDescription: productImageUrl,
+      productDescription,
       scene,
       vibe,
       duration: parseInt(seedanceDuration, 10),
