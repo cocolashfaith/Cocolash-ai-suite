@@ -12,7 +12,7 @@ import {
   RefreshCw,
   Package,
   Settings,
-  X,
+  Upload,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -361,7 +361,9 @@ export function UgcMode({ state, setState, onReady }: UgcModeProps) {
                   setGeneratedAvatarUrl(null);
                   setGeneratedHasProduct(false);
                 }}
-                emptyHint="Add product images in Settings"
+                onProductUploaded={(np) => {
+                  setProductImages((prev) => [np, ...prev]);
+                }}
               />
             )}
           </section>
@@ -555,7 +557,9 @@ export function UgcMode({ state, setState, onReady }: UgcModeProps) {
             loading={loadingProducts}
             selectedUrl={seedanceProductUrl}
             onSelect={setSeedanceProductUrl}
-            emptyHint="Add product images in Settings"
+            onProductUploaded={(np) => {
+              setProductImages((prev) => [np, ...prev]);
+            }}
           />
         </section>
       )}
@@ -577,70 +581,149 @@ function ProductPicker({
   loading,
   selectedUrl,
   onSelect,
-  emptyHint,
+  onProductUploaded,
 }: {
   images: ProductRef[];
   loading: boolean;
   selectedUrl: string | null;
   onSelect: (url: string) => void;
-  emptyHint: string;
+  /** Called after a successful upload — append the new product to the picker
+   *  list and auto-select it. Caller is expected to update its product list. */
+  onProductUploaded?: (newProduct: ProductRef) => void;
 }) {
-  if (loading) {
-    return (
-      <div className="flex items-center justify-center rounded-xl border-2 border-dashed border-coco-beige-dark p-6">
-        <Loader2 className="h-4 w-4 animate-spin text-coco-brown-medium/40" />
-        <span className="ml-2 text-xs text-coco-brown-medium/50">
-          Loading products…
-        </span>
-      </div>
-    );
+  const fileRef = useRef<HTMLInputElement>(null);
+  const [uploading, setUploading] = useState(false);
+
+  async function handleUpload(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (!file.type.startsWith("image/")) {
+      toast.error("Please select an image file");
+      return;
+    }
+    if (file.size > 10 * 1024 * 1024) {
+      toast.error("Image must be under 10 MB");
+      return;
+    }
+    setUploading(true);
+    try {
+      const fd = new FormData();
+      fd.append("file", file);
+      const res = await fetch("/api/products/upload", {
+        method: "POST",
+        body: fd,
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Upload failed");
+      const newProduct: ProductRef = {
+        id: data.image.id,
+        image_url: data.image.image_url,
+        category_name: data.image.category_name ?? "Custom Uploads",
+      };
+      onProductUploaded?.(newProduct);
+      onSelect(newProduct.image_url);
+      if (data.warning) {
+        toast.warning(data.warning);
+      } else {
+        toast.success("Product image added — saved for next time.");
+      }
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Upload failed");
+    } finally {
+      setUploading(false);
+      if (fileRef.current) fileRef.current.value = "";
+    }
   }
-  if (images.length === 0) {
-    return (
-      <div className="flex flex-col items-center justify-center rounded-xl border-2 border-dashed border-coco-beige-dark p-6">
-        <Package className="h-6 w-6 text-coco-brown-medium/30" />
-        <p className="mt-2 text-xs text-coco-brown-medium/50">{emptyHint}</p>
-        <Link
-          href="/settings"
-          className="mt-2 flex items-center gap-1 text-[11px] font-medium text-coco-golden hover:text-coco-golden-dark"
-        >
-          <Settings className="h-3 w-3" />
-          Open Settings
-        </Link>
-      </div>
-    );
-  }
+
+  const showEmptyState = !loading && images.length === 0;
+
   return (
-    <div className="grid grid-cols-3 gap-2 sm:grid-cols-4">
-      {images.slice(0, 24).map((img) => {
-        const isSelected = selectedUrl === img.image_url;
-        return (
-          <button
-            key={img.id}
-            type="button"
-            onClick={() => onSelect(img.image_url)}
-            className={cn(
-              "group relative aspect-square overflow-hidden rounded-lg border-2 transition-all",
-              isSelected
-                ? "border-coco-golden ring-2 ring-coco-golden/30"
-                : "border-transparent hover:border-coco-golden/40"
-            )}
-          >
-            <img
-              src={img.image_url}
-              alt={img.category_name}
-              className="h-full w-full object-cover"
-            />
-            {isSelected && (
-              <div className="absolute inset-0 flex items-center justify-center bg-coco-golden/20">
-                <div className="flex h-6 w-6 items-center justify-center rounded-full bg-coco-golden">
-                  <Check className="h-3.5 w-3.5 text-white" />
-                </div>
-              </div>
-            )}
-          </button>
-        );
-      })}
+    <div className="space-y-2">
+      <input
+        ref={fileRef}
+        type="file"
+        accept="image/*"
+        onChange={handleUpload}
+        className="hidden"
+      />
+      {loading ? (
+        <div className="flex items-center justify-center rounded-xl border-2 border-dashed border-coco-beige-dark p-6">
+          <Loader2 className="h-4 w-4 animate-spin text-coco-brown-medium/40" />
+          <span className="ml-2 text-xs text-coco-brown-medium/50">
+            Loading products…
+          </span>
+        </div>
+      ) : (
+        <>
+          <div className="grid grid-cols-3 gap-2 sm:grid-cols-4">
+            {/* Upload tile — always first so it's discoverable */}
+            <button
+              type="button"
+              onClick={() => fileRef.current?.click()}
+              disabled={uploading}
+              className={cn(
+                "flex aspect-square flex-col items-center justify-center gap-1 rounded-lg border-2 border-dashed border-coco-beige-dark bg-white text-coco-brown-medium/60 transition-all hover:border-coco-golden/40 hover:bg-coco-golden/5",
+                uploading && "opacity-50"
+              )}
+              title="Upload a new product image"
+            >
+              {uploading ? (
+                <Loader2 className="h-5 w-5 animate-spin text-coco-golden" />
+              ) : (
+                <>
+                  <Upload className="h-5 w-5" />
+                  <span className="text-[10px] font-medium">Upload</span>
+                </>
+              )}
+            </button>
+            {images.slice(0, 23).map((img) => {
+              const isSelected = selectedUrl === img.image_url;
+              return (
+                <button
+                  key={img.id}
+                  type="button"
+                  onClick={() => onSelect(img.image_url)}
+                  className={cn(
+                    "group relative aspect-square overflow-hidden rounded-lg border-2 transition-all",
+                    isSelected
+                      ? "border-coco-golden ring-2 ring-coco-golden/30"
+                      : "border-transparent hover:border-coco-golden/40"
+                  )}
+                  title={img.category_name}
+                >
+                  <img
+                    src={img.image_url}
+                    alt={img.category_name}
+                    className="h-full w-full object-cover"
+                  />
+                  {isSelected && (
+                    <div className="absolute inset-0 flex items-center justify-center bg-coco-golden/20">
+                      <div className="flex h-6 w-6 items-center justify-center rounded-full bg-coco-golden">
+                        <Check className="h-3.5 w-3.5 text-white" />
+                      </div>
+                    </div>
+                  )}
+                </button>
+              );
+            })}
+          </div>
+          {showEmptyState && (
+            <div className="rounded-lg border border-dashed border-coco-beige-dark bg-coco-beige-light/40 p-3 text-center">
+              <Package className="mx-auto h-5 w-5 text-coco-brown-medium/40" />
+              <p className="mt-1 text-[11px] text-coco-brown-medium/60">
+                No saved products yet. Upload one above —{" "}
+                <Link
+                  href="/settings"
+                  className="font-medium text-coco-golden hover:text-coco-golden-dark"
+                >
+                  <Settings className="inline h-3 w-3" /> manage in Settings
+                </Link>
+                .
+              </p>
+            </div>
+          )}
+        </>
+      )}
     </div>
   );
 }

@@ -154,6 +154,16 @@ export async function POST(request: NextRequest) {
       overridePrompt,
     } = body as SeedanceGenerateBody;
 
+    // v4.1 callers don't supply legacy fields when overridePrompt is set.
+    // Substitute sensible defaults so downstream DB inserts and Enhancor
+    // calls don't crash on undefined values.
+    const isV4Override = !!(overridePrompt && overridePrompt.trim().length > 0);
+    const effectiveAudioMode = audioMode ?? (isV4Override ? "script-in-prompt" : audioMode);
+    const effectiveScene = scene ?? (isV4Override ? "casual-bedroom" : scene);
+    const effectiveVibe = vibe ?? (isV4Override ? "excited-discovery" : vibe);
+    const effectivePersonDescription =
+      personDescription ?? (isV4Override ? "creator from v4 wizard" : personDescription);
+
     const productDescription =
       typeof productDescriptionFromBody === "string" &&
       productDescriptionFromBody.trim().length > 0
@@ -220,14 +230,14 @@ export async function POST(request: NextRequest) {
     const promptPlannerParams: SeedanceDirectorPromptParams = {
       campaignType,
       scriptText,
-      personDescription,
+      personDescription: effectivePersonDescription,
       productDescription,
-      scene,
-      vibe,
+      scene: effectiveScene,
+      vibe: effectiveVibe,
       duration: parseInt(seedanceDuration, 10),
       aspectRatio,
       mode: promptMode,
-      audioMode,
+      audioMode: effectiveAudioMode,
       hasProductReference:
         generationType !== "text-to-video" &&
         (Boolean(productImageUrl) || Boolean(products?.length) || Boolean(images?.length)),
@@ -289,7 +299,7 @@ export async function POST(request: NextRequest) {
         pipeline: "seedance",
         seedance_task_id: null,
         seedance_prompt: seedancePrompt,
-        audio_mode: audioMode,
+        audio_mode: effectiveAudioMode,
         audio_url: audioUrl ?? null,
       })
       .select("id")
@@ -317,7 +327,7 @@ export async function POST(request: NextRequest) {
       });
       const referenceImageUrls = [productImageUrl];
       const referenceAudioUrls =
-        audioMode === "uploaded-audio" && audioUrl ? [audioUrl] : undefined;
+        effectiveAudioMode === "uploaded-audio" && audioUrl ? [audioUrl] : undefined;
       const resolvedProducts =
         products && products.length > 0 ? products : [productImageUrl];
       const resolvedInfluencers =
@@ -409,17 +419,31 @@ export async function POST(request: NextRequest) {
 function validateRequest(body: Partial<SeedanceGenerateBody>): string[] {
   const errors: string[] = [];
 
-  if (!body.personImageUrl) errors.push("personImageUrl is required");
-  if (!body.productImageUrl) errors.push("productImageUrl is required");
-  if (!body.personDescription) errors.push("personDescription is required");
-  if (body.personDescription && body.personDescription.length > 800) {
-    errors.push("personDescription must be 800 characters or less");
+  // v4.1 path: when overridePrompt is provided, the AI Director has already
+  // written the final Seedance prompt — personDescription / scene / vibe /
+  // audioMode aren't needed because they're encoded in the prompt itself.
+  // Legacy path (overridePrompt absent) still enforces the old contract.
+  const isV4Override = !!(body.overridePrompt && body.overridePrompt.trim().length > 0);
+  // Text-to-video has no images at all.
+  const isTextToVideo = body.generationType === "text-to-video";
+
+  if (!isTextToVideo) {
+    if (!body.personImageUrl) errors.push("personImageUrl is required");
+    if (!body.productImageUrl) errors.push("productImageUrl is required");
   }
+
+  if (!isV4Override) {
+    if (!body.personDescription) errors.push("personDescription is required");
+    if (body.personDescription && body.personDescription.length > 800) {
+      errors.push("personDescription must be 800 characters or less");
+    }
+    if (!body.scene) errors.push("scene is required");
+    if (!body.vibe) errors.push("vibe is required");
+  }
+
   if (body.scriptText && body.scriptText.length > 2500) {
     errors.push("scriptText must be 2500 characters or less");
   }
-  if (!body.scene) errors.push("scene is required");
-  if (!body.vibe) errors.push("vibe is required");
 
   if (!body.campaignType || !VALID_CAMPAIGN_TYPES.includes(body.campaignType)) {
     errors.push(`campaignType must be one of: ${VALID_CAMPAIGN_TYPES.join(", ")}`);
@@ -442,14 +466,10 @@ function validateRequest(body: Partial<SeedanceGenerateBody>): string[] {
   if (body.resolution && !VALID_RESOLUTIONS.includes(body.resolution)) {
     errors.push(`resolution must be one of: ${VALID_RESOLUTIONS.join(", ")}`);
   }
-  if (
-    body.resolution === "1080p" &&
-    body.aspectRatio &&
-    VALID_ASPECT_RATIOS.includes(body.aspectRatio) &&
-    body.aspectRatio !== "16:9"
-  ) {
-    errors.push("1080p resolution is only supported with 16:9 aspect ratio");
-  }
+  // Enhancor /queue accepts {16:9, 4:3, 3:4, 9:16} at every resolution.
+  // Curl-verified 2026-05-04 — see .planning/phases/14-audit/evidence/
+  // BROKEN-05-1080p-matrix-with-key.txt. The old "1080p × 16:9 only" rule
+  // was a UI artifact, not an API constraint.
   if (body.resolution === "1080p" && body.fastMode) {
     errors.push("1080p resolution requires fastMode to be disabled");
   }
@@ -462,11 +482,15 @@ function validateRequest(body: Partial<SeedanceGenerateBody>): string[] {
   if (body.seedanceMode && !VALID_SEEDANCE_MODES.includes(body.seedanceMode)) {
     errors.push(`seedanceMode must be one of: ${VALID_SEEDANCE_MODES.join(", ")}`);
   }
-  if (
-    !body.audioMode ||
-    !VALID_AUDIO_MODES.includes(body.audioMode as (typeof VALID_AUDIO_MODES)[number])
-  ) {
-    errors.push(`audioMode must be one of: ${VALID_AUDIO_MODES.join(", ")}`);
+  // audioMode is a legacy field — only enforce when caller is on the old
+  // contract. v4.1 wizards don't ship an audioMode (the AI prompt covers it).
+  if (!isV4Override) {
+    if (
+      !body.audioMode ||
+      !VALID_AUDIO_MODES.includes(body.audioMode as (typeof VALID_AUDIO_MODES)[number])
+    ) {
+      errors.push(`audioMode must be one of: ${VALID_AUDIO_MODES.join(", ")}`);
+    }
   }
 
   if (body.audioMode === "script-in-prompt" && !body.scriptId && !body.scriptText) {
