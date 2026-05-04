@@ -173,7 +173,7 @@ export function estimateV4Headline(
     mode,
     durationSeconds: 15,
     resolution,
-    generatesAvatar: mode === "ugc" || mode === "multi_frame",
+    generatesAvatar: mode === "ugc",
     composesProduct: false,
     generatesLastFrame: mode === "first_n_last_frames",
     generatesScript:

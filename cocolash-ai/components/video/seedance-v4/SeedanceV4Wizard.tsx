@@ -92,11 +92,10 @@ export function SeedanceV4Wizard({ initialPersonImageUrl: _ }: SeedanceV4WizardP
       resolution: state.resolution,
       generatesAvatar:
         state.mode === "ugc" ||
-        state.mode === "multi_frame" ||
         // first+last w/ "Generate UGC" path also runs the avatar generator
         (state.mode === "first_n_last_frames" && !!state.firstFrameUrl),
       composesProduct:
-        (state.mode === "ugc" || state.mode === "multi_frame") &&
+        state.mode === "ugc" &&
         !!state.ugcWasComposed,
       generatesLastFrame:
         state.mode === "first_n_last_frames" && !!state.lastFrameUrl,

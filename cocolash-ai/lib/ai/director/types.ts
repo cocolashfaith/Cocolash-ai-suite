@@ -62,6 +62,12 @@ export interface DirectorInput {
   multiFrameSegmentCount?: number;
 
   /**
+   * multi_frame: free-text description of subject + product for continuity.
+   * Director embeds this in every segment prompt for textual anchoring (Phase 26, D-26-01).
+   */
+  subjectBrief?: string;
+
+  /**
    * text_to_video: free-text scene description from the user. The director
    * converts this into an optimized T2V Seedance prompt.
    */

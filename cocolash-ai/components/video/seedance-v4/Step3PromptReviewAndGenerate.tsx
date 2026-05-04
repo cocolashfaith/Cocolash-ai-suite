@@ -405,15 +405,12 @@ function buildDirectorBody(state: SeedanceV4WizardState): DirectorInput {
         lastFrameImage: state.lastFrameUrl ? { url: state.lastFrameUrl } : undefined,
       };
     case "multi_frame":
-      // v4.1 — Multi-Frame uses the SAME UGC inputs (avatar + optional
-      // product, composed at gen-time when toggle is on). The difference
-      // from UGC mode is purely in the Director's output shape: multi_frame
-      // returns an array of per-segment prompts instead of a single string.
+      // Phase 26, D-26-01: Multi-Frame is now TEXT-ONLY. Director receives
+      // campaignType + script + subjectBrief and outputs multi_frame_prompts[]
+      // with textual descriptions (no image inputs, no @avatar/@product refs).
       return {
         ...base,
-        composedPersonProductImage: state.ugcComposedImageUrl
-          ? { url: state.ugcComposedImageUrl }
-          : undefined,
+        subjectBrief: state.subjectBrief,
         // 3-second segments are a reasonable default per the Director prompt's
         // best-practices guide. Caps at 5 segments × 3s for a 15s clip.
         multiFrameSegmentCount: Math.max(
@@ -502,26 +499,14 @@ function buildEnhancorBody(
         lastFrameImage: state.lastFrameUrl,
       };
     case "multi_frame": {
-      // Multi-Frame uses the SAME UGC inputs (avatar + optional product) —
-      // images[] carries the identity anchor for every segment so Enhancor
-      // doesn't generate a random person/product. Without this Enhancor
-      // had no anchor and was rolling its own subject (Faith reported
-      // a different brunette woman + a different product).
-      const anchors = [
-        state.ugcComposedImageUrl,
-        state.ugcWasComposed ? undefined : state.ugcSeparateProductUrl,
-      ].filter((u): u is string => typeof u === "string" && u.length > 0);
+      // Phase 26, D-26-01: Multi-Frame is TEXT-ONLY. Enhancor API silently drops
+      // images[] / products[] / influencers[] for mode=multi_frame. The only
+      // required field is multi_frame_prompts[] (each segment has prompt + duration).
+      // No top-level prompt, no top-level duration (those live inside segments).
       return {
         ...common,
         type: "image-to-video",
-        // legacy required pair — duplicated as a safety net so the route's
-        // payload assembly always has a non-empty fallback
-        personImageUrl: state.ugcComposedImageUrl,
-        productImageUrl: state.ugcWasComposed
-          ? state.ugcComposedImageUrl
-          : state.ugcSeparateProductUrl,
         multiFramePrompts: editedSegments,
-        images: anchors,
       };
     }
   }

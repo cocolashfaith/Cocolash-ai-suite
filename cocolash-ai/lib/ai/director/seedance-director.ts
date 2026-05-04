@@ -182,6 +182,12 @@ function validateDirectorInput(input: DirectorInput): void {
         "multi_frame multiFrameSegmentCount must be between 1 and 5"
       );
     }
+    if (!input.subjectBrief?.trim() || input.subjectBrief.trim().length < 10) {
+      throw new SeedanceDirectorError(
+        "INVALID_INPUT",
+        "multi_frame mode requires subjectBrief with at least 10 characters"
+      );
+    }
   }
 }
 
@@ -225,20 +231,12 @@ function composeUserMessage(input: DirectorInput): string {
         `Plan exactly ${count} segments. Total duration ${totalSeconds}s. ` +
           `Distribute durations sensibly (each segment 3-8s, all integers, summing to ${totalSeconds}).`
       );
-      if (input.composedPersonProductImage) {
+      if (input.subjectBrief?.trim()) {
         lines.push(
           "",
-          "Single reference image of the creator (with the product if held):",
-          `  ${input.composedPersonProductImage.url}`,
-          "",
-          "Use this image as the global identity / product / setting anchor for ALL segments. Each segment shows the same creator + product, just from a different angle / shot type / camera move."
+          "Subject brief (textual anchor for all segments):",
+          input.subjectBrief.trim()
         );
-      }
-      if (input.referenceImages?.length) {
-        lines.push("Additional reference images:");
-        for (const [i, ref] of input.referenceImages.entries()) {
-          lines.push(`  @image${i + 1} (${ref.role ?? "appearance"})`);
-        }
       }
       break;
     }

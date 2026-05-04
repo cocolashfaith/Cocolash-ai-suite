@@ -43,6 +43,7 @@ const BodySchema = z.object({
   firstFrameImage: ImageRoleSchema.optional(),
   lastFrameImage: ImageRoleSchema.optional(),
   multiFrameSegmentCount: z.number().int().min(1).max(5).optional(),
+  subjectBrief: z.string().optional(),
   sceneDescription: z.string().optional(),
   userInstructions: z.string().optional(),
 });

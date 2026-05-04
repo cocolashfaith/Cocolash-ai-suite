@@ -64,8 +64,8 @@ export interface SeedanceV4WizardState {
   /** text_to_video: just a description */
   t2vSceneDescription?: string;
 
-  /** multi_frame: AI-proposed editable segments */
-  multiFrameReferenceImages?: Array<{ url: string; role: string }>;
+  /** multi_frame: free-text subject brief (text-only flow per D-26-01) */
+  subjectBrief?: string;
 
   // Step 3 — Director output (one of the two will be populated based on mode)
   directorPrompt?: string;
@@ -99,6 +99,7 @@ export const DEFAULT_V4_STATE: SeedanceV4WizardState = {
   mode: "ugc",
   script: null,
   scriptText: "",
+  subjectBrief: "",
   aspectRatio: "9:16",
   resolution: "720p",
   fastMode: false,
