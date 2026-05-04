@@ -7,7 +7,6 @@ import {
   generateSeedanceDirectorPrompt,
   type SeedanceDirectorPromptParams,
 } from "@/lib/seedance/prompt-planner";
-import { getDisallowedFields, getAllowedFieldsList } from "@/lib/seedance/mode-allowlist";
 import { SEEDANCE_COSTS } from "@/lib/seedance/types";
 import type {
   SeedanceAspectRatio,
@@ -114,23 +113,6 @@ export async function POST(request: NextRequest) {
       body = (await request.json()) as Partial<SeedanceGenerateBody>;
     } catch {
       return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
-    }
-
-    // Mode-strict payload validation: reject disallowed fields early.
-    // This catches UI bugs before they reach Enhancor.
-    const generationTypeForValidation = body.generationType ?? "image-to-video";
-    const seedanceModeForValidation = body.seedanceMode ?? "ugc";
-    const modeForValidation = generationTypeForValidation === "text-to-video" ? "text_to_video" : seedanceModeForValidation;
-    const disallowedFields = getDisallowedFields(body, modeForValidation);
-    if (disallowedFields.length > 0) {
-      const offendingField = disallowedFields[0];
-      const allowedList = getAllowedFieldsList(modeForValidation);
-      return NextResponse.json(
-        {
-          error: `Mode '${modeForValidation}' does not accept field '${offendingField}'. Allowed fields: ${allowedList}.`,
-        },
-        { status: 400 }
-      );
     }
 
     const errors = validateRequest(body);
