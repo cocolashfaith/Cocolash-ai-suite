@@ -35,7 +35,7 @@ export interface SeedanceMultiFramePrompt {
 export interface SeedanceInput {
   type?: SeedanceGenerationType;
   mode?: SeedanceMode;
-  prompt: string;
+  prompt?: string;
   first_frame_url?: string;
   last_frame_url?: string;
   reference_image_urls?: string[];

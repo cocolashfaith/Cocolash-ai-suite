@@ -16,6 +16,7 @@ import {
   type SeedanceQueueResponse,
   type SeedanceTaskResponse,
 } from "./types";
+import { pickAllowed } from "./mode-allowlist";
 
 const DEFAULT_API_BASE =
   "https://apireq.enhancor.ai/api/enhancor-ugc-full-access/v1";
@@ -197,12 +198,12 @@ export async function querySeedanceTask(
   });
 }
 
-function buildEnhancorQueueRequest(
+export function buildEnhancorQueueRequest(
   input: SeedanceInput,
   webhookUrl: string
 ): SeedanceCreateTaskRequest {
   if (input.type === "text-to-video") {
-    return {
+    const payload = {
       type: "text-to-video",
       prompt: input.prompt,
       duration: input.duration,
@@ -212,10 +213,11 @@ function buildEnhancorQueueRequest(
       full_access: input.full_access,
       fast_mode: input.fast_mode,
     };
+    return pickAllowed(payload, "text_to_video") as unknown as SeedanceCreateTaskRequest;
   }
 
   if (input.mode === "multi_frame") {
-    return {
+    const payload = {
       type: "image-to-video",
       mode: "multi_frame",
       resolution: input.resolution,
@@ -227,10 +229,11 @@ function buildEnhancorQueueRequest(
       ...(input.videos && input.videos.length > 0 && { videos: input.videos }),
       ...(input.audios && input.audios.length > 0 && { audios: input.audios }),
     };
+    return pickAllowed(payload, "multi_frame") as unknown as SeedanceCreateTaskRequest;
   }
 
   if (input.mode === "first_n_last_frames") {
-    return {
+    const payload = {
       type: "image-to-video",
       mode: "first_n_last_frames",
       prompt: input.prompt,
@@ -245,10 +248,11 @@ function buildEnhancorQueueRequest(
       ...(input.videos && input.videos.length > 0 && { videos: input.videos }),
       ...(input.audios && input.audios.length > 0 && { audios: input.audios }),
     };
+    return pickAllowed(payload, "first_n_last_frames") as unknown as SeedanceCreateTaskRequest;
   }
 
   if (input.mode === "lipsyncing") {
-    return {
+    const payload = {
       type: "image-to-video",
       mode: "lipsyncing",
       prompt: addReferenceTokens(input.prompt, {
@@ -267,6 +271,7 @@ function buildEnhancorQueueRequest(
       ...(input.audios && input.audios.length > 0 && { audios: input.audios }),
       ...(input.lipsyncing_audio && { lipsyncing_audio: input.lipsyncing_audio }),
     };
+    return pickAllowed(payload, "lipsyncing") as unknown as SeedanceCreateTaskRequest;
   }
 
   if (input.mode === "multi_reference") {
@@ -276,7 +281,7 @@ function buildEnhancorQueueRequest(
         (url): url is string => Boolean(url)
       );
 
-    return {
+    const payload = {
       type: "image-to-video",
       mode: "multi_reference",
       prompt: addReferenceTokens(input.prompt, {
@@ -294,6 +299,7 @@ function buildEnhancorQueueRequest(
       ...(input.videos && input.videos.length > 0 && { videos: input.videos }),
       ...(input.audios && input.audios.length > 0 && { audios: input.audios }),
     };
+    return pickAllowed(payload, "multi_reference") as unknown as SeedanceCreateTaskRequest;
   }
 
   const productImages = input.products ?? input.reference_image_urls ?? [];
@@ -308,7 +314,7 @@ function buildEnhancorQueueRequest(
       (url): url is string => Boolean(url)
     );
 
-    return {
+    const payload = {
       type: "image-to-video",
       mode: "multi_reference",
       prompt: addReferenceTokens(input.prompt, {
@@ -326,9 +332,10 @@ function buildEnhancorQueueRequest(
       ...(videoUrls.length > 0 && { videos: videoUrls }),
       ...(audioUrls.length > 0 && { audios: audioUrls }),
     };
+    return pickAllowed(payload, "multi_reference") as unknown as SeedanceCreateTaskRequest;
   }
 
-  return {
+  const payload = {
     type: "image-to-video",
     mode: "ugc",
     prompt: input.prompt,
@@ -340,13 +347,20 @@ function buildEnhancorQueueRequest(
     fast_mode: input.fast_mode,
     ...(productImages.length > 0 && { products: productImages }),
     ...(influencerImages.length > 0 && { influencers: influencerImages }),
+    ...(input.videos && input.videos.length > 0 && { videos: input.videos }),
+    ...(input.audios && input.audios.length > 0 && { audios: input.audios }),
   };
+  return pickAllowed(payload, "ugc") as unknown as SeedanceCreateTaskRequest;
 }
 
 function addReferenceTokens(
-  prompt: string,
+  prompt: string | undefined,
   counts: { images: number; videos: number; audios: number }
-): string {
+): string | undefined {
+  if (!prompt) {
+    return prompt;
+  }
+
   const refs = [
     ...Array.from({ length: counts.images }, (_, index) => `@image${index + 1}`),
     ...Array.from({ length: counts.videos }, (_, index) => `@video${index + 1}`),
