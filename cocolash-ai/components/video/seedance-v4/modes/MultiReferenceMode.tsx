@@ -6,6 +6,7 @@ import { useState } from "react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
+import { AtMentionTextarea, type AtMention } from "../AtMentionTextarea";
 import { uploadSeedanceMedia } from "../lib/upload";
 import type { SeedanceV4WizardState } from "../types";
 
@@ -162,18 +163,25 @@ export function MultiReferenceMode({
             Specific instructions for the Director (optional)
           </h3>
           <p className="mt-0.5 text-[11px] text-coco-brown-medium/60">
-            Anything the AI should honor verbatim — e.g. "keep the face from
-            @image1 unchanged", or "follow @image2 for camera framing only".
+            Type <code className="rounded bg-coco-beige px-1">@</code> to
+            reference an uploaded image — e.g.{" "}
+            <code className="rounded bg-coco-beige px-1">@image1</code> for
+            appearance,{" "}
+            <code className="rounded bg-coco-beige px-1">@image2</code> for
+            product. The Director will pass these through to Seedance as
+            asset roles.
           </p>
         </div>
-        <textarea
+        <AtMentionTextarea
           value={state.multiReferenceUserInstructions ?? ""}
-          onChange={(e) =>
-            setState({ multiReferenceUserInstructions: e.target.value })
-          }
-          rows={3}
-          placeholder="(optional)"
-          className="w-full rounded-xl border-2 border-coco-beige-dark bg-white p-3 text-xs text-coco-brown outline-none focus:border-coco-golden"
+          onChange={(v) => setState({ multiReferenceUserInstructions: v })}
+          mentions={refs.map((r, i): AtMention => ({
+            token: `@image${i + 1}`,
+            role: capitalize(r.role),
+            thumbUrl: r.url,
+          }))}
+          rows={4}
+          placeholder='Tip: type "@" to insert a reference. Example: "@image1 is the creator. @image2 — @image5 are the product. Keep the face from @image1 unchanged."'
         />
       </section>
 
@@ -187,4 +195,8 @@ export function MultiReferenceMode({
       </Button>
     </div>
   );
+}
+
+function capitalize(s: string): string {
+  return s.charAt(0).toUpperCase() + s.slice(1);
 }

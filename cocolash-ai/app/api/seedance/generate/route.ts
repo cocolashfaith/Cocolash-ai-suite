@@ -325,15 +325,31 @@ export async function POST(request: NextRequest) {
         influencersArray: influencers,
         productDescription,
       });
-      const referenceImageUrls = [productImageUrl];
+      // For non-UGC modes (multi-reference, multi-frame, lipsync, first-last,
+      // T2V) personImageUrl / productImageUrl may be undefined — only include
+      // them in Enhancor's reference arrays when they're real strings. Falling
+      // back to a single-element array containing undefined breaks the API.
+      const referenceImageUrls = productImageUrl ? [productImageUrl] : [];
       const referenceAudioUrls =
         effectiveAudioMode === "uploaded-audio" && audioUrl ? [audioUrl] : undefined;
       const resolvedProducts =
-        products && products.length > 0 ? products : [productImageUrl];
+        products && products.length > 0
+          ? products
+          : productImageUrl
+          ? [productImageUrl]
+          : [];
       const resolvedInfluencers =
-        influencers && influencers.length > 0 ? influencers : [personImageUrl];
+        influencers && influencers.length > 0
+          ? influencers
+          : personImageUrl
+          ? [personImageUrl]
+          : [];
       const resolvedImages =
-        images && images.length > 0 ? images : [personImageUrl, productImageUrl].filter(Boolean);
+        images && images.length > 0
+          ? images
+          : [personImageUrl, productImageUrl].filter(
+              (u): u is string => typeof u === "string" && u.length > 0
+            );
       const resolvedAudios =
         audios && audios.length > 0
           ? audios
@@ -427,7 +443,22 @@ function validateRequest(body: Partial<SeedanceGenerateBody>): string[] {
   // Text-to-video has no images at all.
   const isTextToVideo = body.generationType === "text-to-video";
 
-  if (!isTextToVideo) {
+  // Image-input requirements vary by mode:
+  //  - text-to-video: no images at all
+  //  - ugc / lipsyncing (legacy): personImageUrl + productImageUrl required
+  //  - multi_reference / multi_frame: images[] carries the references
+  //  - first_n_last_frames: firstFrameImage (optionally lastFrameImage)
+  // We only enforce the legacy person+product pair when the request is on the
+  // legacy path (no overridePrompt) AND the mode actually uses that pair.
+  const usesPersonProductPair =
+    !body.seedanceMode ||
+    body.seedanceMode === "ugc" ||
+    body.seedanceMode === "lipsyncing";
+  const hasAlternativeImages =
+    (Array.isArray(body.images) && body.images.length > 0) ||
+    Boolean(body.firstFrameImage);
+
+  if (!isTextToVideo && usesPersonProductPair && !hasAlternativeImages) {
     if (!body.personImageUrl) errors.push("personImageUrl is required");
     if (!body.productImageUrl) errors.push("productImageUrl is required");
   }
