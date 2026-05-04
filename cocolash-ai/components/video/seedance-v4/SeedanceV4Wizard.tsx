@@ -1,10 +1,12 @@
 "use client";
 
-import { useCallback, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import { Step1ScriptAndMode } from "./Step1ScriptAndMode";
 import { Step2DynamicInputs } from "./Step2DynamicInputs";
 import { Step3PromptReviewAndGenerate } from "./Step3PromptReviewAndGenerate";
+import { CostBreakdown } from "./CostBreakdown";
 import { DEFAULT_V4_STATE, type SeedanceV4WizardState } from "./types";
+import { estimateV4Cost } from "@/lib/costs/estimates";
 import { cn } from "@/lib/utils";
 
 const STEPS = [
@@ -30,6 +32,21 @@ export function SeedanceV4Wizard({ initialPersonImageUrl: _ }: SeedanceV4WizardP
   const [maxStep, setMaxStep] = useState<0 | 1 | 2>(0);
   const [state, setStateRaw] = useState<SeedanceV4WizardState>(DEFAULT_V4_STATE);
 
+  /**
+   * Step-3-only state fields — patches that ONLY touch these don't bump
+   * `inputsVersion`. Anything else (script, mode, avatar, product, etc.)
+   * counts as an upstream change and invalidates the cached Director output.
+   */
+  const STEP3_OWNED_KEYS = new Set<keyof SeedanceV4WizardState>([
+    "directorPrompt",
+    "directorMultiFramePrompts",
+    "directorDiagnostics",
+    "directorPromptVersion",
+    "aspectRatio",
+    "resolution",
+    "fastMode",
+  ]);
+
   const setState = useCallback(
     (
       update:
@@ -38,7 +55,16 @@ export function SeedanceV4Wizard({ initialPersonImageUrl: _ }: SeedanceV4WizardP
     ) => {
       setStateRaw((prev) => {
         const patch = typeof update === "function" ? update(prev) : update;
-        return { ...prev, ...patch };
+        // Detect whether this patch touches any UPSTREAM (Step 1 or Step 2)
+        // input. If so, bump inputsVersion so Step 3 knows to regenerate.
+        const touchesUpstream = Object.keys(patch).some(
+          (k) => !STEP3_OWNED_KEYS.has(k as keyof SeedanceV4WizardState)
+        );
+        const next: SeedanceV4WizardState = { ...prev, ...patch };
+        if (touchesUpstream) {
+          next.inputsVersion = (prev.inputsVersion ?? 0) + 1;
+        }
+        return next;
       });
     },
     []
@@ -55,8 +81,45 @@ export function SeedanceV4Wizard({ initialPersonImageUrl: _ }: SeedanceV4WizardP
     setMaxStep(0);
   };
 
+  /** Live cost estimate that reflects the current wizard state. Refreshes
+   *  whenever upstream inputs change (mode, duration, resolution, compose
+   *  toggle, last-frame chain, etc.). Shown at the top of the wizard so
+   *  the user can see what it will cost before they finish setting up. */
+  const liveBreakdown = useMemo(() => {
+    return estimateV4Cost({
+      mode: state.mode,
+      durationSeconds: state.duration,
+      resolution: state.resolution,
+      generatesAvatar:
+        state.mode === "ugc" ||
+        state.mode === "multi_frame" ||
+        // first+last w/ "Generate UGC" path also runs the avatar generator
+        (state.mode === "first_n_last_frames" && !!state.firstFrameUrl),
+      composesProduct:
+        (state.mode === "ugc" || state.mode === "multi_frame") &&
+        !!state.ugcWasComposed,
+      generatesLastFrame:
+        state.mode === "first_n_last_frames" && !!state.lastFrameUrl,
+      generatesScript:
+        state.mode !== "lipsyncing" && state.mode !== "text_to_video",
+    });
+  }, [
+    state.mode,
+    state.duration,
+    state.resolution,
+    state.ugcWasComposed,
+    state.firstFrameUrl,
+    state.lastFrameUrl,
+  ]);
+
   return (
     <div>
+      {/* Headline cost — shown ABOVE the stepper so the user always sees the
+          running estimate as they make choices. */}
+      <div className="mb-4">
+        <CostBreakdown breakdown={liveBreakdown} variant="headline" />
+      </div>
+
       {/* Stepper */}
       <div className="mb-6">
         <div className="flex items-center justify-between">

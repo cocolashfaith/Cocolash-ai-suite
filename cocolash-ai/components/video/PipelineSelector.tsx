@@ -25,7 +25,7 @@ const PIPELINES: {
       "Educational videos, tutorials & brand storytelling. Consistent talking-head delivery with clear speech.",
     badge: "Educational",
     badgeColor: "bg-coco-beige text-coco-brown-medium",
-    cost: "~$0.50/video",
+    cost: "~$1.30 / 30s video",
     icon: Film,
     bullets: [
       "Tutorials, FAQs, brand stories & product education",
@@ -40,7 +40,7 @@ const PIPELINES: {
       "Authentic UGC-style videos with iPhone aesthetic. AI speaks your script or lip-syncs your voice. Best for TikTok/Reels ad creatives.",
     badge: "New",
     badgeColor: "bg-coco-golden/20 text-coco-golden",
-    cost: "~$3.15/video",
+    cost: "~$3.20 / 15s 720p video",
     icon: Smartphone,
     bullets: [
       "iPhone-style UGC aesthetic",

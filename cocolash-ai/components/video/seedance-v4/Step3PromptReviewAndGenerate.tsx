@@ -6,11 +6,13 @@ import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { EnhancorSettingsPanel } from "./EnhancorSettingsPanel";
+import { CostBreakdown } from "./CostBreakdown";
 import type { SeedanceV4WizardState } from "./types";
 import type {
   DirectorInput,
   DirectorMode,
 } from "@/lib/ai/director/types";
+import { estimateV4Cost } from "@/lib/costs/estimates";
 
 interface Step3Props {
   state: SeedanceV4WizardState;
@@ -57,11 +59,16 @@ export function Step3PromptReviewAndGenerate({ state, setState, onReset }: Step3
         throw new Error(data.error || "Director failed");
       }
 
+      // Capture the inputsVersion at the time the Director ran so we can
+      // detect divergence later (user navigates back, edits, returns).
+      const versionAtRun = state.inputsVersion;
+
       if (state.mode === "multi_frame") {
         setState({
           directorPrompt: "",
           directorMultiFramePrompts: data.multiFramePrompts,
           directorDiagnostics: data.diagnostics,
+          directorPromptVersion: versionAtRun,
         });
         setEditedSegments(data.multiFramePrompts ?? []);
       } else {
@@ -69,6 +76,7 @@ export function Step3PromptReviewAndGenerate({ state, setState, onReset }: Step3
           directorPrompt: data.prompt,
           directorMultiFramePrompts: undefined,
           directorDiagnostics: data.diagnostics,
+          directorPromptVersion: versionAtRun,
         });
         setEditedPrompt(data.prompt);
       }
@@ -82,14 +90,31 @@ export function Step3PromptReviewAndGenerate({ state, setState, onReset }: Step3
     }
   }, [state, setState]);
 
-  // On first mount or when mode/inputs change materially, write the prompt
+  /**
+   * Run the Director when:
+   *   - First mount and no cached prompt exists, OR
+   *   - The user navigated back to a previous step, changed inputs, and came
+   *     forward again (detected via inputsVersion > directorPromptVersion).
+   *
+   * Faith reported: editing inputs after seeing a generated prompt should
+   * regenerate it, not show the stale result. This is that fix.
+   */
   useEffect(() => {
-    if (!state.directorPrompt && !state.directorMultiFramePrompts?.length && !isWriting) {
+    if (isWriting) return;
+    const haveCachedOutput =
+      !!state.directorPrompt || !!state.directorMultiFramePrompts?.length;
+    const isStale =
+      haveCachedOutput &&
+      typeof state.directorPromptVersion === "number" &&
+      state.inputsVersion > state.directorPromptVersion;
+
+    if (!haveCachedOutput || isStale) {
       void writeDirectorPrompt();
     }
-    // intentionally only run once on mount; user can manually re-run via [Regenerate]
+    // Re-evaluate when inputs change. directorPromptVersion is set by
+    // writeDirectorPrompt itself — including it makes the loop terminating.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [state.inputsVersion, state.directorPromptVersion]);
 
   async function handleApproveAndGenerate() {
     setIsGenerating(true);
@@ -250,6 +275,28 @@ export function Step3PromptReviewAndGenerate({ state, setState, onReset }: Step3
         setState={setState}
         hideDuration={state.mode === "lipsyncing"}
         hideTopLevelDuration={state.mode === "multi_frame"}
+      />
+
+      {/* Itemized cost breakdown — every component cost shown so the user
+          knows exactly what they're paying for before clicking Approve. */}
+      <CostBreakdown
+        variant="detailed"
+        breakdown={estimateV4Cost({
+          mode: state.mode,
+          durationSeconds: state.duration,
+          resolution: state.resolution,
+          generatesAvatar:
+            state.mode === "ugc" ||
+            state.mode === "multi_frame" ||
+            (state.mode === "first_n_last_frames" && !!state.firstFrameUrl),
+          composesProduct:
+            (state.mode === "ugc" || state.mode === "multi_frame") &&
+            !!state.ugcWasComposed,
+          generatesLastFrame:
+            state.mode === "first_n_last_frames" && !!state.lastFrameUrl,
+          generatesScript:
+            state.mode !== "lipsyncing" && state.mode !== "text_to_video",
+        })}
       />
 
       {/* Approve & generate */}
@@ -454,12 +501,28 @@ function buildEnhancorBody(
         firstFrameImage: state.firstFrameUrl,
         lastFrameImage: state.lastFrameUrl,
       };
-    case "multi_frame":
+    case "multi_frame": {
+      // Multi-Frame uses the SAME UGC inputs (avatar + optional product) —
+      // images[] carries the identity anchor for every segment so Enhancor
+      // doesn't generate a random person/product. Without this Enhancor
+      // had no anchor and was rolling its own subject (Faith reported
+      // a different brunette woman + a different product).
+      const anchors = [
+        state.ugcComposedImageUrl,
+        state.ugcWasComposed ? undefined : state.ugcSeparateProductUrl,
+      ].filter((u): u is string => typeof u === "string" && u.length > 0);
       return {
         ...common,
         type: "image-to-video",
+        // legacy required pair — duplicated as a safety net so the route's
+        // payload assembly always has a non-empty fallback
+        personImageUrl: state.ugcComposedImageUrl,
+        productImageUrl: state.ugcWasComposed
+          ? state.ugcComposedImageUrl
+          : state.ugcSeparateProductUrl,
         multiFramePrompts: editedSegments,
-        images: state.multiFrameReferenceImages?.map((r) => r.url) ?? [],
+        images: anchors,
       };
+    }
   }
 }

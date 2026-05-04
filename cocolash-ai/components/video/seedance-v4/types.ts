@@ -82,6 +82,14 @@ export interface SeedanceV4WizardState {
   aspectRatio: "9:16" | "16:9" | "3:4" | "4:3";
   resolution: "480p" | "720p" | "1080p";
   fastMode: boolean;
+
+  /** Monotonically increments every time an upstream input changes. Step 3
+   *  tracks the version of the inputs the Director was last run on; if the
+   *  version moves forward, the prompt is stale and re-generated. */
+  inputsVersion: number;
+  /** Set when Step 3 finishes a Director call — captures inputsVersion at
+   *  that moment so we can detect divergence on re-entry. */
+  directorPromptVersion?: number;
 }
 
 export const DEFAULT_V4_STATE: SeedanceV4WizardState = {
@@ -94,4 +102,5 @@ export const DEFAULT_V4_STATE: SeedanceV4WizardState = {
   aspectRatio: "9:16",
   resolution: "720p",
   fastMode: false,
+  inputsVersion: 0,
 };
