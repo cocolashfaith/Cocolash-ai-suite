@@ -47,11 +47,16 @@ Return ONLY the final prompt string. No preamble, no commentary, no markdown. Th
  * UGC mode — single composed image (avatar already holding the product).
  * The composed image is produced by Gemini compose UPSTREAM of the director;
  * the director never sees two images for UGC mode.
+ *
+ * Token convention: @influencer1 (actor) and @product1 (product).
+ * These tokens are visible to the model and anchor identity.
  */
 export const UGC_DIRECTOR_PROMPT = `${UNIVERSAL_PRELUDE}
 
 ## Mode: UGC
 A single composed reference image of the creator already holding/wearing the product is provided to Seedance separately. Your job is to write the prompt that drives motion + camera + audio for that one image.
+
+Reference the actor as **@influencer1** and the product as **@product1**. These tokens are visible to the model — anchor identity through them.
 
 ## UGC formula
 **Creator type → product → setting → speaking setup → shot structure → product interaction → tone → audio realism → constraints**
@@ -77,11 +82,18 @@ Write the Seedance prompt now. Use the formula. Be concrete. Stay under ~180 wor
 /**
  * Multi-reference mode — N images, each with a single explicit job.
  * Treats every uploaded asset as a single-purpose anchor.
+ *
+ * Token convention: @image1..@imageN with explicit role labels.
+ * Begin the prompt with role declarations so the model knows what each image controls.
  */
 export const MULTI_REFERENCE_DIRECTOR_PROMPT = `${UNIVERSAL_PRELUDE}
 
 ## Mode: Multi-Reference
 Multiple reference images (and optionally a video reference + audio reference) are provided. Each asset has a single explicit job. Your prompt must say what each asset controls — otherwise the model produces "asset soup" (blending, dropped references, identity drift).
+
+**Begin the prompt with explicit role labels.** For example:
+\`@image1 = actor's appearance only. @image2 = product. @image3 = background lighting reference.\`
+Each image gets ONE explicit job.
 
 ## Multi-reference formula
 **Base scene + goal → asset role mapping (@image1 = X, @image2 = Y, etc.) → shot logic / sequence → stability constraints → audio or camera notes**
@@ -103,20 +115,27 @@ Multiple reference images (and optionally a video reference + audio reference) a
 Write the Seedance prompt now. Reference each asset by its @-handle. Stay under ~200 words.`;
 
 /**
- * Multi-frame mode — sequence design.
+ * Multi-frame mode — sequence design. TEXT-ONLY.
  * Returns an array of {prompt, duration} segments summing 4-15 seconds.
  * The output format for this mode is JSON, not a free-text prompt.
+ *
+ * CRITICAL: Enhancor API does NOT accept images, products, or influencers fields.
+ * Subject continuity MUST be carried textually inside every segment prompt.
  */
 export const MULTI_FRAME_DIRECTOR_PROMPT = `${UNIVERSAL_PRELUDE}
 
 ## Mode: Multi-Frame
 Generate a SHOT LIST (array of segments) instead of one prompt. Each segment has its own prompt and duration. Total duration MUST be between 4 and 15 seconds.
 
+⚠ **IMPORTANT:** The Enhancor API for Multi-Frame accepts NO reference images. The API only sees your \`multi_frame_prompts[]\` text. There is no \`@avatar\`, no \`@product\` reference, no \`images[]\` field. All subject and product detail MUST be described textually INSIDE EVERY segment's prompt to preserve continuity across the sequence.
+
 ## Multi-frame formula
-**Define global constants first → segment order → one main action per segment → one camera note per segment → restate what persists across all segments**
+**Define subject + product appearance once (gender, age, hair, wardrobe, distinctive features) + product details (form factor, color, label visibility) → segment order → one main action per segment → one camera note per segment → restate what persists**
 
 ## Mode-specific best practices
-- **Global constants** must persist across all segments: same creator face, same outfit, same product, same room, same lighting. State them ONCE at the top of every segment prompt as a one-line preamble: "Constants: same female host, black sweatshirt, supplement bottle, bedroom."
+- **Subject persistence (CRITICAL):** Because there are NO reference images, you must describe the actor's appearance (gender, age, hair color, outfit, any distinctive features) and the product's appearance (form, color, label) explicitly in EVERY segment prompt so Enhancor remembers who and what across cuts.
+  - Example preamble for segment 1: "A Black woman in her 30s with natural curls, wearing a cream silk blouse, holds the gold-capped CocoLash tube near her eye. Bedroom, soft window light."
+  - Example preamble for segment 2: "Same woman, same cream blouse, now at the mirror applying the lash. The gold-capped tube sits on the counter below."
 - One main action per segment. One main camera move per segment. NO compound asks ("she walks AND turns AND demonstrates AND closes door").
 - Use concrete cinematography terms: "fixed selfie framing", "slow push-in", "handheld follow", "macro close-up", "mirror angle", "top-down".
 - Sequence design: opening beat → middle interaction → closing reaction. For a 15s clip, 4-5 segments of 3-4 seconds each works well.
@@ -137,11 +156,15 @@ Write the JSON segment array now.`;
 /**
  * Lip-sync mode — single image + audio + readable mouth.
  * Discipline: short lines, medium close-up, mouth visible, minimal competing motion.
+ *
+ * Token convention: @image1 for the avatar; @audio1 or lipsyncing_audio for timing.
  */
 export const LIPSYNCING_DIRECTOR_PROMPT = `${UNIVERSAL_PRELUDE}
 
 ## Mode: Lip-Sync
 The user has provided an image (the speaker) and audio. Your prompt drives the speaker's mouth movement, framing, and supporting motion so the lip-sync reads cleanly.
+
+Reference the avatar as **@image1** and the audio timing as **@audio1** (or \`lipsyncing_audio\`). Follow SeeDance 2 lip-sync best practices: short lines, mouth visible, minimal competing motion.
 
 ## Lip-sync formula
 **Speaker → speaking setup → framing → dialogue style → voice / audio role → mouth visibility constraints → scene support**
@@ -165,11 +188,15 @@ Write the Seedance prompt now. Be disciplined. Stay under ~150 words.`;
  * First-and-last-frame mode — direction with bridge logic.
  * The director writes the transition prompt; the last frame itself comes from
  * the NanoBanana Last-Frame Director (separate prompt below).
+ *
+ * Token convention: @first_frame and @last_frame for anchor references.
  */
 export const FIRST_N_LAST_FRAMES_DIRECTOR_PROMPT = `${UNIVERSAL_PRELUDE}
 
 ## Mode: First + Last Frame
 The user has provided a first frame (composed UGC image OR uploaded) AND a last frame (generated upstream by NanoBanana from the user's destination description). Your prompt drives the TRANSITION between them.
+
+Reference the frames as **@first_frame** and **@last_frame**. Describe the bridge between them AND what stays constant (lighting, palette, framing).
 
 ## First/last formula
 **Start anchor (first frame) → end anchor (last frame) → transition behavior → camera path → pacing → preservation constraints**
@@ -189,11 +216,13 @@ Write the Seedance transition prompt now.`;
 /**
  * Text-to-video mode — no images. Subject + action + environment + camera + style.
  * Used for concept exploration and simpler scene logic.
+ *
+ * Token convention: NO @ tokens. No media attached. Pure text-driven prompt.
  */
 export const TEXT_TO_VIDEO_DIRECTOR_PROMPT = `${UNIVERSAL_PRELUDE}
 
 ## Mode: Text-to-Video
-NO reference images, video, or audio. The model has only your prompt. Static scene descriptions FAIL — you must include motion AND camera direction.
+NO reference images, video, audio, or @ tokens. The model has only your prompt. Static scene descriptions FAIL — you must include motion AND camera direction explicitly.
 
 ## T2V formula
 **Subject → action → environment → camera → sound → style → constraints**
