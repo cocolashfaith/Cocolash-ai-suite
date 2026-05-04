@@ -7,6 +7,7 @@ import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { uploadSeedanceMedia } from "../lib/upload";
 import type { SeedanceV4WizardState } from "../types";
+import { CapabilityCard } from "../CapabilityCard";
 
 interface FirstAndLastFrameModeProps {
   state: SeedanceV4WizardState;
@@ -176,6 +177,8 @@ export function FirstAndLastFrameMode({
 
   return (
     <div className="space-y-6">
+      <CapabilityCard mode="first_n_last_frames" />
+
       {/* First frame — three sources */}
       <section className="space-y-3 rounded-xl border-2 border-coco-beige-dark/50 bg-white/50 p-4">
         <div>

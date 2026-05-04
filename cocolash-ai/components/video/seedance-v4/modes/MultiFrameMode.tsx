@@ -4,6 +4,7 @@ import { useState } from "react";
 import { AlertCircle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import type { SeedanceV4WizardState } from "../types";
+import { CapabilityCard } from "../CapabilityCard";
 
 interface MultiFrameModeProps {
   state: SeedanceV4WizardState;
@@ -47,6 +48,8 @@ export function MultiFrameMode(props: MultiFrameModeProps) {
 
   return (
     <div className="space-y-4">
+      <CapabilityCard mode="multi_frame" />
+
       {/* D-26-03: Inline banner — verbatim copy */}
       <div className="rounded-xl border-2 border-blue-300 bg-blue-50 p-4">
         <p className="text-xs leading-relaxed text-blue-900">

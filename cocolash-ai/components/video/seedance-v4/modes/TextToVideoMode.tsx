@@ -2,6 +2,7 @@
 
 import { Button } from "@/components/ui/button";
 import type { SeedanceV4WizardState } from "../types";
+import { CapabilityCard } from "../CapabilityCard";
 
 interface TextToVideoModeProps {
   state: SeedanceV4WizardState;
@@ -18,6 +19,8 @@ export function TextToVideoMode({ state, setState, onReady }: TextToVideoModePro
 
   return (
     <div className="space-y-6">
+      <CapabilityCard mode="text_to_video" />
+
       <section className="space-y-3 rounded-xl border-2 border-amber-300 bg-amber-50/60 p-4">
         <div className="flex items-start gap-2">
           <span className="mt-0.5 text-base">⚠️</span>

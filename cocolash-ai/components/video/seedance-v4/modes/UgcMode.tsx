@@ -33,6 +33,7 @@ import {
 import { LASH_STYLE_OPTIONS } from "@/lib/prompts/modules/lash-styles";
 import type { LashStyle } from "@/lib/types";
 import type { SeedanceV4WizardState } from "../types";
+import { CapabilityCard } from "../CapabilityCard";
 
 interface UgcModeProps {
   state: SeedanceV4WizardState;
@@ -287,6 +288,8 @@ export function UgcMode({ state, setState, onReady }: UgcModeProps) {
 
   return (
     <div className="space-y-6">
+      <CapabilityCard mode="ugc" />
+
       {/* Tab switcher */}
       <div className="flex gap-1.5 rounded-lg bg-coco-beige/50 p-1">
         <TabBtn

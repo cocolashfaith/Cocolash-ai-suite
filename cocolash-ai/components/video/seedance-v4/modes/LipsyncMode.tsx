@@ -6,6 +6,7 @@ import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { uploadSeedanceMedia } from "../lib/upload";
 import type { SeedanceV4WizardState } from "../types";
+import { CapabilityCard } from "../CapabilityCard";
 
 interface LipsyncModeProps {
   state: SeedanceV4WizardState;
@@ -71,6 +72,8 @@ export function LipsyncMode({ state, setState, onReady }: LipsyncModeProps) {
 
   return (
     <div className="space-y-6">
+      <CapabilityCard mode="lipsyncing" />
+
       <UploadCard
         title="Speaker image (required)"
         description="A photo of the person who will speak. Mouth should be visible."

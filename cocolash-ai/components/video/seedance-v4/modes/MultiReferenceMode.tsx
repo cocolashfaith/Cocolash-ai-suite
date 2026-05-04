@@ -9,6 +9,7 @@ import { Button } from "@/components/ui/button";
 import { AtMentionTextarea, type AtMention } from "../AtMentionTextarea";
 import { uploadSeedanceMedia } from "../lib/upload";
 import type { SeedanceV4WizardState } from "../types";
+import { CapabilityCard } from "../CapabilityCard";
 
 const ROLES = [
   { value: "appearance", label: "Appearance", desc: "Identity / face" },
@@ -85,6 +86,8 @@ export function MultiReferenceMode({
 
   return (
     <div className="space-y-6">
+      <CapabilityCard mode="multi_reference" />
+
       <section className="space-y-3 rounded-xl border-2 border-coco-beige-dark/50 bg-white/50 p-4">
         <div>
           <h3 className="text-sm font-semibold text-coco-brown">
