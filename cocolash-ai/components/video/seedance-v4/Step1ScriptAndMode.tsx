@@ -35,6 +35,7 @@ const MODES: {
   label: string;
   icon: React.ElementType;
   whenToUse: string;
+  hint: string;
   badge?: string;
 }[] = [
   {
@@ -42,6 +43,7 @@ const MODES: {
     label: "UGC Avatar",
     icon: Sparkles,
     whenToUse: "One creator holding your product. The fastest path.",
+    hint: "creator-style single shot, anchored by avatar + product image",
     badge: "Recommended",
   },
   {
@@ -49,30 +51,35 @@ const MODES: {
     label: "Text-to-Video",
     icon: Type,
     whenToUse: "Describe a scene in words — no images required.",
+    hint: "no media — fully prompt-driven",
   },
   {
     value: "multi_reference",
     label: "Multi-Reference",
     icon: Layers,
     whenToUse: "Multiple reference images, each with a specific job.",
+    hint: "1–9 reference images, each with a defined role",
   },
   {
     value: "lipsyncing",
     label: "Lip-Sync",
     icon: Mic2,
     whenToUse: "Image of a speaker + audio file. Mouth follows audio.",
+    hint: "avatar speaks your audio file",
   },
   {
     value: "multi_frame",
     label: "Multi-Frame Sequence",
     icon: Film,
     whenToUse: "UGC video with multiple shots / angles per scene.",
+    hint: "text-driven multi-shot — no image input",
   },
   {
     value: "first_n_last_frames",
     label: "First + Last Frame",
     icon: Wand2,
     whenToUse: "Smooth transition between two scenes (AI-generated end).",
+    hint: "start image → AI-generated end image, smooth transition",
   },
 ];
 
@@ -146,6 +153,9 @@ export function Step1ScriptAndMode({ state, setState, onAdvance }: Step1Props) {
                 </div>
                 <p className="text-[10px] leading-snug text-coco-brown-medium/60">
                   {m.whenToUse}
+                </p>
+                <p className="text-[11px] italic text-coco-brown-medium/60">
+                  {m.hint}
                 </p>
               </button>
             );
