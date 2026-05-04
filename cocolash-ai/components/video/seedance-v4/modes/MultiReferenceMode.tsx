@@ -6,7 +6,7 @@ import { useState } from "react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
-import { createClient } from "@/lib/supabase/client";
+import { uploadSeedanceMedia } from "../lib/upload";
 import type { SeedanceV4WizardState } from "../types";
 
 const ROLES = [
@@ -50,30 +50,16 @@ export function MultiReferenceMode({
     }
     setUploading(true);
     try {
-      const supabase = createClient();
-      const ext = file.name.split(".").pop() || "png";
-      const filename = `seedance-multiref/${Date.now()}-${Math.random()
-        .toString(36)
-        .slice(2)}.${ext}`;
-      const { error } = await supabase.storage
-        .from("brand-assets")
-        .upload(filename, file, {
-          contentType: file.type,
-          cacheControl: "3600",
-        });
-      if (error) throw error;
-      const {
-        data: { publicUrl },
-      } = supabase.storage.from("brand-assets").getPublicUrl(filename);
+      const { url } = await uploadSeedanceMedia(file, "image");
       setState((prev) => ({
         multiReferenceImages: [
           ...(prev.multiReferenceImages ?? []),
-          { url: publicUrl, role: "appearance" },
+          { url, role: "appearance" },
         ],
       }));
       toast.success("Reference uploaded");
-    } catch {
-      toast.error("Upload failed");
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Upload failed");
     } finally {
       setUploading(false);
       if (fileRef.current) fileRef.current.value = "";

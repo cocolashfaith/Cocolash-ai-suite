@@ -116,8 +116,9 @@ function validateDirectorInput(input: DirectorInput): void {
   const requiresScript: DirectorMode[] = [
     "ugc",
     "multi_reference",
-    "lipsyncing",
+    "multi_frame",
     "first_n_last_frames",
+    // lipsyncing intentionally not in this list — uses uploaded audio instead
   ];
   if (requiresScript.includes(input.mode) && !input.script?.trim()) {
     throw new SeedanceDirectorError(
@@ -224,8 +225,17 @@ function composeUserMessage(input: DirectorInput): string {
         `Plan exactly ${count} segments. Total duration ${totalSeconds}s. ` +
           `Distribute durations sensibly (each segment 3-8s, all integers, summing to ${totalSeconds}).`
       );
+      if (input.composedPersonProductImage) {
+        lines.push(
+          "",
+          "Single reference image of the creator (with the product if held):",
+          `  ${input.composedPersonProductImage.url}`,
+          "",
+          "Use this image as the global identity / product / setting anchor for ALL segments. Each segment shows the same creator + product, just from a different angle / shot type / camera move."
+        );
+      }
       if (input.referenceImages?.length) {
-        lines.push("Reference images:");
+        lines.push("Additional reference images:");
         for (const [i, ref] of input.referenceImages.entries()) {
           lines.push(`  @image${i + 1} (${ref.role ?? "appearance"})`);
         }

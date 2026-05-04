@@ -33,15 +33,13 @@ import type {
 const MODES: {
   value: SeedanceV4Mode;
   label: string;
-  shortLabel: string;
   icon: React.ElementType;
   whenToUse: string;
   badge?: string;
 }[] = [
   {
     value: "ugc",
-    label: "UGC (Avatar + Product)",
-    shortLabel: "UGC",
+    label: "UGC Avatar",
     icon: Sparkles,
     whenToUse: "One creator holding your product. The fastest path.",
     badge: "Recommended",
@@ -49,37 +47,32 @@ const MODES: {
   {
     value: "text_to_video",
     label: "Text-to-Video",
-    shortLabel: "Text-only",
     icon: Type,
-    whenToUse: "Describe the scene in words — no images required.",
+    whenToUse: "Describe a scene in words — no images required.",
   },
   {
     value: "multi_reference",
     label: "Multi-Reference",
-    shortLabel: "Multi-ref",
     icon: Layers,
     whenToUse: "Multiple reference images, each with a specific job.",
   },
   {
     value: "lipsyncing",
     label: "Lip-Sync",
-    shortLabel: "Lip-sync",
     icon: Mic2,
-    whenToUse: "An image of a speaker + an audio file. Mouth follows audio.",
+    whenToUse: "Image of a speaker + audio file. Mouth follows audio.",
   },
   {
     value: "multi_frame",
     label: "Multi-Frame Sequence",
-    shortLabel: "Multi-frame",
     icon: Film,
-    whenToUse: "Multiple shots in sequence with global constants.",
+    whenToUse: "UGC video with multiple shots / angles per scene.",
   },
   {
     value: "first_n_last_frames",
     label: "First + Last Frame",
-    shortLabel: "First+Last",
     icon: Wand2,
-    whenToUse: "Smooth transition between two scenes (AI-generated end frame).",
+    whenToUse: "Smooth transition between two scenes (AI-generated end).",
   },
 ];
 
@@ -122,48 +115,47 @@ export function Step1ScriptAndMode({ state, setState, onAdvance }: Step1Props) {
                 type="button"
                 onClick={() => setState({ mode: m.value })}
                 className={cn(
-                  "flex items-start gap-3 rounded-xl border-2 p-3 text-left transition-all",
+                  "relative flex h-full min-h-[120px] flex-col gap-2 rounded-xl border-2 p-3 text-left transition-all",
                   active
                     ? "border-coco-golden bg-coco-golden/10 shadow-sm"
                     : "border-coco-beige-dark bg-white hover:border-coco-golden/40"
                 )}
               >
-                <div
-                  className={cn(
-                    "flex h-9 w-9 shrink-0 items-center justify-center rounded-lg",
-                    active ? "bg-coco-golden text-white" : "bg-coco-beige text-coco-brown-medium"
-                  )}
-                >
-                  <Icon className="h-4 w-4" />
-                </div>
-                <div className="min-w-0 flex-1">
-                  <div className="flex items-center gap-1.5">
-                    <p
-                      className={cn(
-                        "text-xs font-semibold",
-                        active ? "text-coco-brown" : "text-coco-brown-medium"
-                      )}
-                    >
-                      {m.label}
-                    </p>
-                    {m.badge && (
-                      <span className="rounded-full bg-coco-golden/20 px-1.5 py-0.5 text-[9px] font-bold uppercase text-coco-golden">
-                        {m.badge}
-                      </span>
+                {m.badge && (
+                  <span className="absolute right-2 top-2 rounded-full bg-coco-golden/20 px-1.5 py-0.5 text-[9px] font-bold uppercase text-coco-golden">
+                    {m.badge}
+                  </span>
+                )}
+                <div className="flex items-center gap-2">
+                  <div
+                    className={cn(
+                      "flex h-8 w-8 shrink-0 items-center justify-center rounded-lg",
+                      active ? "bg-coco-golden text-white" : "bg-coco-beige text-coco-brown-medium"
                     )}
+                  >
+                    <Icon className="h-4 w-4" />
                   </div>
-                  <p className="mt-0.5 text-[10px] text-coco-brown-medium/60">
-                    {m.whenToUse}
+                  <p
+                    className={cn(
+                      "flex-1 text-xs font-semibold",
+                      active ? "text-coco-brown" : "text-coco-brown-medium"
+                    )}
+                  >
+                    {m.label}
                   </p>
                 </div>
+                <p className="text-[10px] leading-snug text-coco-brown-medium/60">
+                  {m.whenToUse}
+                </p>
               </button>
             );
           })}
         </div>
       </section>
 
-      {/* ── Script (skipped for text_to_video) ───────────── */}
-      {state.mode !== "text_to_video" ? (
+      {/* Script — only for modes whose Director needs a spoken script.
+          Lip-Sync uses uploaded audio; Text-to-Video describes scene in Step 2. */}
+      {needsScript(state.mode) && (
         <section className="space-y-3 rounded-xl border-2 border-coco-beige-dark/50 bg-white/50 p-4">
           <div className="flex items-baseline justify-between gap-3">
             <label className="text-sm font-semibold text-coco-brown">
@@ -183,28 +175,55 @@ export function Step1ScriptAndMode({ state, setState, onAdvance }: Step1Props) {
                 tone: meta.tone as ScriptTone,
                 duration: meta.duration as VideoDuration,
               });
+              // Auto-advance — single-button advance UX.
+              onAdvance();
             }}
           />
         </section>
-      ) : (
+      )}
+
+      {state.mode === "text_to_video" && (
         <section className="rounded-xl border-2 border-dashed border-coco-beige-dark bg-coco-beige-light/30 p-4">
           <p className="text-xs text-coco-brown-medium">
-            Text-to-Video mode does not use a spoken script. You will describe
-            the scene in Step 2 and the AI will write an optimized Seedance
-            prompt for you.
+            Text-to-Video doesn&apos;t take reference images. The AI doesn&apos;t
+            know what your specific product looks like, so don&apos;t reference
+            it by name. Describe the scene generally in Step 2 (mood, action,
+            lighting, environment).
           </p>
         </section>
       )}
 
-      {/* Advance */}
-      <Button
-        onClick={onAdvance}
-        disabled={!canAdvance}
-        className="w-full gap-2 bg-coco-golden py-5 text-sm font-semibold text-white shadow-lg transition-all hover:bg-coco-golden-dark hover:shadow-xl disabled:opacity-50"
-        size="lg"
-      >
-        Continue to {state.mode === "text_to_video" ? "Scene Description" : "Inputs"} →
-      </Button>
+      {state.mode === "lipsyncing" && (
+        <section className="rounded-xl border-2 border-dashed border-coco-beige-dark bg-coco-beige-light/30 p-4">
+          <p className="text-xs text-coco-brown-medium">
+            Lip-Sync uses your uploaded audio — no script needed here. You&apos;ll
+            upload a speaker image and an audio file in Step 2.
+          </p>
+        </section>
+      )}
+
+      {/* Single advance button — only for modes whose script step is HIDDEN
+          (text_to_video, lipsyncing). Script-using modes auto-advance from
+          inside SeedanceScriptStep above. */}
+      {!needsScript(state.mode) && (
+        <Button
+          onClick={onAdvance}
+          disabled={!canAdvance}
+          className="w-full gap-2 bg-coco-golden py-5 text-sm font-semibold text-white shadow-lg transition-all hover:bg-coco-golden-dark hover:shadow-xl disabled:opacity-50"
+          size="lg"
+        >
+          Continue to {state.mode === "text_to_video" ? "Scene Description" : "Inputs"} →
+        </Button>
+      )}
     </div>
+  );
+}
+
+function needsScript(mode: SeedanceV4Mode): boolean {
+  return (
+    mode === "ugc" ||
+    mode === "multi_reference" ||
+    mode === "multi_frame" ||
+    mode === "first_n_last_frames"
   );
 }

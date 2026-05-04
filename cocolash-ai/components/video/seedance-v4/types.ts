@@ -32,10 +32,14 @@ export interface SeedanceV4WizardState {
   scriptId?: string;
 
   // Step 2 — mode-specific inputs (only the ones for the chosen mode are populated)
-  /** UGC composed image (avatar already holding product, single image). */
+  /** UGC composed image (avatar already holding product, single image)
+   *  OR the avatar-only image when toggle is off. */
   ugcComposedImageUrl?: string;
   /** UGC: was Gemini compose run? false = avatar-only (toggle off). */
   ugcWasComposed?: boolean;
+  /** UGC toggle-off path only — the separate product image that goes
+   *  alongside the avatar to Seedance as a second reference. */
+  ugcSeparateProductUrl?: string;
 
   /** multi_reference: array of {url, role} */
   multiReferenceImages?: Array<{
@@ -74,9 +78,10 @@ export interface SeedanceV4WizardState {
     durationMs: number;
   };
 
-  // Generation
+  // Generation (Enhancor /queue parameters)
   aspectRatio: "9:16" | "16:9" | "3:4" | "4:3";
   resolution: "480p" | "720p" | "1080p";
+  fastMode: boolean;
 }
 
 export const DEFAULT_V4_STATE: SeedanceV4WizardState = {
@@ -88,4 +93,5 @@ export const DEFAULT_V4_STATE: SeedanceV4WizardState = {
   scriptText: "",
   aspectRatio: "9:16",
   resolution: "720p",
+  fastMode: false,
 };

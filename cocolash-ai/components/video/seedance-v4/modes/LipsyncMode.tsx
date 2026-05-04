@@ -4,7 +4,7 @@ import { useRef, useState } from "react";
 import { Upload, Loader2, X } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
-import { createClient } from "@/lib/supabase/client";
+import { uploadSeedanceMedia } from "../lib/upload";
 import type { SeedanceV4WizardState } from "../types";
 
 interface LipsyncModeProps {
@@ -23,27 +23,6 @@ export function LipsyncMode({ state, setState, onReady }: LipsyncModeProps) {
   const [uploadingImg, setUploadingImg] = useState(false);
   const [uploadingAudio, setUploadingAudio] = useState(false);
 
-  async function uploadFile(
-    file: File,
-    folder: string,
-    bucket: string,
-    contentType: string
-  ): Promise<string> {
-    const supabase = createClient();
-    const ext = file.name.split(".").pop() || "bin";
-    const filename = `${folder}/${Date.now()}-${Math.random()
-      .toString(36)
-      .slice(2)}.${ext}`;
-    const { error } = await supabase.storage
-      .from(bucket)
-      .upload(filename, file, { contentType, cacheControl: "3600" });
-    if (error) throw error;
-    const {
-      data: { publicUrl },
-    } = supabase.storage.from(bucket).getPublicUrl(filename);
-    return publicUrl;
-  }
-
   async function handleImg(e: React.ChangeEvent<HTMLInputElement>) {
     const f = e.target.files?.[0];
     if (!f) return;
@@ -53,11 +32,11 @@ export function LipsyncMode({ state, setState, onReady }: LipsyncModeProps) {
     }
     setUploadingImg(true);
     try {
-      const url = await uploadFile(f, "seedance-lipsync-img", "brand-assets", f.type);
+      const { url } = await uploadSeedanceMedia(f, "image");
       setState({ lipsyncImageUrl: url });
       toast.success("Image uploaded");
-    } catch {
-      toast.error("Image upload failed");
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Image upload failed");
     } finally {
       setUploadingImg(false);
       if (imgInputRef.current) imgInputRef.current.value = "";
@@ -77,11 +56,11 @@ export function LipsyncMode({ state, setState, onReady }: LipsyncModeProps) {
     }
     setUploadingAudio(true);
     try {
-      const url = await uploadFile(f, "seedance-lipsync-audio", "brand-assets", f.type);
+      const { url } = await uploadSeedanceMedia(f, "audio");
       setState({ lipsyncAudioUrl: url });
       toast.success("Audio uploaded");
-    } catch {
-      toast.error("Audio upload failed");
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Audio upload failed");
     } finally {
       setUploadingAudio(false);
       if (audioInputRef.current) audioInputRef.current.value = "";

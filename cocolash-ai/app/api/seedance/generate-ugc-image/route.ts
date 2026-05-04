@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createAdminClient, createClient, getCurrentUserId } from "@/lib/supabase/server";
-import { generateImage } from "@/lib/gemini/generate";
+import { generateImage, type ReferenceImage } from "@/lib/gemini/generate";
 import { uploadGeneratedImage } from "@/lib/supabase/storage";
 import {
   buildMinimalSelectionsForVideoAsset,
@@ -51,9 +51,55 @@ export async function POST(request: NextRequest) {
     };
 
     const { prompt, negativePrompt } = buildUGCImagePrompt(params);
-    const fullPrompt = `${prompt}\n\n[NEGATIVE PROMPT — avoid these qualities entirely]\n${negativePrompt}`;
 
-    const result = await generateImage(fullPrompt, imageAspect, undefined, undefined, "1K");
+    // v4.1 — when the user has selected a productImageUrl AND toggled
+    // "Show holding product", we ask Gemini to compose the avatar already
+    // holding the product. This produces ONE image instead of two separate
+    // images (the BROKEN-04 fix from the audit) AND moves composition to
+    // gen-time so the user only generates one image, not two.
+    const productImageUrl: string | undefined =
+      typeof body.productImageUrl === "string" && body.productImageUrl
+        ? body.productImageUrl
+        : undefined;
+
+    let fullPrompt: string;
+    let referenceImages: ReferenceImage[] | undefined;
+    let referenceInstruction: string | undefined;
+
+    if (productImageUrl) {
+      // Download the product image to pass as a reference to Gemini.
+      const productResp = await fetch(productImageUrl);
+      if (!productResp.ok) {
+        return NextResponse.json(
+          { error: `Failed to fetch product image (${productResp.status})` },
+          { status: 400 }
+        );
+      }
+      const buf = Buffer.from(await productResp.arrayBuffer());
+      const productRef: ReferenceImage = {
+        base64Data: buf.toString("base64"),
+        mimeType: productResp.headers.get("content-type") || "image/png",
+      };
+      referenceImages = [productRef];
+      referenceInstruction = `[PRODUCT INTEGRATION — 1 reference image provided]
+The reference image is the EXACT product the creator must be holding. Preserve:
+- The exact product packaging, colors, branding, label text, and proportions
+- Natural hand positioning — fingers wrap around the product realistically
+- Lighting consistent with the bedroom / scene
+DO NOT alter the product. Integrate it naturally into the creator's hand or close to her face. The product should be clearly visible to camera.`;
+      fullPrompt =
+        `${prompt}\n\nThe creator is naturally holding the product shown in the reference image — at chest level, in one hand, with the brand label angled to camera. Treat this composition as if it's the same UGC photograph already framed; the product should look like it was naturally part of the scene.\n\n[NEGATIVE PROMPT — avoid these qualities entirely]\n${negativePrompt}`;
+    } else {
+      fullPrompt = `${prompt}\n\n[NEGATIVE PROMPT — avoid these qualities entirely]\n${negativePrompt}`;
+    }
+
+    const result = await generateImage(
+      fullPrompt,
+      imageAspect,
+      referenceImages,
+      referenceInstruction,
+      "1K"
+    );
 
     const supabase = await createAdminClient();
     const { url: imageUrl, path: storagePath } = await uploadGeneratedImage(

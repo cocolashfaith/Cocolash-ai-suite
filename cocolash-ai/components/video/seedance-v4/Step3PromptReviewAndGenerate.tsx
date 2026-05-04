@@ -5,6 +5,7 @@ import { Loader2, Sparkles, RefreshCw, Check, AlertTriangle } from "lucide-react
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
+import { EnhancorSettingsPanel } from "./EnhancorSettingsPanel";
 import type { SeedanceV4WizardState } from "./types";
 import type {
   DirectorInput,
@@ -243,6 +244,14 @@ export function Step3PromptReviewAndGenerate({ state, setState, onReset }: Step3
         </section>
       )}
 
+      {/* Enhancor settings — visible for every mode */}
+      <EnhancorSettingsPanel
+        state={state}
+        setState={setState}
+        hideDuration={state.mode === "lipsyncing"}
+        hideTopLevelDuration={state.mode === "multi_frame"}
+      />
+
       {/* Approve & generate */}
       {generationStarted && !isGenerating ? (
         <div className="flex items-center gap-3 rounded-xl border-2 border-green-300 bg-green-50 p-4">
@@ -349,15 +358,20 @@ function buildDirectorBody(state: SeedanceV4WizardState): DirectorInput {
         lastFrameImage: state.lastFrameUrl ? { url: state.lastFrameUrl } : undefined,
       };
     case "multi_frame":
+      // v4.1 — Multi-Frame uses the SAME UGC inputs (avatar + optional
+      // product, composed at gen-time when toggle is on). The difference
+      // from UGC mode is purely in the Director's output shape: multi_frame
+      // returns an array of per-segment prompts instead of a single string.
       return {
         ...base,
-        referenceImages: state.multiFrameReferenceImages?.map((r) => ({
-          url: r.url,
-          role: r.role as "appearance" | "product" | "background" | "style",
-        })),
+        composedPersonProductImage: state.ugcComposedImageUrl
+          ? { url: state.ugcComposedImageUrl }
+          : undefined,
+        // 3-second segments are a reasonable default per the Director prompt's
+        // best-practices guide. Caps at 5 segments × 3s for a 15s clip.
         multiFrameSegmentCount: Math.max(
-          1,
-          Math.min(5, Math.round(state.duration / 5))
+          2,
+          Math.min(5, Math.round(state.duration / 3))
         ),
       };
     case "text_to_video":
@@ -376,26 +390,41 @@ function buildEnhancorBody(
   const common = {
     aspectRatio: state.aspectRatio,
     resolution: state.resolution,
-    duration: String(state.duration),
+    duration: state.duration,
+    fastMode: state.fastMode && state.resolution !== "1080p",
     campaignType: state.campaignType,
     tone: state.tone,
-    enhancorMode: state.mode,
+    seedanceMode: state.mode === "text_to_video" ? "ugc" : state.mode,
     fullAccess: true,
     // Carry the script for downstream (some current API code expects it)
-    script: state.scriptText,
+    scriptText: state.scriptText,
     // Pass the AI-approved prompt as the AUTHORITATIVE prompt — the existing
     // /api/seedance/generate route can use this directly without rerunning
     // its planner.
-    overridePrompt: editedPrompt,
+    overridePrompt:
+      state.mode === "multi_frame"
+        ? editedSegments
+            .map((s, i) => `Shot ${i + 1} (${s.duration}s): ${s.prompt}`)
+            .join("\n\n")
+        : editedPrompt,
   };
 
   switch (state.mode) {
     case "ugc":
+      // Two paths:
+      //  - toggle ON: ugcComposedImageUrl is a SINGLE composed image (avatar
+      //    already holding product). productImageUrl carries the same URL so
+      //    the legacy /api/seedance/generate route keeps a value in its
+      //    required field, but Seedance receives ONE image visually.
+      //  - toggle OFF: ugcComposedImageUrl is the avatar-only image;
+      //    ugcSeparateProductUrl is the separate product reference. Both go.
       return {
         ...common,
         type: "image-to-video",
         personImageUrl: state.ugcComposedImageUrl,
-        productImageUrl: state.ugcComposedImageUrl, // legacy field — same composed image
+        productImageUrl: state.ugcWasComposed
+          ? state.ugcComposedImageUrl
+          : state.ugcSeparateProductUrl,
       };
     case "text_to_video":
       return {

@@ -1,11 +1,11 @@
 "use client";
 
-import { useRef, useState } from "react";
-import { Loader2, Upload, Wand2, X } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
+import { ImageIcon, Loader2, Sparkles, Upload, Wand2, X } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
-import { createClient } from "@/lib/supabase/client";
+import { uploadSeedanceMedia } from "../lib/upload";
 import type { SeedanceV4WizardState } from "../types";
 
 interface FirstAndLastFrameModeProps {
@@ -28,6 +28,14 @@ interface FirstAndLastFrameModeProps {
  * Then clicks "Generate Last Frame" — Claude writes the prompt, NanoBanana
  * generates the image, the user can review / regenerate before continuing.
  */
+type FirstFrameSource = "upload" | "ugc-gen" | "gallery";
+
+interface GalleryAvatar {
+  id: string;
+  image_url: string;
+  created_at: string;
+}
+
 export function FirstAndLastFrameMode({
   state,
   setState,
@@ -36,6 +44,72 @@ export function FirstAndLastFrameMode({
   const fileRef = useRef<HTMLInputElement>(null);
   const [uploading, setUploading] = useState(false);
   const [generating, setGenerating] = useState(false);
+  const [firstFrameSource, setFirstFrameSource] =
+    useState<FirstFrameSource>("upload");
+
+  // Inline UGC avatar generator (minimal — uses Seedance defaults)
+  const [ugcGenerating, setUgcGenerating] = useState(false);
+
+  // Gallery
+  const [galleryAvatars, setGalleryAvatars] = useState<GalleryAvatar[]>([]);
+  const [loadingGallery, setLoadingGallery] = useState(false);
+
+  useEffect(() => {
+    if (firstFrameSource === "gallery" && galleryAvatars.length === 0) {
+      void loadGallery();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [firstFrameSource]);
+
+  async function loadGallery() {
+    setLoadingGallery(true);
+    try {
+      const res = await fetch(
+        "/api/images?limit=24&assetTag=ugc-avatar&sortBy=created_at&sortOrder=desc"
+      );
+      const data = await res.json();
+      if (res.ok) setGalleryAvatars(data.images ?? []);
+    } catch {
+      // non-fatal
+    } finally {
+      setLoadingGallery(false);
+    }
+  }
+
+  async function handleGenerateUgcFirstFrame() {
+    setUgcGenerating(true);
+    try {
+      const res = await fetch("/api/seedance/generate-ugc-image", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          ethnicity: "Latina",
+          skinTone: "Medium",
+          ageRange: "25-34",
+          hairStyle: "Wavy",
+          scene: "casual-bedroom",
+          vibe: "excited-discovery",
+          lashStyle: "natural",
+          hasProduct: false,
+          aspectRatio: state.aspectRatio === "9:16" ? "9:16" : "16:9",
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "UGC generation failed");
+      setState({
+        firstFrameUrl: data.imageUrl,
+        lastFrameUrl: undefined,
+        lastFramePrompt: undefined,
+      });
+      toast.success("UGC first frame generated.");
+    } catch (err) {
+      toast.error(
+        err instanceof Error ? err.message : "UGC generation failed"
+      );
+    } finally {
+      setUgcGenerating(false);
+    }
+  }
 
   async function handleUpload(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
@@ -46,25 +120,11 @@ export function FirstAndLastFrameMode({
     }
     setUploading(true);
     try {
-      const supabase = createClient();
-      const ext = file.name.split(".").pop() || "png";
-      const filename = `seedance-first-frame/${Date.now()}-${Math.random()
-        .toString(36)
-        .slice(2)}.${ext}`;
-      const { error } = await supabase.storage
-        .from("brand-assets")
-        .upload(filename, file, {
-          contentType: file.type,
-          cacheControl: "3600",
-        });
-      if (error) throw error;
-      const {
-        data: { publicUrl },
-      } = supabase.storage.from("brand-assets").getPublicUrl(filename);
-      setState({ firstFrameUrl: publicUrl, lastFrameUrl: undefined, lastFramePrompt: undefined });
+      const { url } = await uploadSeedanceMedia(file, "image");
+      setState({ firstFrameUrl: url, lastFrameUrl: undefined, lastFramePrompt: undefined });
       toast.success("First frame uploaded");
-    } catch {
-      toast.error("Upload failed");
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Upload failed");
     } finally {
       setUploading(false);
       if (fileRef.current) fileRef.current.value = "";
@@ -116,15 +176,58 @@ export function FirstAndLastFrameMode({
 
   return (
     <div className="space-y-6">
-      {/* First frame */}
+      {/* First frame — three sources */}
       <section className="space-y-3 rounded-xl border-2 border-coco-beige-dark/50 bg-white/50 p-4">
         <div>
           <h3 className="text-sm font-semibold text-coco-brown">First frame</h3>
           <p className="mt-0.5 text-[11px] text-coco-brown-medium/60">
-            Upload the OPENING image of the video. (You can also use a UGC
-            avatar generated in another mode — just upload a copy here.)
+            The OPENING image of the video. Pick how you want to provide it.
           </p>
         </div>
+
+        {/* Source picker */}
+        <div className="flex gap-1.5 rounded-lg bg-coco-beige/50 p-1">
+          <button
+            type="button"
+            onClick={() => setFirstFrameSource("upload")}
+            className={cn(
+              "flex flex-1 items-center justify-center gap-1.5 rounded-md px-2 py-2 text-[11px] font-medium transition-all",
+              firstFrameSource === "upload"
+                ? "bg-white text-coco-brown shadow-sm"
+                : "text-coco-brown-medium/60 hover:text-coco-brown-medium"
+            )}
+          >
+            <Upload className="h-3 w-3" />
+            Upload
+          </button>
+          <button
+            type="button"
+            onClick={() => setFirstFrameSource("ugc-gen")}
+            className={cn(
+              "flex flex-1 items-center justify-center gap-1.5 rounded-md px-2 py-2 text-[11px] font-medium transition-all",
+              firstFrameSource === "ugc-gen"
+                ? "bg-white text-coco-brown shadow-sm"
+                : "text-coco-brown-medium/60 hover:text-coco-brown-medium"
+            )}
+          >
+            <Sparkles className="h-3 w-3" />
+            Generate UGC
+          </button>
+          <button
+            type="button"
+            onClick={() => setFirstFrameSource("gallery")}
+            className={cn(
+              "flex flex-1 items-center justify-center gap-1.5 rounded-md px-2 py-2 text-[11px] font-medium transition-all",
+              firstFrameSource === "gallery"
+                ? "bg-white text-coco-brown shadow-sm"
+                : "text-coco-brown-medium/60 hover:text-coco-brown-medium"
+            )}
+          >
+            <ImageIcon className="h-3 w-3" />
+            Gallery
+          </button>
+        </div>
+
         <input
           ref={fileRef}
           type="file"
@@ -132,6 +235,7 @@ export function FirstAndLastFrameMode({
           onChange={handleUpload}
           className="hidden"
         />
+
         {state.firstFrameUrl ? (
           <div className="relative inline-block overflow-hidden rounded-xl border-2 border-coco-golden/30 bg-white">
             <img
@@ -153,7 +257,7 @@ export function FirstAndLastFrameMode({
               <X className="h-3 w-3 text-coco-brown-medium" />
             </button>
           </div>
-        ) : (
+        ) : firstFrameSource === "upload" ? (
           <button
             type="button"
             onClick={() => fileRef.current?.click()}
@@ -171,6 +275,68 @@ export function FirstAndLastFrameMode({
               </>
             )}
           </button>
+        ) : firstFrameSource === "ugc-gen" ? (
+          <Button
+            type="button"
+            onClick={handleGenerateUgcFirstFrame}
+            disabled={ugcGenerating}
+            className="w-full gap-2 bg-coco-brown py-5 text-sm font-semibold text-white shadow-md hover:bg-coco-brown-light disabled:opacity-50"
+            size="lg"
+          >
+            {ugcGenerating ? (
+              <>
+                <Loader2 className="h-4 w-4 animate-spin" />
+                Generating UGC avatar…
+              </>
+            ) : (
+              <>
+                <Sparkles className="h-4 w-4" />
+                Generate UGC Avatar as First Frame
+              </>
+            )}
+          </Button>
+        ) : (
+          // gallery
+          <div>
+            {loadingGallery ? (
+              <div className="flex items-center justify-center rounded-xl border-2 border-dashed border-coco-beige-dark p-6">
+                <Loader2 className="h-4 w-4 animate-spin text-coco-brown-medium/40" />
+                <span className="ml-2 text-xs text-coco-brown-medium/50">
+                  Loading gallery…
+                </span>
+              </div>
+            ) : galleryAvatars.length === 0 ? (
+              <div className="flex flex-col items-center justify-center rounded-xl border-2 border-dashed border-coco-beige-dark p-6">
+                <ImageIcon className="h-6 w-6 text-coco-brown-medium/30" />
+                <p className="mt-2 text-xs text-coco-brown-medium/50">
+                  No Seedance UGC avatars yet — generate one first.
+                </p>
+              </div>
+            ) : (
+              <div className="grid grid-cols-3 gap-2 sm:grid-cols-4">
+                {galleryAvatars.map((img) => (
+                  <button
+                    key={img.id}
+                    type="button"
+                    onClick={() =>
+                      setState({
+                        firstFrameUrl: img.image_url,
+                        lastFrameUrl: undefined,
+                        lastFramePrompt: undefined,
+                      })
+                    }
+                    className="group relative aspect-[9/16] overflow-hidden rounded-lg border-2 border-transparent transition-all hover:border-coco-golden/40"
+                  >
+                    <img
+                      src={img.image_url}
+                      alt="UGC avatar"
+                      className="h-full w-full object-cover"
+                    />
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
         )}
       </section>
 

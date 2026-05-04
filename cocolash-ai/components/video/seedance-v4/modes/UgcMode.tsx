@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import Link from "next/link";
 import { toast } from "sonner";
 import {
@@ -50,20 +50,47 @@ interface ProductRef {
   category_name: string;
 }
 
+interface GalleryAvatar {
+  id: string;
+  image_url: string;
+  created_at: string;
+}
+
 function pickRandom<T>(arr: readonly { value: T }[]): T {
   return arr[Math.floor(Math.random() * arr.length)].value;
 }
 
 /**
- * v4.0 UGC mode — fixes the three broken behaviors from Phase 14 audit:
- *   BROKEN-01: Toggle ON now shows a product picker (NOT a free-text input).
- *   BROKEN-02: With toggle OFF, no product is required to advance.
- *   BROKEN-04: Gemini composes person+product into ONE image upstream of Seedance.
+ * v4.1 UGC mode — flow corrected per Faith's testing feedback.
  *
- * Result: the wizard stores `ugcComposedImageUrl` (single composed image)
- * which is what flows to the Director and to /api/seedance/generate.
+ * Two paths driven by the "Show holding product" toggle, which now sits at
+ * the TOP of avatar generation as a SETTING (not a tail-end afterthought):
+ *
+ *   Toggle ON path (NanoBanana composes at gen-time):
+ *     1. User picks a product image (inline picker that pops open).
+ *     2. User clicks Generate UGC Avatar.
+ *     3. Server: Gemini gets the avatar prompt + the product as a reference
+ *        image, generates a SINGLE image of the creator already holding the
+ *        product. No second composition pass after the fact.
+ *     4. After generation: NO product picker below — the product is already
+ *        in the image.
+ *     5. Only ONE image goes to Seedance.
+ *
+ *   Toggle OFF path (legacy two-image-to-Seedance):
+ *     1. User generates a plain avatar (no product in shot).
+ *     2. After generation, a product picker appears BELOW.
+ *     3. User selects a product image.
+ *     4. BOTH the avatar AND the product image go to Seedance as separate
+ *        references — the model handles framing.
+ *
+ * Plus a third "Select from Gallery" tab that pulls only avatars previously
+ * generated in this Seedance UGC pipeline (ugc-avatar tag), not /generate
+ * page outputs.
  */
 export function UgcMode({ state, setState, onReady }: UgcModeProps) {
+  const [activeTab, setActiveTab] = useState<"generate" | "gallery">("generate");
+
+  // Avatar params
   const [ethnicity, setEthnicity] = useState<UGCEthnicity>("Latina");
   const [skinTone, setSkinTone] = useState<UGCSkinTone>("Medium");
   const [ageRange, setAgeRange] = useState<UGCAgeRange>("25-34");
@@ -72,19 +99,39 @@ export function UgcMode({ state, setState, onReady }: UgcModeProps) {
   const [vibe, setVibe] = useState<UGCVibe>("excited-discovery");
   const [lashStyle, setLashStyle] = useState<LashStyle>("natural");
 
-  const [hasProduct, setHasProduct] = useState(false);
-  const [generatedAvatarUrl, setGeneratedAvatarUrl] = useState<string | null>(null);
-  const [selectedProductUrl, setSelectedProductUrl] = useState<string | null>(null);
+  // Toggle (settings-level, BEFORE generation)
+  const [showHoldingProduct, setShowHoldingProduct] = useState(false);
+
+  // Product images
   const [productImages, setProductImages] = useState<ProductRef[]>([]);
   const [loadingProducts, setLoadingProducts] = useState(true);
 
+  // Toggle ON: which product gets composed in at gen-time
+  const [composeProductUrl, setComposeProductUrl] = useState<string | null>(null);
+  // Toggle OFF: which product goes alongside as a Seedance reference
+  const [seedanceProductUrl, setSeedanceProductUrl] = useState<string | null>(null);
+
+  // Avatar state
+  const [generatedAvatarUrl, setGeneratedAvatarUrl] = useState<string | null>(null);
+  /** When true, the generated avatar already contains the product (toggle-on path). */
+  const [generatedHasProduct, setGeneratedHasProduct] = useState(false);
   const [isGeneratingAvatar, setIsGeneratingAvatar] = useState(false);
-  const [isComposing, setIsComposing] = useState(false);
-  const composedFromRef = useRef<string | null>(null);
+
+  // Gallery
+  const [galleryAvatars, setGalleryAvatars] = useState<GalleryAvatar[]>([]);
+  const [loadingGallery, setLoadingGallery] = useState(false);
+  const [selectedGalleryUrl, setSelectedGalleryUrl] = useState<string | null>(null);
 
   useEffect(() => {
     void fetchProductImages();
   }, []);
+
+  useEffect(() => {
+    if (activeTab === "gallery" && galleryAvatars.length === 0) {
+      void fetchGallery();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeTab]);
 
   async function fetchProductImages() {
     setLoadingProducts(true);
@@ -111,6 +158,26 @@ export function UgcMode({ state, setState, onReady }: UgcModeProps) {
     }
   }
 
+  async function fetchGallery() {
+    setLoadingGallery(true);
+    try {
+      // Filter the gallery to UGC avatars produced by THIS Seedance pipeline.
+      // The /api/seedance/generate-ugc-image route inserts with tag "ugc-avatar"
+      // — assetTag=ugc-avatar limits the query to those rows.
+      const res = await fetch(
+        "/api/images?limit=24&assetTag=ugc-avatar&sortBy=created_at&sortOrder=desc"
+      );
+      const data = await res.json();
+      if (res.ok) {
+        setGalleryAvatars(data.images ?? []);
+      }
+    } catch {
+      // non-fatal
+    } finally {
+      setLoadingGallery(false);
+    }
+  }
+
   function handleRandomize() {
     setEthnicity(pickRandom(UGC_ETHNICITY_OPTIONS));
     setSkinTone(pickRandom(UGC_SKIN_TONE_OPTIONS));
@@ -123,12 +190,13 @@ export function UgcMode({ state, setState, onReady }: UgcModeProps) {
   }
 
   async function handleGenerateAvatar() {
+    if (showHoldingProduct && !composeProductUrl) {
+      toast.error('"Show holding product" is on — pick a product first.');
+      return;
+    }
     setIsGeneratingAvatar(true);
     setGeneratedAvatarUrl(null);
-    composedFromRef.current = null;
     try {
-      // Generate the BARE avatar — no productDescription, no hasProduct.
-      // Compose happens downstream when the user picks a product.
       const res = await fetch("/api/seedance/generate-ugc-image", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -140,292 +208,468 @@ export function UgcMode({ state, setState, onReady }: UgcModeProps) {
           scene,
           vibe,
           lashStyle,
-          hasProduct: false, // v4: avatar gen never knows about the product
+          // hasProduct: false — we don't ask the avatar prompt to invent a
+          // product; the actual product image goes via productImageUrl below
+          // when the toggle is on.
+          hasProduct: false,
           aspectRatio: "9:16",
+          productImageUrl: showHoldingProduct ? composeProductUrl : undefined,
         }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Avatar generation failed");
       setGeneratedAvatarUrl(data.imageUrl);
-      toast.success("UGC avatar generated.");
+      setGeneratedHasProduct(showHoldingProduct);
+      toast.success(
+        showHoldingProduct
+          ? "Avatar generated — composed with the product."
+          : "Avatar generated."
+      );
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Avatar generation failed");
+      toast.error(
+        err instanceof Error ? err.message : "Avatar generation failed"
+      );
     } finally {
       setIsGeneratingAvatar(false);
     }
   }
 
-  /**
-   * The CRITICAL v4.0 fix — Gemini composes (avatar + product) into ONE image
-   * BEFORE we hand off to the Director / Seedance. The composed URL is
-   * what gets stored in wizard state and what Seedance ultimately receives.
-   */
-  async function handleCompose(): Promise<string | null> {
-    if (!generatedAvatarUrl || !selectedProductUrl) return null;
-    // Memoize — don't recompose if neither input changed
-    const key = `${generatedAvatarUrl}|${selectedProductUrl}`;
-    if (composedFromRef.current === key && state.ugcComposedImageUrl) {
-      return state.ugcComposedImageUrl;
-    }
-    setIsComposing(true);
-    try {
-      // Reuse the existing /api/tryon endpoint pattern by inlining a call
-      // to the composition route used for HeyGen avatar+product setup.
-      // The HeyGen flow already POSTs to /api/composition for this — verify
-      // with a dedicated endpoint if needed.
-      const res = await fetch("/api/composition", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          personImageUrl: generatedAvatarUrl,
-          productImageUrl: selectedProductUrl,
-          pose: "holding",
-        }),
-      });
-      const data = await res.json();
-      if (!res.ok || !data.composedImageUrl) {
-        throw new Error(data.error || "Composition failed");
-      }
-      composedFromRef.current = key;
-      return data.composedImageUrl;
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Composition failed");
-      return null;
-    } finally {
-      setIsComposing(false);
-    }
-  }
-
-  async function handleContinue() {
-    if (!generatedAvatarUrl) {
+  const handleContinue = useCallback(() => {
+    const finalAvatar =
+      activeTab === "gallery" ? selectedGalleryUrl : generatedAvatarUrl;
+    if (!finalAvatar) {
       toast.error("Generate or pick an avatar first.");
       return;
     }
-    if (hasProduct && !selectedProductUrl) {
-      toast.error("Pick a product image — the toggle is on.");
+
+    // Toggle ON path: avatar already contains the product → ONE image to Seedance
+    if (showHoldingProduct && generatedHasProduct) {
+      setState({
+        ugcComposedImageUrl: finalAvatar,
+        ugcWasComposed: true,
+      });
+      onReady();
       return;
     }
 
-    if (hasProduct) {
-      const composedUrl = await handleCompose();
-      if (!composedUrl) return;
-      setState({
-        ugcComposedImageUrl: composedUrl,
-        ugcWasComposed: true,
-      });
-    } else {
-      // Avatar-only path — the avatar IS the composed image
-      setState({
-        ugcComposedImageUrl: generatedAvatarUrl,
-        ugcWasComposed: false,
-      });
+    // Toggle OFF path: avatar + product as separate references to Seedance
+    if (!seedanceProductUrl) {
+      toast.error("Pick a product image to send to Seedance.");
+      return;
     }
+    setState({
+      ugcComposedImageUrl: finalAvatar,
+      ugcWasComposed: false,
+      ugcSeparateProductUrl: seedanceProductUrl,
+    });
     onReady();
-  }
+  }, [
+    activeTab,
+    selectedGalleryUrl,
+    generatedAvatarUrl,
+    generatedHasProduct,
+    showHoldingProduct,
+    seedanceProductUrl,
+    setState,
+    onReady,
+  ]);
+
+  const showSeedanceProductPicker =
+    activeTab === "generate"
+      ? !showHoldingProduct && !!generatedAvatarUrl
+      : !!selectedGalleryUrl; // gallery avatars never include the product
+
+  const canContinue =
+    (activeTab === "gallery" ? selectedGalleryUrl : generatedAvatarUrl) &&
+    (showHoldingProduct
+      ? generatedHasProduct // toggle-on must have generated WITH product
+      : !!seedanceProductUrl);
 
   return (
     <div className="space-y-6">
-      {/* Avatar generator */}
-      <section className="space-y-3 rounded-xl border-2 border-coco-beige-dark/50 bg-white/50 p-4">
-        <div>
-          <h3 className="text-sm font-semibold text-coco-brown">Avatar</h3>
-          <p className="mt-0.5 text-[11px] text-coco-brown-medium/60">
-            Generate a UGC creator avatar with the look you want.
-          </p>
-        </div>
+      {/* Tab switcher */}
+      <div className="flex gap-1.5 rounded-lg bg-coco-beige/50 p-1">
+        <TabBtn
+          active={activeTab === "generate"}
+          onClick={() => setActiveTab("generate")}
+          icon={Sparkles}
+          label="Generate UGC Avatar"
+        />
+        <TabBtn
+          active={activeTab === "gallery"}
+          onClick={() => setActiveTab("gallery")}
+          icon={ImageIcon}
+          label="Select from Gallery"
+        />
+      </div>
 
-        <div className="grid grid-cols-2 gap-3">
-          <Dropdown label="Ethnicity" value={ethnicity} options={UGC_ETHNICITY_OPTIONS} onChange={(v) => setEthnicity(v as UGCEthnicity)} />
-          <Dropdown label="Skin Tone" value={skinTone} options={UGC_SKIN_TONE_OPTIONS} onChange={(v) => setSkinTone(v as UGCSkinTone)} />
-          <Dropdown label="Age Range" value={ageRange} options={UGC_AGE_RANGE_OPTIONS} onChange={(v) => setAgeRange(v as UGCAgeRange)} />
-          <Dropdown label="Hair Style" value={hairStyle} options={UGC_HAIR_STYLE_OPTIONS} onChange={(v) => setHairStyle(v as UGCHairStyle)} />
-          <Dropdown label="Scene" value={scene} options={UGC_SCENE_OPTIONS} onChange={(v) => setScene(v as UGCScene)} />
-          <Dropdown label="Vibe" value={vibe} options={UGC_VIBE_OPTIONS} onChange={(v) => setVibe(v as UGCVibe)} />
-        </div>
-
-        <div>
-          <label className="mb-1 block text-[10px] font-medium text-coco-brown-medium/60">
-            Lash style
-          </label>
-          <div className="flex flex-wrap gap-1.5">
-            {LASH_STYLE_OPTIONS.map((opt) => {
-              const active = lashStyle === opt.value;
-              return (
-                <button
-                  key={opt.value}
-                  type="button"
-                  onClick={() => setLashStyle(opt.value)}
-                  className={cn(
-                    "rounded-lg border-2 px-2 py-1 text-[10px] font-medium transition-all",
-                    active
-                      ? "border-coco-golden bg-coco-golden/10 text-coco-brown"
-                      : "border-coco-beige-dark bg-white text-coco-brown-medium hover:border-coco-golden/40"
-                  )}
-                >
-                  {opt.label}
-                </button>
-              );
-            })}
-          </div>
-        </div>
-
-        <div className="flex gap-3">
-          <Button
-            type="button"
-            onClick={handleGenerateAvatar}
-            disabled={isGeneratingAvatar}
-            className="flex-1 gap-2 bg-coco-brown py-5 text-sm font-semibold text-white shadow-md hover:bg-coco-brown-light disabled:opacity-50"
-            size="lg"
-          >
-            {isGeneratingAvatar ? (
-              <>
-                <Loader2 className="h-4 w-4 animate-spin" />
-                Generating…
-              </>
-            ) : generatedAvatarUrl ? (
-              <>
-                <RefreshCw className="h-4 w-4" />
-                Regenerate Avatar
-              </>
-            ) : (
-              <>
-                <Sparkles className="h-4 w-4" />
-                Generate UGC Avatar
-              </>
-            )}
-          </Button>
-          <Button onClick={handleRandomize} variant="outline" size="lg" className="gap-2 py-5">
-            <Shuffle className="h-4 w-4" />
-            Randomize
-          </Button>
-        </div>
-
-        {generatedAvatarUrl && (
-          <div className="overflow-hidden rounded-xl border-2 border-coco-golden/30 bg-white">
-            <div className="aspect-[9/16] max-h-80 bg-coco-beige-light">
-              <img
-                src={generatedAvatarUrl}
-                alt="UGC Avatar"
-                className="h-full w-full object-cover"
-              />
-            </div>
-          </div>
-        )}
-      </section>
-
-      {/* Show holding product — toggle wired to product picker (v4 fix BROKEN-01) */}
-      <section className="space-y-3 rounded-xl border-2 border-coco-beige-dark/50 bg-white/50 p-4">
-        <div className="flex items-center gap-3">
-          <button
-            type="button"
-            onClick={() => {
-              const next = !hasProduct;
-              setHasProduct(next);
-              if (!next) setSelectedProductUrl(null); // toggle off → forget selection
-            }}
+      {activeTab === "generate" && (
+        <>
+          {/* TOGGLE — at the TOP, as a SETTING for avatar generation */}
+          <section
             className={cn(
-              "flex h-5 w-9 items-center rounded-full transition-colors",
-              hasProduct ? "bg-coco-golden" : "bg-coco-beige-dark"
+              "space-y-3 rounded-xl border-2 p-4 transition-colors",
+              showHoldingProduct
+                ? "border-coco-golden bg-coco-golden/5"
+                : "border-coco-beige-dark/50 bg-white/50"
             )}
-            aria-pressed={hasProduct}
           >
-            <div
-              className={cn(
-                "h-4 w-4 rounded-full bg-white shadow transition-transform",
-                hasProduct ? "translate-x-4" : "translate-x-0.5"
-              )}
-            />
-          </button>
-          <div>
-            <span className="text-sm font-semibold text-coco-brown">
-              Show holding product in image
-            </span>
-            <p className="text-[11px] text-coco-brown-medium/60">
-              {hasProduct
-                ? "Pick a product — Gemini will compose the avatar holding it into ONE image."
-                : "Off — only the avatar image goes to Seedance. No product picker required."}
-            </p>
-          </div>
-        </div>
-
-        {hasProduct && (
-          <div className="space-y-2">
-            {loadingProducts ? (
-              <div className="flex items-center justify-center rounded-xl border-2 border-dashed border-coco-beige-dark p-6">
-                <Loader2 className="h-4 w-4 animate-spin text-coco-brown-medium/40" />
-                <span className="ml-2 text-xs text-coco-brown-medium/50">
-                  Loading products…
-                </span>
-              </div>
-            ) : productImages.length === 0 ? (
-              <div className="flex flex-col items-center justify-center rounded-xl border-2 border-dashed border-coco-beige-dark p-6">
-                <Package className="h-6 w-6 text-coco-brown-medium/30" />
-                <p className="mt-2 text-xs text-coco-brown-medium/50">
-                  No product images yet
+            <div className="flex items-center gap-3">
+              <button
+                type="button"
+                onClick={() => {
+                  const next = !showHoldingProduct;
+                  setShowHoldingProduct(next);
+                  if (!next) setComposeProductUrl(null);
+                  // Toggling invalidates any prior generated avatar
+                  setGeneratedAvatarUrl(null);
+                  setGeneratedHasProduct(false);
+                }}
+                className={cn(
+                  "flex h-5 w-9 items-center rounded-full transition-colors",
+                  showHoldingProduct ? "bg-coco-golden" : "bg-coco-beige-dark"
+                )}
+                aria-pressed={showHoldingProduct}
+              >
+                <div
+                  className={cn(
+                    "h-4 w-4 rounded-full bg-white shadow transition-transform",
+                    showHoldingProduct ? "translate-x-4" : "translate-x-0.5"
+                  )}
+                />
+              </button>
+              <div className="flex-1">
+                <p className="text-sm font-semibold text-coco-brown">
+                  Show holding product in image
                 </p>
-                <Link
-                  href="/settings"
-                  className="mt-2 flex items-center gap-1 text-[11px] font-medium text-coco-golden hover:text-coco-golden-dark"
-                >
-                  <Settings className="h-3 w-3" />
-                  Add in Settings
-                </Link>
+                <p className="text-[11px] text-coco-brown-medium/60">
+                  {showHoldingProduct
+                    ? "Pick a product below — it will be composed into the avatar at generation time. ONE image goes to Seedance."
+                    : "Off — avatar is generated alone. You'll pick a product reference below afterward; both go to Seedance separately."}
+                </p>
               </div>
-            ) : (
-              <div className="grid grid-cols-3 gap-2 sm:grid-cols-4">
-                {productImages.slice(0, 24).map((img) => {
-                  const isSelected = selectedProductUrl === img.image_url;
+            </div>
+
+            {showHoldingProduct && (
+              <ProductPicker
+                images={productImages}
+                loading={loadingProducts}
+                selectedUrl={composeProductUrl}
+                onSelect={(url) => {
+                  setComposeProductUrl(url);
+                  // Invalidate any prior generated avatar so user re-generates
+                  setGeneratedAvatarUrl(null);
+                  setGeneratedHasProduct(false);
+                }}
+                emptyHint="Add product images in Settings"
+              />
+            )}
+          </section>
+
+          {/* Avatar generator */}
+          <section className="space-y-3 rounded-xl border-2 border-coco-beige-dark/50 bg-white/50 p-4">
+            <div>
+              <h3 className="text-sm font-semibold text-coco-brown">Avatar look</h3>
+              <p className="mt-0.5 text-[11px] text-coco-brown-medium/60">
+                {showHoldingProduct
+                  ? "These traits define the creator. The selected product will be composed into the result."
+                  : "These traits define the creator. The avatar will be alone (no product)."}
+              </p>
+            </div>
+
+            <div className="grid grid-cols-2 gap-3">
+              <Dropdown label="Ethnicity" value={ethnicity} options={UGC_ETHNICITY_OPTIONS} onChange={(v) => setEthnicity(v as UGCEthnicity)} />
+              <Dropdown label="Skin Tone" value={skinTone} options={UGC_SKIN_TONE_OPTIONS} onChange={(v) => setSkinTone(v as UGCSkinTone)} />
+              <Dropdown label="Age Range" value={ageRange} options={UGC_AGE_RANGE_OPTIONS} onChange={(v) => setAgeRange(v as UGCAgeRange)} />
+              <Dropdown label="Hair Style" value={hairStyle} options={UGC_HAIR_STYLE_OPTIONS} onChange={(v) => setHairStyle(v as UGCHairStyle)} />
+              <Dropdown label="Scene" value={scene} options={UGC_SCENE_OPTIONS} onChange={(v) => setScene(v as UGCScene)} />
+              <Dropdown label="Vibe" value={vibe} options={UGC_VIBE_OPTIONS} onChange={(v) => setVibe(v as UGCVibe)} />
+            </div>
+
+            <div>
+              <label className="mb-1 block text-[10px] font-medium text-coco-brown-medium/60">
+                Lash style
+              </label>
+              <div className="flex flex-wrap gap-1.5">
+                {LASH_STYLE_OPTIONS.map((opt) => {
+                  const active = lashStyle === opt.value;
                   return (
                     <button
-                      key={img.id}
+                      key={opt.value}
                       type="button"
-                      onClick={() => setSelectedProductUrl(img.image_url)}
+                      onClick={() => setLashStyle(opt.value)}
                       className={cn(
-                        "group relative aspect-square overflow-hidden rounded-lg border-2 transition-all",
-                        isSelected
-                          ? "border-coco-golden ring-2 ring-coco-golden/30"
-                          : "border-transparent hover:border-coco-golden/40"
+                        "rounded-lg border-2 px-2 py-1 text-[10px] font-medium transition-all",
+                        active
+                          ? "border-coco-golden bg-coco-golden/10 text-coco-brown"
+                          : "border-coco-beige-dark bg-white text-coco-brown-medium hover:border-coco-golden/40"
                       )}
                     >
-                      <img
-                        src={img.image_url}
-                        alt={img.category_name}
-                        className="h-full w-full object-cover"
-                      />
-                      {isSelected && (
-                        <div className="absolute inset-0 flex items-center justify-center bg-coco-golden/20">
-                          <div className="flex h-6 w-6 items-center justify-center rounded-full bg-coco-golden">
-                            <Check className="h-3.5 w-3.5 text-white" />
-                          </div>
-                        </div>
-                      )}
+                      {opt.label}
                     </button>
                   );
                 })}
               </div>
-            )}
-          </div>
-        )}
-      </section>
+            </div>
 
-      {isComposing && (
-        <div className="rounded-xl border-2 border-coco-golden/30 bg-coco-golden/5 p-4 text-center">
-          <Loader2 className="mx-auto h-5 w-5 animate-spin text-coco-golden" />
-          <p className="mt-2 text-xs text-coco-brown-medium">
-            Composing avatar + product into one image…
-          </p>
-        </div>
+            <div className="flex gap-3">
+              <Button
+                type="button"
+                onClick={handleGenerateAvatar}
+                disabled={
+                  isGeneratingAvatar ||
+                  (showHoldingProduct && !composeProductUrl)
+                }
+                className="flex-1 gap-2 bg-coco-brown py-5 text-sm font-semibold text-white shadow-md hover:bg-coco-brown-light disabled:opacity-50"
+                size="lg"
+              >
+                {isGeneratingAvatar ? (
+                  <>
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                    Generating…
+                  </>
+                ) : generatedAvatarUrl ? (
+                  <>
+                    <RefreshCw className="h-4 w-4" />
+                    Regenerate Avatar
+                  </>
+                ) : (
+                  <>
+                    <Sparkles className="h-4 w-4" />
+                    Generate UGC Avatar
+                  </>
+                )}
+              </Button>
+              <Button
+                onClick={handleRandomize}
+                variant="outline"
+                size="lg"
+                className="gap-2 py-5"
+              >
+                <Shuffle className="h-4 w-4" />
+                Randomize
+              </Button>
+            </div>
+
+            {generatedAvatarUrl && (
+              <div className="overflow-hidden rounded-xl border-2 border-coco-golden/30 bg-white">
+                <div className="aspect-[9/16] max-h-80 bg-coco-beige-light">
+                  <img
+                    src={generatedAvatarUrl}
+                    alt="UGC Avatar"
+                    className="h-full w-full object-cover"
+                  />
+                </div>
+                {generatedHasProduct && (
+                  <div className="border-t border-coco-beige px-3 py-2">
+                    <p className="flex items-center gap-1.5 text-[11px] text-coco-brown-medium">
+                      <Check className="h-3.5 w-3.5 text-coco-golden" />
+                      Composed with the selected product. ONE image will go to
+                      Seedance.
+                    </p>
+                  </div>
+                )}
+              </div>
+            )}
+          </section>
+        </>
+      )}
+
+      {activeTab === "gallery" && (
+        <section className="space-y-3 rounded-xl border-2 border-coco-beige-dark/50 bg-white/50 p-4">
+          <div>
+            <h3 className="text-sm font-semibold text-coco-brown">
+              Your Seedance UGC avatars
+            </h3>
+            <p className="mt-0.5 text-[11px] text-coco-brown-medium/60">
+              Avatars previously generated in this Seedance UGC pipeline.
+              (Doesn&apos;t include images from the Generate page or Brand Content
+              Studio pipeline.)
+            </p>
+          </div>
+          {loadingGallery ? (
+            <div className="flex items-center justify-center rounded-xl border-2 border-dashed border-coco-beige-dark p-8">
+              <Loader2 className="h-5 w-5 animate-spin text-coco-brown-medium/40" />
+              <span className="ml-2 text-xs text-coco-brown-medium/50">
+                Loading gallery…
+              </span>
+            </div>
+          ) : galleryAvatars.length === 0 ? (
+            <div className="flex flex-col items-center justify-center rounded-xl border-2 border-dashed border-coco-beige-dark p-8">
+              <ImageIcon className="h-8 w-8 text-coco-brown-medium/30" />
+              <p className="mt-2 text-xs text-coco-brown-medium/50">
+                No UGC avatars yet — generate one first.
+              </p>
+            </div>
+          ) : (
+            <div className="grid grid-cols-3 gap-2 sm:grid-cols-4">
+              {galleryAvatars.map((img) => {
+                const isSelected = selectedGalleryUrl === img.image_url;
+                return (
+                  <button
+                    key={img.id}
+                    type="button"
+                    onClick={() => setSelectedGalleryUrl(img.image_url)}
+                    className={cn(
+                      "group relative aspect-[9/16] overflow-hidden rounded-lg border-2 transition-all",
+                      isSelected
+                        ? "border-coco-golden ring-2 ring-coco-golden/30"
+                        : "border-transparent hover:border-coco-golden/40"
+                    )}
+                  >
+                    <img
+                      src={img.image_url}
+                      alt="UGC avatar"
+                      className="h-full w-full object-cover"
+                    />
+                    {isSelected && (
+                      <div className="absolute inset-0 flex items-center justify-center bg-coco-golden/20">
+                        <div className="flex h-6 w-6 items-center justify-center rounded-full bg-coco-golden">
+                          <Check className="h-3.5 w-3.5 text-white" />
+                        </div>
+                      </div>
+                    )}
+                  </button>
+                );
+              })}
+            </div>
+          )}
+        </section>
+      )}
+
+      {/* Bottom product picker — only shown when toggle is OFF and we have an avatar.
+          Toggle-ON path: product is already in the avatar; no second picker. */}
+      {showSeedanceProductPicker && (
+        <section className="space-y-3 rounded-xl border-2 border-coco-beige-dark/50 bg-white/50 p-4">
+          <div>
+            <h3 className="text-sm font-semibold text-coco-brown">
+              Product reference for Seedance
+            </h3>
+            <p className="mt-0.5 text-[11px] text-coco-brown-medium/60">
+              Both the avatar AND this product image will be sent to Seedance
+              as separate references — the model will frame them naturally.
+            </p>
+          </div>
+          <ProductPicker
+            images={productImages}
+            loading={loadingProducts}
+            selectedUrl={seedanceProductUrl}
+            onSelect={setSeedanceProductUrl}
+            emptyHint="Add product images in Settings"
+          />
+        </section>
       )}
 
       <Button
         onClick={handleContinue}
-        disabled={!generatedAvatarUrl || isComposing || (hasProduct && !selectedProductUrl)}
+        disabled={!canContinue || isGeneratingAvatar}
         className="w-full gap-2 bg-coco-golden py-5 text-sm font-semibold text-white shadow-lg transition-all hover:bg-coco-golden-dark hover:shadow-xl disabled:opacity-50"
         size="lg"
       >
         Continue to Prompt Review →
       </Button>
     </div>
+  );
+}
+
+function ProductPicker({
+  images,
+  loading,
+  selectedUrl,
+  onSelect,
+  emptyHint,
+}: {
+  images: ProductRef[];
+  loading: boolean;
+  selectedUrl: string | null;
+  onSelect: (url: string) => void;
+  emptyHint: string;
+}) {
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center rounded-xl border-2 border-dashed border-coco-beige-dark p-6">
+        <Loader2 className="h-4 w-4 animate-spin text-coco-brown-medium/40" />
+        <span className="ml-2 text-xs text-coco-brown-medium/50">
+          Loading products…
+        </span>
+      </div>
+    );
+  }
+  if (images.length === 0) {
+    return (
+      <div className="flex flex-col items-center justify-center rounded-xl border-2 border-dashed border-coco-beige-dark p-6">
+        <Package className="h-6 w-6 text-coco-brown-medium/30" />
+        <p className="mt-2 text-xs text-coco-brown-medium/50">{emptyHint}</p>
+        <Link
+          href="/settings"
+          className="mt-2 flex items-center gap-1 text-[11px] font-medium text-coco-golden hover:text-coco-golden-dark"
+        >
+          <Settings className="h-3 w-3" />
+          Open Settings
+        </Link>
+      </div>
+    );
+  }
+  return (
+    <div className="grid grid-cols-3 gap-2 sm:grid-cols-4">
+      {images.slice(0, 24).map((img) => {
+        const isSelected = selectedUrl === img.image_url;
+        return (
+          <button
+            key={img.id}
+            type="button"
+            onClick={() => onSelect(img.image_url)}
+            className={cn(
+              "group relative aspect-square overflow-hidden rounded-lg border-2 transition-all",
+              isSelected
+                ? "border-coco-golden ring-2 ring-coco-golden/30"
+                : "border-transparent hover:border-coco-golden/40"
+            )}
+          >
+            <img
+              src={img.image_url}
+              alt={img.category_name}
+              className="h-full w-full object-cover"
+            />
+            {isSelected && (
+              <div className="absolute inset-0 flex items-center justify-center bg-coco-golden/20">
+                <div className="flex h-6 w-6 items-center justify-center rounded-full bg-coco-golden">
+                  <Check className="h-3.5 w-3.5 text-white" />
+                </div>
+              </div>
+            )}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+function TabBtn({
+  active,
+  onClick,
+  icon: Icon,
+  label,
+}: {
+  active: boolean;
+  onClick: () => void;
+  icon: React.ElementType;
+  label: string;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={cn(
+        "flex flex-1 items-center justify-center gap-1.5 rounded-md px-3 py-2 text-[11px] font-medium transition-all",
+        active
+          ? "bg-white text-coco-brown shadow-sm"
+          : "text-coco-brown-medium/50 hover:text-coco-brown-medium"
+      )}
+    >
+      <Icon className="h-3.5 w-3.5" />
+      {label}
+    </button>
   );
 }
 
