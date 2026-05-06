@@ -1,16 +1,14 @@
 /**
  * lib/chat/admin-auth.ts — guards for /chatbot/admin pages and routes.
  *
- * Allow if the auth user has a row in chat_admin_users OR their email
- * matches the ADMIN_EMAIL constant used by the existing app/api/admin/users
- * route. The latter ensures Faith can log in immediately on day one before
- * her team is seeded.
+ * Admin access via chat_admin_users table only. To seed the first admin:
+ * Run: npx tsx scripts/seed-chat-admin.ts --email <email> --role admin
+ *
+ * That script resolves the email to auth_user_id and creates the row.
  */
 
 import { type SupabaseClient } from "@supabase/supabase-js";
 import { ChatError } from "./error";
-
-const FALLBACK_ADMIN_EMAIL = "admin@cocolash.com";
 
 export interface ChatAdmin {
   authUserId: string;
@@ -25,12 +23,7 @@ export async function requireChatAdmin(supabase: SupabaseClient): Promise<ChatAd
   }
   const user = data.user;
 
-  // Email-based fallback (Faith on day one before her row is seeded).
-  if (user.email && user.email.toLowerCase() === FALLBACK_ADMIN_EMAIL.toLowerCase()) {
-    return { authUserId: user.id, email: user.email, role: "owner" };
-  }
-
-  // Membership table check.
+  // Membership table check — only path to admin access.
   const { data: row } = await supabase
     .from("chat_admin_users")
     .select("auth_user_id, email, role")

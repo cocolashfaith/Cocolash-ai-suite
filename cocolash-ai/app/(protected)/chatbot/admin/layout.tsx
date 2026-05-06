@@ -13,6 +13,7 @@ const NAV: Array<{ href: string; label: string }> = [
   { href: "/chatbot/admin/leads", label: "Leads" },
   { href: "/chatbot/admin/prompts", label: "AI Prompts" },
   { href: "/chatbot/admin/settings", label: "Settings" },
+  { href: "/chatbot/admin/admins", label: "Manage Admins" },
 ];
 
 export default async function ChatbotAdminLayout({
