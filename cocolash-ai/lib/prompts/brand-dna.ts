@@ -21,10 +21,16 @@ CRITICAL VISUAL RULES:
    undertones, NO over-exposed highlights washing out dark skin.
 2. LIGHTING: Warm only (3200K-4500K). Butterfly or Rembrandt, soft diffused.
    FORBIDDEN: Cool blue, sterile white, harsh neon, flat frontal flash.
-3. COLOR PALETTE (60-30-10 Rule):
-   - 60% Primary: Soft Pink (#ead1c1), Creamy Beige (#ede5d6)
-   - 30% Secondary: Warm Dark Brown (#28150e), Golden Brown (#ce9765)
-   - 10% Accents: Charcoal (#242424), Clean White (#ffffff)
+3. COLOR PALETTE (use the dominant-supporting-accent system below; the
+   percentages are a guideline, not a hard ratio):
+   - Dominant range (~60%): Soft Pink (#ead1c1) and Creamy Beige (#ede5d6)
+     — pick whichever better fits the scene's lighting; do not force both.
+   - Supporting range (~30%): Warm Dark Brown (#28150e) and Golden Brown
+     (#ce9765) — used for product surfaces, hair, and grounding shadows.
+   - Accent range (~10%): Charcoal (#242424) for type/edge details, Clean
+     White (#ffffff) for highlights and negative space. Use sparingly.
+   Rule: never invent colors outside this palette. Never use saturated
+   primaries or competing brand colors.
 4. MOOD: Confident, Friendly, Warm, Proud. Never conceited, cold, or aggressive.
 5. CAMERA: 85mm f/1.2 prime lens simulation. Shallow depth of field, creamy bokeh.
 6. LASHES: Distinct, fluffy, meticulously applied. Individual fibers visible.`;
