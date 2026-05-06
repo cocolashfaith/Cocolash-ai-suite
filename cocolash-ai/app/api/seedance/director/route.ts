@@ -15,6 +15,12 @@ import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { runSeedanceDirector, SeedanceDirectorError } from "@/lib/ai/director/seedance-director";
 import type { DirectorInput } from "@/lib/ai/director/types";
+import {
+  getProductTruthBySku,
+} from "@/lib/brand/product-truth";
+import { getProductReferenceImagesByCategory } from "@/lib/brand/get-product-references";
+import { MASTER_BRAND_DNA } from "@/lib/prompts/brand-dna";
+import { createClient } from "@/lib/supabase/server";
 
 const ImageRoleSchema = z.object({
   url: z.string().url(),
@@ -46,6 +52,7 @@ const BodySchema = z.object({
   subjectBrief: z.string().optional(),
   sceneDescription: z.string().optional(),
   userInstructions: z.string().optional(),
+  productSku: z.string().optional(),
 });
 
 export async function POST(request: NextRequest) {
@@ -58,7 +65,26 @@ export async function POST(request: NextRequest) {
       `[seedance/director] ${requestId} mode=${parsed.mode} campaign=${parsed.campaignType} duration=${parsed.durationSeconds}s`
     );
 
-    const result = await runSeedanceDirector(parsed as unknown as DirectorInput);
+    // Phase 27, D-27-08: Resolve product truth and reference images server-side
+    const productTruth = parsed.productSku
+      ? getProductTruthBySku(parsed.productSku)
+      : undefined;
+
+    const productReferenceImageUrls = productTruth?.categoryId
+      ? await getProductReferenceImagesByCategory(
+          await createClient(),
+          productTruth.categoryId
+        )
+      : undefined;
+
+    const directorInput: DirectorInput = {
+      ...(parsed as unknown as DirectorInput),
+      productTruth,
+      productReferenceImageUrls,
+      brandDna: MASTER_BRAND_DNA,
+    };
+
+    const result = await runSeedanceDirector(directorInput);
 
     console.log(
       `[seedance/director] ${requestId} OK ${result.diagnostics.durationMs}ms model=${result.diagnostics.model} systemPromptId=${result.diagnostics.systemPromptId}`

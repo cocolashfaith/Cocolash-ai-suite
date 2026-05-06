@@ -67,6 +67,9 @@ export interface SeedanceV4WizardState {
   /** multi_frame: free-text subject brief (text-only flow per D-26-01) */
   subjectBrief?: string;
 
+  /** Product SKU selected in Step 1 — grounds the Director in product truth (Phase 27, D-27-10) */
+  productSku?: string;
+
   // Step 3 — Director output (one of the two will be populated based on mode)
   directorPrompt?: string;
   directorMultiFramePrompts?: Array<{ prompt: string; duration: number }>;
@@ -100,6 +103,7 @@ export const DEFAULT_V4_STATE: SeedanceV4WizardState = {
   script: null,
   scriptText: "",
   subjectBrief: "",
+  productSku: "",
   aspectRatio: "9:16",
   resolution: "720p",
   fastMode: false,

@@ -18,6 +18,7 @@ import {
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { SeedanceScriptStep } from "../seedance/SeedanceScriptStep";
+import { getActiveProducts } from "@/lib/brand/product-truth";
 import type { SeedanceV4Mode, SeedanceV4WizardState } from "./types";
 import type {
   CampaignType,
@@ -163,6 +164,42 @@ export function Step1ScriptAndMode({ state, setState, onAdvance }: Step1Props) {
         </div>
       </section>
 
+      {/* Product picker — required for product-anchored modes (UGC, Multi-Reference,
+          Multi-Frame, Lip-Sync); hidden for text-to-video and first_n_last_frames */}
+      {requiresProductAnchor(state.mode) && (
+        <section className="space-y-3 rounded-xl border-2 border-coco-beige-dark/50 bg-white/50 p-4">
+          <div className="flex items-baseline justify-between gap-3">
+            <label className="text-sm font-semibold text-coco-brown">
+              Which product? <span className="text-coco-golden">*</span>
+            </label>
+            <p className="text-[11px] text-coco-brown-medium/60">
+              Grounds the AI in the product&apos;s actual properties.
+            </p>
+          </div>
+          <select
+            value={state.productSku ?? ""}
+            onChange={(e) => setState({ productSku: e.target.value })}
+            className={cn(
+              "w-full rounded-lg border-2 px-4 py-2.5 text-sm transition-all",
+              state.productSku
+                ? "border-coco-golden bg-white text-coco-brown"
+                : "border-coco-beige-dark/50 bg-white text-coco-brown-medium placeholder-coco-brown-medium/40"
+            )}
+          >
+            <option value="">Select a product…</option>
+            {getActiveProducts().map((p) => (
+              <option key={p.sku} value={p.sku}>
+                {p.displayName} — {p.lashType}
+              </option>
+            ))}
+          </select>
+          <p className="text-xs text-coco-brown-medium/60">
+            The Director uses this to ground every prompt in the product&apos;s actual
+            properties — no more hallucinated magnetic closures or strips.
+          </p>
+        </section>
+      )}
+
       {/* Script — only for modes whose Director needs a spoken script.
           Lip-Sync uses uploaded audio; Text-to-Video describes scene in Step 2. */}
       {needsScript(state.mode) && (
@@ -235,5 +272,19 @@ function needsScript(mode: SeedanceV4Mode): boolean {
     mode === "multi_reference" ||
     mode === "multi_frame" ||
     mode === "first_n_last_frames"
+  );
+}
+
+/**
+ * Returns true for modes that require product anchoring via a selected SKU.
+ * UGC, Multi-Reference, Multi-Frame, and Lip-Sync use product truth to ground
+ * the Director's output. Text-to-Video and First+Last Frames do not.
+ */
+function requiresProductAnchor(mode: SeedanceV4Mode): boolean {
+  return (
+    mode === "ugc" ||
+    mode === "multi_reference" ||
+    mode === "multi_frame" ||
+    mode === "lipsyncing"
   );
 }

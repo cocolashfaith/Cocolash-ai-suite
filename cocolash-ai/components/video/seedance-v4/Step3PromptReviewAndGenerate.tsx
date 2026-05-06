@@ -371,6 +371,7 @@ function buildDirectorBody(state: SeedanceV4WizardState): DirectorInput {
     durationSeconds: state.duration,
     aspectRatio: state.aspectRatio,
     script: state.scriptText || undefined,
+    productSku: state.productSku || undefined,
   };
 
   switch (state.mode) {

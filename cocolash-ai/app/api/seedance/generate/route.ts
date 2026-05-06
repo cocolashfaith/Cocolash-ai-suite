@@ -84,6 +84,11 @@ interface SeedanceGenerateBody {
    * Seedance Director's output.
    */
   overridePrompt?: string;
+  /**
+   * Product SKU selected in Step 1 — threads through to the Director call
+   * (Phase 27, D-27-09). Camel case from the v4 client.
+   */
+  productSku?: string;
 }
 
 /**
