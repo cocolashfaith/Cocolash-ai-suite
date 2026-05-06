@@ -261,6 +261,40 @@ function composeUserMessage(input: DirectorInput): string {
       break;
   }
 
+  // Phase 27 injection: product truth block
+  if (input.productTruth) {
+    const t = input.productTruth;
+    lines.push("");
+    lines.push("PRODUCT TRUTH (use as anchor — do not contradict):");
+    lines.push(`- Display name: ${t.displayName}`);
+    lines.push(`- Lash type: ${t.lashType}${t.lengthRange ? ` (${t.lengthRange})` : ""}`);
+    lines.push(`- Band material: ${t.bandMaterial}`);
+    lines.push(
+      `- Magnetic closure: ${t.magneticClosure ? "YES" : "NO — never claim magnetic"}`
+    );
+    lines.push(`- Packaging: ${t.packagingType}`);
+    if (t.kitContents && t.kitContents.length > 0) {
+      lines.push(`- Kit contents: ${t.kitContents.join(", ")}`);
+    }
+    lines.push(`- Tone/colour: ${t.colorTone ?? "—"}`);
+  }
+
+  // Phase 27 injection: reference images block
+  if (input.productReferenceImageUrls?.length) {
+    lines.push("");
+    lines.push("REFERENCE IMAGES AVAILABLE (use these as visual anchors when describing the product):");
+    for (const [i, url] of input.productReferenceImageUrls.entries()) {
+      lines.push(`- @ref${i + 1}: ${url}`);
+    }
+  }
+
+  // Phase 27 injection: brand DNA block
+  if (input.brandDna) {
+    lines.push("");
+    lines.push("BRAND DNA (must respect):");
+    lines.push(input.brandDna);
+  }
+
   if (input.userInstructions?.trim()) {
     lines.push("", "User instructions (honor these — they override defaults):");
     lines.push(input.userInstructions.trim());
@@ -356,6 +390,9 @@ function summarizeInput(input: DirectorInput): string {
   if (input.composedPersonProductImage) summary.push("composed=yes");
   if (input.firstFrameImage) summary.push("firstFrame=yes");
   if (input.lastFrameImage) summary.push("lastFrame=yes");
+  if (input.productTruth) summary.push(`product=${input.productTruth.sku}`);
+  if (input.productReferenceImageUrls?.length)
+    summary.push(`productRefs=${input.productReferenceImageUrls.length}`);
   return summary.join(" ");
 }
 

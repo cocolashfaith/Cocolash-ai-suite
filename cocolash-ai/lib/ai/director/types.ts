@@ -9,6 +9,7 @@
 
 import type { CampaignType, ScriptTone } from "@/lib/types";
 import type { SeedanceMultiFramePrompt } from "@/lib/seedance/types";
+import type { ProductTruthEntry } from "@/lib/brand/product-truth";
 
 export type DirectorMode =
   | "ugc"
@@ -75,6 +76,31 @@ export interface DirectorInput {
 
   /** Free-text overrides from the user — appended verbatim to the system prompt. */
   userInstructions?: string;
+
+  /**
+   * SKU of the CocoLash product this video features (e.g., "violet", "kit-daisy").
+   * Optional; when provided, enables product-truth grounding in the prompt.
+   */
+  productSku?: string;
+
+  /**
+   * Resolved product truth entry for the selected SKU. Contains physical properties:
+   * lashType, bandMaterial, magneticClosure, packagingType, kitContents, etc.
+   * Injected by the API layer into every Director call.
+   */
+  productTruth?: ProductTruthEntry;
+
+  /**
+   * Reference image URLs from the product_reference_images table, fetched by
+   * the product's category_id. Injected by the API layer for product anchoring.
+   */
+  productReferenceImageUrls?: string[];
+
+  /**
+   * Brand DNA text (e.g., MASTER_BRAND_DNA). Injected by the API layer
+   * to ground the generated prompt in brand voice and visual rules.
+   */
+  brandDna?: string;
 }
 
 export interface DirectorPromptOutput {
