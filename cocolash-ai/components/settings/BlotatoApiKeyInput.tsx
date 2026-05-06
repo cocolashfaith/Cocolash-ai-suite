@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -11,6 +11,13 @@ import {
   XCircle,
   Link2,
 } from "lucide-react";
+
+interface StatusData {
+  hasEnvKey: boolean;
+  hasDbKey: boolean;
+  lastTestedAt: string | null;
+  accountsFound: number | null;
+}
 
 interface BlotatoApiKeyInputProps {
   initialKey?: string;
@@ -24,38 +31,91 @@ export function BlotatoApiKeyInput({
   const [apiKey, setApiKey] = useState(initialKey || "");
   const [showKey, setShowKey] = useState(false);
   const [testing, setTesting] = useState(false);
+  const [statusData, setStatusData] = useState<StatusData | null>(null);
+  const [loadingStatus, setLoadingStatus] = useState(true);
   const [status, setStatus] = useState<
     { type: "success"; accounts: number } | { type: "error"; message: string } | null
   >(null);
 
+  useEffect(() => {
+    const fetchStatus = async () => {
+      try {
+        const res = await fetch("/api/settings/blotato/status");
+        if (res.ok) {
+          const data = (await res.json()) as StatusData;
+          setStatusData(data);
+        }
+      } catch (error: unknown) {
+        console.error("Failed to fetch Blotato status:", error);
+      } finally {
+        setLoadingStatus(false);
+      }
+    };
+
+    fetchStatus();
+  }, []);
+
   const handleTestConnection = async () => {
-    if (!apiKey.trim()) return;
+    const useEnvKey = !apiKey.trim() && statusData?.hasEnvKey;
+
+    if (!useEnvKey && !apiKey.trim()) return;
 
     setTesting(true);
     setStatus(null);
 
     try {
-      const res = await fetch("/api/settings/blotato", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ api_key: apiKey.trim() }),
-      });
+      if (useEnvKey) {
+        // Test against env var key
+        const res = await fetch("/api/settings/blotato/test", {
+          method: "GET",
+        });
 
-      const data = await res.json();
+        const data = (await res.json()) as {
+          success: boolean;
+          connected: boolean;
+          accounts_found?: number;
+          error?: string;
+        };
 
-      if (!res.ok) {
-        setStatus({ type: "error", message: data.error || "Connection failed" });
-        return;
+        if (!res.ok || !data.connected) {
+          setStatus({ type: "error", message: data.error || "Connection failed" });
+          return;
+        }
+
+        setStatus({ type: "success", accounts: data.accounts_found ?? 0 });
+        onConnected?.(data.accounts_found ?? 0);
+      } else {
+        // Test against form input key
+        const res = await fetch("/api/settings/blotato", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ api_key: apiKey.trim() }),
+        });
+
+        const data = (await res.json()) as {
+          success?: boolean;
+          connected?: boolean;
+          accounts_found?: number;
+          error?: string;
+        };
+
+        if (!res.ok) {
+          setStatus({ type: "error", message: data.error || "Connection failed" });
+          return;
+        }
+
+        setStatus({ type: "success", accounts: data.accounts_found ?? 0 });
+        onConnected?.(data.accounts_found ?? 0);
       }
-
-      setStatus({ type: "success", accounts: data.accounts_found });
-      onConnected?.(data.accounts_found);
     } catch {
       setStatus({ type: "error", message: "Network error. Please try again." });
     } finally {
       setTesting(false);
     }
   };
+
+  const isTestButtonEnabled =
+    (apiKey.trim() || (statusData?.hasEnvKey && !loadingStatus)) && !testing;
 
   return (
     <div className="space-y-3">
@@ -71,6 +131,41 @@ export function BlotatoApiKeyInput({
           </span>
         )}
       </div>
+
+      {!loadingStatus && statusData?.hasEnvKey && !apiKey.trim() && (
+        <div className="flex items-start gap-2 rounded-lg bg-emerald-50 px-3 py-2">
+          <CheckCircle className="h-4 w-4 shrink-0 text-emerald-600 mt-0.5" />
+          <div className="text-xs text-emerald-700">
+            <p className="font-medium">
+              A Blotato API key is configured via your Vercel environment.
+            </p>
+            <p>
+              You can paste a new key below to override, or click Test
+              Connection to verify the configured key works.
+            </p>
+          </div>
+        </div>
+      )}
+
+      {!loadingStatus &&
+        statusData?.hasDbKey &&
+        !statusData?.hasEnvKey &&
+        !apiKey.trim() && (
+          <div className="flex items-start gap-2 rounded-lg bg-emerald-50 px-3 py-2">
+            <CheckCircle className="h-4 w-4 shrink-0 text-emerald-600 mt-0.5" />
+            <div className="text-xs text-emerald-700">
+              <p className="font-medium">
+                Last connected:{" "}
+                {statusData.lastTestedAt
+                  ? new Date(statusData.lastTestedAt).toLocaleDateString()
+                  : "Unknown"}{" "}
+                with{" "}
+                {statusData.accountsFound ?? 0} social account
+                {statusData.accountsFound !== 1 ? "s" : ""}.
+              </p>
+            </div>
+          </div>
+        )}
 
       <p className="text-xs text-coco-brown-medium">
         Enter your Blotato API key to enable cross-platform publishing.{" "}
@@ -111,7 +206,7 @@ export function BlotatoApiKeyInput({
 
         <Button
           onClick={handleTestConnection}
-          disabled={!apiKey.trim() || testing}
+          disabled={!isTestButtonEnabled}
           size="sm"
           className="bg-coco-golden text-white hover:bg-coco-golden-dark"
         >
