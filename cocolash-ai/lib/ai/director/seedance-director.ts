@@ -193,7 +193,7 @@ function validateDirectorInput(input: DirectorInput): void {
 
 // ── User-message composition (per mode) ──────────────────────
 
-function composeUserMessage(input: DirectorInput): string {
+export function composeUserMessage(input: DirectorInput): string {
   const lines: string[] = [];
   lines.push(`Campaign type: ${input.campaignType}`);
   lines.push(`Tone: ${input.tone}`);
