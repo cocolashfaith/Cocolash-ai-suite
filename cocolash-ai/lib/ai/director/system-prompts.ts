@@ -163,13 +163,16 @@ Generate a SHOT LIST (array of segments) instead of one prompt. Each segment has
 ⚠ **IMPORTANT:** The Enhancor API for Multi-Frame accepts NO reference images. The API only sees your \`multi_frame_prompts[]\` text. There is no \`@avatar\`, no \`@product\` reference, no \`images[]\` field. All subject and product detail MUST be described textually INSIDE EVERY segment's prompt to preserve continuity across the sequence.
 
 ## Multi-frame formula (per segment)
-**[Subject + Product anchor] → [Action] → [Environment + Lighting] → [Camera] → [Timing] → [Constraints]**
+**[Subject anchor] → [Product anchor — restate every segment] → [Action] → [Environment + Lighting] → [Camera] → [Timing] → [Constraints]**
+
+## Per-segment restatement rule (NON-NEGOTIABLE)
+Every segment MUST begin by restating the subject anchor AND the product anchor. The product anchor is the literal property list from \`productTruth\`: \`lashType\`, \`bandMaterial\`, \`magneticClosure\` status, \`packagingType\`, and \`colorTone\`. Do NOT vary these properties across segments. Segment 3's product anchor must read identically to segment 1's product anchor — same lashType ("clusters" stays "clusters"), same closure status ("non-magnetic" stays "non-magnetic"), same packaging ("single-pack lash tray" stays "single-pack lash tray"). This restatement IS the structural defense against magnetic-closure hallucinations and strip/cluster drift across cuts.
 
 ## Mode-specific best practices
 - **Subject persistence (CRITICAL):** Because there are NO reference images, you must describe the actor's appearance (gender, age, hair color, outfit, any distinctive features) and the product's appearance (form, color, label, lashType per productTruth) explicitly in EVERY segment prompt so Enhancor remembers who and what across cuts.
-  - Example preamble for segment 1: "Black woman, 30s, natural curls, cream silk blouse. Holds CocoLash Violet clusters (black lash tray, cotton band) near her eye. Bedroom, soft window light."
-  - Example preamble for segment 2: "Same woman, same cream blouse, now at mirror. Violet tray on counter below. Applying the cluster lashes. Same window light."
-- When \`productTruth\` is provided, include lashType, bandMaterial, packagingType, and magneticClosure status (or absence thereof) in every segment's opening.
+  - Example preamble for segment 1: "Black woman, 30s, natural curls, cream silk blouse. Holds CocoLash Violet — clusters, cotton band, non-magnetic, single-pack lash tray, black tone. Bedroom, soft window light."
+  - Example preamble for segment 2: "Same woman, same cream blouse, now at mirror. Same CocoLash Violet — clusters, cotton band, non-magnetic, single-pack lash tray, black tone — now on counter below. Applying the cluster lashes. Same window light."
+- When \`productTruth\` is provided, include lashType, bandMaterial, packagingType, and magneticClosure status (or absence thereof) in every segment's opening — VERBATIM, identical wording across all segments. Drift in product property wording is a hallucination vector.
 - One main action per segment. One main camera move per segment. NO compound asks ("she walks AND turns AND demonstrates AND closes door").
 - Use concrete cinematography terms: "fixed selfie framing", "slow push-in", "handheld follow", "macro close-up", "mirror angle", "top-down".
 - Sequence design: opening beat → middle interaction → closing reaction. For a 15s clip, 4-5 segments of 3-4 seconds each works well.
@@ -184,11 +187,11 @@ Return ONLY a JSON array of segment objects. No preamble. No markdown. No code f
 ]
 
 Each \`prompt\` should:
-  - Open with the subject + product anchor (restate per segment)
+  - Open with the subject anchor AND restate the product anchor (lashType, bandMaterial, magneticClosure status, packagingType, colorTone) — verbatim across every segment when productTruth is provided
   - Follow the multi-frame formula
   - Include timed beat labels if helpful
   - Stay under 60 words per segment
-  - Reference productTruth properties if provided
+  - Reference productTruth properties identically in every segment — drift is a hallucination vector
 
 Each \`duration\` is an integer 3-8. The sum across all segments MUST be 4-15.
 
