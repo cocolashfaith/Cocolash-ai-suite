@@ -7,7 +7,10 @@
  *   - sku: canonical short ID (e.g. "jasmine")
  *   - displayName: human-readable title (e.g. "Jasmine")
  *   - productHandle?: Shopify handle if known
- *   - categoryId?: Foreign key into product_reference_images.category_id
+ *   - categoryId?: Foreign key into product_reference_images.category_id (UUID, project-specific)
+ *   - categoryKey?: Stable string key into product_categories.key — preferred over
+ *     categoryId because it survives env / DB rebuilds. Resolved to UUID at runtime
+ *     by getProductReferenceImagesByCategoryKey() in lib/brand/get-product-references.ts
  *   - lashType: "clusters" | "strips" | "kit" | "tools"
  *   - lengthRange?: e.g. "10-14mm" (omit if unknown)
  *   - volumeProfile?: one of the preset volume levels
@@ -25,11 +28,36 @@
  *   - Faith's 2026-05-07 email feedback (Sorrel needs adding, Lash Blooms retired)
  */
 
+/**
+ * Allowed values for categoryKey — must match a row in `product_categories.key`
+ * in the live Supabase project. Tools intentionally omit this field because
+ * there is no reference imagery for raw tools.
+ */
+export type ProductCategoryKey =
+  | "single-black-tray"
+  | "single-nude-tray"
+  | "multi-lash-book"
+  | "full-kit-pouch"
+  | "full-kit-box"
+  | "storage-pouch"
+  | "branding-flatlay";
+
+export const KNOWN_PRODUCT_CATEGORY_KEYS: ReadonlyArray<ProductCategoryKey> = [
+  "single-black-tray",
+  "single-nude-tray",
+  "multi-lash-book",
+  "full-kit-pouch",
+  "full-kit-box",
+  "storage-pouch",
+  "branding-flatlay",
+];
+
 export interface ProductTruthEntry {
   sku: string;
   displayName: string;
   productHandle?: string;
   categoryId?: string;
+  categoryKey?: ProductCategoryKey;
   lashType: "clusters" | "strips" | "kit" | "tools";
   lengthRange?: string;
   volumeProfile?: "natural" | "soft" | "medium" | "bold" | "dramatic";
@@ -56,6 +84,7 @@ export const PRODUCT_TRUTH: ReadonlyArray<ProductTruthEntry> = [
     sku: "violet",
     displayName: "Violet",
     productHandle: "violet",
+    categoryKey: "single-black-tray",
     lashType: "clusters",
     lengthRange: "6-14mm",
     volumeProfile: "natural",
@@ -70,6 +99,7 @@ export const PRODUCT_TRUTH: ReadonlyArray<ProductTruthEntry> = [
     sku: "violet-4pack",
     displayName: "Violet 4-Pack",
     productHandle: "violet-4pack",
+    categoryKey: "multi-lash-book",
     lashType: "clusters",
     lengthRange: "6-14mm",
     volumeProfile: "natural",
@@ -86,6 +116,7 @@ export const PRODUCT_TRUTH: ReadonlyArray<ProductTruthEntry> = [
     sku: "peony",
     displayName: "Peony",
     productHandle: "peony",
+    categoryKey: "single-black-tray",
     lashType: "clusters",
     lengthRange: "14mm",
     volumeProfile: "soft",
@@ -100,6 +131,7 @@ export const PRODUCT_TRUTH: ReadonlyArray<ProductTruthEntry> = [
     sku: "peony-4pack",
     displayName: "Peony 4-Pack",
     productHandle: "peony-4pack",
+    categoryKey: "multi-lash-book",
     lashType: "clusters",
     lengthRange: "14mm",
     volumeProfile: "soft",
@@ -116,6 +148,7 @@ export const PRODUCT_TRUTH: ReadonlyArray<ProductTruthEntry> = [
     sku: "jasmine",
     displayName: "Jasmine",
     productHandle: "jasmine",
+    categoryKey: "single-black-tray",
     lashType: "clusters",
     lengthRange: "4-12mm",
     volumeProfile: "soft",
@@ -130,6 +163,7 @@ export const PRODUCT_TRUTH: ReadonlyArray<ProductTruthEntry> = [
     sku: "jasmine-4pack",
     displayName: "Jasmine 4-Pack",
     productHandle: "jasmine-4pack",
+    categoryKey: "multi-lash-book",
     lashType: "clusters",
     lengthRange: "4-12mm",
     volumeProfile: "soft",
@@ -146,6 +180,7 @@ export const PRODUCT_TRUTH: ReadonlyArray<ProductTruthEntry> = [
     sku: "daisy",
     displayName: "Daisy",
     productHandle: "daisy",
+    categoryKey: "single-black-tray",
     lashType: "clusters",
     lengthRange: "9-14mm",
     volumeProfile: "natural",
@@ -160,6 +195,7 @@ export const PRODUCT_TRUTH: ReadonlyArray<ProductTruthEntry> = [
     sku: "daisy-4pack",
     displayName: "Daisy 4-Pack",
     productHandle: "daisy-4pack",
+    categoryKey: "multi-lash-book",
     lashType: "clusters",
     lengthRange: "9-14mm",
     volumeProfile: "natural",
@@ -177,6 +213,7 @@ export const PRODUCT_TRUTH: ReadonlyArray<ProductTruthEntry> = [
     sku: "sorrel",
     displayName: "Sorrel",
     productHandle: "sorrel",
+    categoryKey: "single-nude-tray",
     lashType: "clusters",
     lengthRange: "10-16mm",
     volumeProfile: "medium",
@@ -191,6 +228,7 @@ export const PRODUCT_TRUTH: ReadonlyArray<ProductTruthEntry> = [
     sku: "sorrel-4pack",
     displayName: "Sorrel 4-Pack",
     productHandle: "sorrel-4pack",
+    categoryKey: "multi-lash-book",
     lashType: "clusters",
     lengthRange: "10-16mm",
     volumeProfile: "medium",
@@ -209,6 +247,7 @@ export const PRODUCT_TRUTH: ReadonlyArray<ProductTruthEntry> = [
     sku: "iris",
     displayName: "Iris",
     productHandle: "iris",
+    categoryKey: "single-black-tray",
     lashType: "clusters",
     lengthRange: "14mm",
     volumeProfile: "bold",
@@ -223,6 +262,7 @@ export const PRODUCT_TRUTH: ReadonlyArray<ProductTruthEntry> = [
     sku: "iris-4pack",
     displayName: "Iris 4-Pack",
     productHandle: "iris-4pack",
+    categoryKey: "multi-lash-book",
     lashType: "clusters",
     lengthRange: "14mm",
     volumeProfile: "bold",
@@ -239,6 +279,7 @@ export const PRODUCT_TRUTH: ReadonlyArray<ProductTruthEntry> = [
     sku: "dahlia",
     displayName: "Dahlia",
     productHandle: "dahlia",
+    categoryKey: "single-black-tray",
     lashType: "clusters",
     lengthRange: "8-14mm",
     volumeProfile: "dramatic",
@@ -253,6 +294,7 @@ export const PRODUCT_TRUTH: ReadonlyArray<ProductTruthEntry> = [
     sku: "dahlia-4pack",
     displayName: "Dahlia 4-Pack",
     productHandle: "dahlia-4pack",
+    categoryKey: "multi-lash-book",
     lashType: "clusters",
     lengthRange: "8-14mm",
     volumeProfile: "dramatic",
@@ -269,6 +311,7 @@ export const PRODUCT_TRUTH: ReadonlyArray<ProductTruthEntry> = [
     sku: "poppy",
     displayName: "Poppy",
     productHandle: "poppy",
+    categoryKey: "single-black-tray",
     lashType: "clusters",
     lengthRange: "5-12mm",
     volumeProfile: "bold",
@@ -283,6 +326,7 @@ export const PRODUCT_TRUTH: ReadonlyArray<ProductTruthEntry> = [
     sku: "poppy-4pack",
     displayName: "Poppy 4-Pack",
     productHandle: "poppy-4pack",
+    categoryKey: "multi-lash-book",
     lashType: "clusters",
     lengthRange: "5-12mm",
     volumeProfile: "bold",
@@ -299,6 +343,7 @@ export const PRODUCT_TRUTH: ReadonlyArray<ProductTruthEntry> = [
     sku: "marigold",
     displayName: "Marigold",
     productHandle: "marigold",
+    categoryKey: "single-black-tray",
     lashType: "clusters",
     lengthRange: "4-10mm",
     volumeProfile: "medium",
@@ -313,6 +358,7 @@ export const PRODUCT_TRUTH: ReadonlyArray<ProductTruthEntry> = [
     sku: "marigold-4pack",
     displayName: "Marigold 4-Pack",
     productHandle: "marigold-4pack",
+    categoryKey: "multi-lash-book",
     lashType: "clusters",
     lengthRange: "4-10mm",
     volumeProfile: "medium",
@@ -329,6 +375,7 @@ export const PRODUCT_TRUTH: ReadonlyArray<ProductTruthEntry> = [
     sku: "orchid",
     displayName: "Orchid",
     productHandle: "orchid",
+    categoryKey: "single-black-tray",
     lashType: "clusters",
     lengthRange: "12-16mm",
     volumeProfile: "bold",
@@ -343,6 +390,7 @@ export const PRODUCT_TRUTH: ReadonlyArray<ProductTruthEntry> = [
     sku: "orchid-4pack",
     displayName: "Orchid 4-Pack",
     productHandle: "orchid-4pack",
+    categoryKey: "multi-lash-book",
     lashType: "clusters",
     lengthRange: "12-16mm",
     volumeProfile: "bold",
@@ -359,6 +407,7 @@ export const PRODUCT_TRUTH: ReadonlyArray<ProductTruthEntry> = [
     sku: "rose",
     displayName: "Rose",
     productHandle: "rose",
+    categoryKey: "single-black-tray",
     lashType: "clusters",
     lengthRange: "12-16mm",
     volumeProfile: "bold",
@@ -373,6 +422,7 @@ export const PRODUCT_TRUTH: ReadonlyArray<ProductTruthEntry> = [
     sku: "rose-4pack",
     displayName: "Rose 4-Pack",
     productHandle: "rose-4pack",
+    categoryKey: "multi-lash-book",
     lashType: "clusters",
     lengthRange: "12-16mm",
     volumeProfile: "bold",
@@ -392,6 +442,7 @@ export const PRODUCT_TRUTH: ReadonlyArray<ProductTruthEntry> = [
     sku: "kit-daisy",
     displayName: "CocoLash Kit - Daisy",
     productHandle: "cocolash-kit-ultimate-lash-essentials",
+    categoryKey: "full-kit-box",
     lashType: "kit",
     bandMaterial: "cotton",
     magneticClosure: true,
@@ -415,6 +466,7 @@ export const PRODUCT_TRUTH: ReadonlyArray<ProductTruthEntry> = [
     sku: "kit-dahlia",
     displayName: "CocoLash Kit - Dahlia",
     productHandle: "cocolash-kit-ultimate-lash-essentials",
+    categoryKey: "full-kit-box",
     lashType: "kit",
     bandMaterial: "cotton",
     magneticClosure: true,
@@ -438,6 +490,7 @@ export const PRODUCT_TRUTH: ReadonlyArray<ProductTruthEntry> = [
     sku: "kit-violet",
     displayName: "CocoLash Kit - Violet",
     productHandle: "cocolash-kit-ultimate-lash-essentials",
+    categoryKey: "full-kit-box",
     lashType: "kit",
     bandMaterial: "cotton",
     magneticClosure: true,
@@ -461,6 +514,7 @@ export const PRODUCT_TRUTH: ReadonlyArray<ProductTruthEntry> = [
     sku: "kit-sorrel",
     displayName: "CocoLash Kit - Sorrel",
     productHandle: "cocolash-kit-ultimate-lash-essentials",
+    categoryKey: "full-kit-box",
     lashType: "kit",
     bandMaterial: "cotton",
     magneticClosure: true,

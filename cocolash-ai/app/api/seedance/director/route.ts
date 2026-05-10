@@ -18,7 +18,10 @@ import type { DirectorInput } from "@/lib/ai/director/types";
 import {
   getProductTruthBySku,
 } from "@/lib/brand/product-truth";
-import { getProductReferenceImagesByCategory } from "@/lib/brand/get-product-references";
+import {
+  getProductReferenceImagesByCategory,
+  getProductReferenceImagesByCategoryKey,
+} from "@/lib/brand/get-product-references";
 import { MASTER_BRAND_DNA } from "@/lib/prompts/brand-dna";
 import { createClient } from "@/lib/supabase/server";
 
@@ -65,17 +68,26 @@ export async function POST(request: NextRequest) {
       `[seedance/director] ${requestId} mode=${parsed.mode} campaign=${parsed.campaignType} duration=${parsed.durationSeconds}s`
     );
 
-    // Phase 27, D-27-08: Resolve product truth and reference images server-side
+    // Phase 27, D-27-08: Resolve product truth and reference images server-side.
+    // Phase 27 Wave-6 (27-09): prefer categoryKey (stable slug) over categoryId
+    // (project-scoped UUID); fall back to legacy categoryId if a future entry
+    // sets it directly.
     const productTruth = parsed.productSku
       ? getProductTruthBySku(parsed.productSku)
       : undefined;
 
-    const productReferenceImageUrls = productTruth?.categoryId
-      ? await getProductReferenceImagesByCategory(
-          await createClient(),
-          productTruth.categoryId
-        )
-      : undefined;
+    let productReferenceImageUrls: string[] | undefined;
+    if (productTruth?.categoryKey) {
+      productReferenceImageUrls = await getProductReferenceImagesByCategoryKey(
+        await createClient(),
+        productTruth.categoryKey
+      );
+    } else if (productTruth?.categoryId) {
+      productReferenceImageUrls = await getProductReferenceImagesByCategory(
+        await createClient(),
+        productTruth.categoryId
+      );
+    }
 
     const directorInput: DirectorInput = {
       ...(parsed as unknown as DirectorInput),
