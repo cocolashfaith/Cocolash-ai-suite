@@ -85,11 +85,13 @@ export function BlotatoApiKeyInput({
         setStatus({ type: "success", accounts: data.accounts_found ?? 0 });
         onConnected?.(data.accounts_found ?? 0);
       } else {
-        // Test against form input key
-        const res = await fetch("/api/settings/blotato", {
+        // Phase 27 Wave-6 (27-09, finding #3): test a freshly pasted key via
+        // POST /api/settings/blotato/test WITHOUT saving it to the DB. Save
+        // only happens when the user explicitly clicks Save below.
+        const res = await fetch("/api/settings/blotato/test", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ api_key: apiKey.trim() }),
+          body: JSON.stringify({ apiKey: apiKey.trim() }),
         });
 
         const data = (await res.json()) as {
@@ -99,7 +101,7 @@ export function BlotatoApiKeyInput({
           error?: string;
         };
 
-        if (!res.ok) {
+        if (!res.ok || !data.connected) {
           setStatus({ type: "error", message: data.error || "Connection failed" });
           return;
         }
