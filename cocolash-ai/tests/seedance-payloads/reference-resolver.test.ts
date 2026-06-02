@@ -377,3 +377,116 @@ describe("resolveSkuReferences — mode-specific field assignment (D-01)", () =>
     expect(result.influencerImages).toHaveLength(0);
   });
 });
+
+/**
+ * Regression coverage for the two CRITICAL findings fixed post-code-review:
+ * 1. UGC must keep products[] and influencers[] as SEPARATE fields (never collapse
+ *    a face/avatar ref into products[]).
+ * 2. A request-body override must SUPPRESS degraded and be used, even when the SKU
+ *    is unknown/a tool (D-08 must win over the invalid-SKU degraded path).
+ */
+describe("resolveSkuReferences — UGC separate fields + override regressions (D-01, D-08)", () => {
+  let mockSupabase: SupabaseClient;
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockSupabase = {} as SupabaseClient;
+  });
+
+  it("UGC: keeps DB product refs in products[] and caller influencer in influencers[] (no cross-contamination)", async () => {
+    vi.mocked(getProductTruthBySku).mockReturnValueOnce({
+      sku: "single-black-tray",
+      displayName: "Single Black Tray",
+      lashType: "clusters",
+      bandMaterial: "plastic",
+      magneticClosure: false,
+      packagingType: "single-pack lash tray",
+      colorTone: "black",
+      retired: false,
+      categoryKey: "single-black-tray",
+    } as any);
+    vi.mocked(getProductReferenceImagesByCategoryKey).mockResolvedValueOnce([
+      "https://db.com/p1.jpg",
+      "https://db.com/p2.jpg",
+      "https://db.com/p3.jpg",
+    ]);
+
+    const result = await resolveSkuReferences(mockSupabase, "single-black-tray", "ugc", {
+      influencers: ["https://faces.com/avatar.jpg"],
+    });
+
+    // products[] holds ONLY the DB product shots
+    expect(result.productImages).toEqual([
+      "https://db.com/p1.jpg",
+      "https://db.com/p2.jpg",
+      "https://db.com/p3.jpg",
+    ]);
+    // influencers[] holds ONLY the caller-supplied face — and it is NOT in products[]
+    expect(result.influencerImages).toEqual(["https://faces.com/avatar.jpg"]);
+    expect(result.productImages).not.toContain("https://faces.com/avatar.jpg");
+    expect(result.degraded).toBe(false);
+  });
+
+  it("UGC: combined products+influencers cap is 9, splitting across both fields", async () => {
+    vi.mocked(getProductTruthBySku).mockReturnValueOnce({
+      sku: "sku",
+      displayName: "Test",
+      lashType: "clusters",
+      bandMaterial: "plastic",
+      magneticClosure: false,
+      packagingType: "test",
+      colorTone: "black",
+      retired: false,
+      categoryKey: "single-black-tray",
+    } as any);
+    // 8 DB product images
+    vi.mocked(getProductReferenceImagesByCategoryKey).mockResolvedValueOnce(
+      Array.from({ length: 8 }, (_, i) => `https://db.com/p${i + 1}.jpg`)
+    );
+
+    const result = await resolveSkuReferences(mockSupabase, "sku", "ugc", {
+      influencers: ["https://faces.com/a.jpg", "https://faces.com/b.jpg", "https://faces.com/c.jpg"],
+    });
+
+    // 8 products + only 1 influencer fits under the ≤9 combined cap
+    expect(result.productImages).toHaveLength(8);
+    expect(result.influencerImages).toHaveLength(1);
+    expect(result.productImages.length + result.influencerImages.length).toBe(9);
+  });
+
+  it("override suppresses degraded even for a tool SKU with no categoryKey (D-08 > invalid-SKU)", async () => {
+    vi.mocked(getProductTruthBySku).mockReturnValueOnce({
+      sku: "lash-wand",
+      displayName: "Lash Wand",
+      lashType: "tools",
+      bandMaterial: "none",
+      magneticClosure: false,
+      packagingType: "tool",
+      colorTone: "black",
+      retired: false,
+      // no categoryKey
+    } as any);
+
+    const result = await resolveSkuReferences(mockSupabase, "lash-wand", "ugc", {
+      products: ["https://custom.com/uploaded-product.jpg"],
+    });
+
+    expect(result.degraded).toBe(false);
+    expect(result.degradedMessage).toBeUndefined();
+    expect(result.productImages).toEqual(["https://custom.com/uploaded-product.jpg"]);
+  });
+
+  it("override images suppress degraded for an unknown SKU (getProductTruthBySku undefined)", async () => {
+    vi.mocked(getProductTruthBySku).mockReturnValueOnce(undefined as any);
+
+    const result = await resolveSkuReferences(mockSupabase, "unknown-sku", "multi_reference", {
+      images: ["https://custom.com/ref1.jpg", "https://custom.com/ref2.jpg"],
+    });
+
+    expect(result.degraded).toBe(false);
+    expect(result.images).toEqual([
+      "https://custom.com/ref1.jpg",
+      "https://custom.com/ref2.jpg",
+    ]);
+  });
+});

@@ -59,29 +59,53 @@ export async function resolveSkuReferences(
   mode: SeedanceMode,
   requestBodyRefs?: RequestBodyRefs
 ): Promise<ResolvedReferences> {
-  // ── SKU validation and DB lookup ──
+  // ── Request-body overrides (D-08) ──
+  // A non-empty array in requestBodyRefs wins over the DB for that field.
+  // An absent/empty array means "fall back to the DB-resolved refs".
+  const overrideProducts =
+    requestBodyRefs?.products && requestBodyRefs.products.length > 0
+      ? requestBodyRefs.products
+      : undefined;
+  const overrideInfluencers =
+    requestBodyRefs?.influencers && requestBodyRefs.influencers.length > 0
+      ? requestBodyRefs.influencers
+      : undefined;
+  const overrideImages =
+    requestBodyRefs?.images && requestBodyRefs.images.length > 0
+      ? requestBodyRefs.images
+      : undefined;
+
+  // ── DB image resolution (D-04) ──
+  // Empty when the SKU is missing/unknown/a tool (no categoryKey) or the query fails.
   const productTruth = sku ? getProductTruthBySku(sku) : undefined;
-
-  if (!sku || !productTruth || !productTruth.categoryKey) {
-    // SKU is undefined, unknown, or tool (no categoryKey)
-    return {
-      productImages: [],
-      influencerImages: [],
-      images: [],
-      degraded: true,
-      degradedMessage: DEGRADED_MESSAGE,
-    };
-  }
-
-  // ── Image resolution from DB (D-04) ──
   let dbImages: string[] = [];
-  try {
-    dbImages = await getProductReferenceImagesByCategoryKey(
-      supabase,
-      productTruth.categoryKey
-    );
-  } catch {
-    // Graceful error handling: if DB query fails, treat as degraded
+  if (productTruth?.categoryKey) {
+    try {
+      dbImages = await getProductReferenceImagesByCategoryKey(
+        supabase,
+        productTruth.categoryKey
+      );
+    } catch {
+      // Graceful: a DB failure resolves to no DB refs (degraded unless overridden).
+      dbImages = [];
+    }
+  }
+
+  // ── Per-field sources: override wins, else DB. ──
+  // The DB reference library holds only PRODUCT shots, so influencers/avatars
+  // come exclusively from a caller-supplied override (there is no DB source).
+  const productsToUse = overrideProducts ?? dbImages;
+  const influencersToUse = overrideInfluencers ?? [];
+  const imagesToUse = overrideImages ?? dbImages;
+
+  // ── Degradation (D-06) ──
+  // Degraded only when NO reference is available from ANY source for this request.
+  // A request-body override therefore always suppresses degraded (D-08).
+  const hasAnyRef =
+    productsToUse.length > 0 ||
+    influencersToUse.length > 0 ||
+    imagesToUse.length > 0;
+  if (!hasAnyRef) {
     return {
       productImages: [],
       influencerImages: [],
@@ -91,46 +115,12 @@ export async function resolveSkuReferences(
     };
   }
 
-  // ── Apply request-body override precedence (D-08) ──
-  // If caller supplied non-empty custom refs, use them for that field.
-  // Empty arrays in requestBodyRefs mean "use DB as fallback".
-  let imagesToUse = dbImages;
-  let productsToUse = dbImages;
-  let influencersToUse: string[] = [];
-
-  if (requestBodyRefs?.products && requestBodyRefs.products.length > 0) {
-    productsToUse = requestBodyRefs.products;
-  }
-  if (requestBodyRefs?.influencers && requestBodyRefs.influencers.length > 0) {
-    influencersToUse = requestBodyRefs.influencers;
-  }
-  if (requestBodyRefs?.images && requestBodyRefs.images.length > 0) {
-    imagesToUse = requestBodyRefs.images;
-  }
-
-  // If any request-body override was used, don't set degraded
-  const hasAnyOverride =
-    (requestBodyRefs?.products && requestBodyRefs.products.length > 0) ||
-    (requestBodyRefs?.influencers && requestBodyRefs.influencers.length > 0) ||
-    (requestBodyRefs?.images && requestBodyRefs.images.length > 0);
-
-  // ── Check for degradation (D-06) ──
-  if (imagesToUse.length === 0) {
-    return {
-      productImages: [],
-      influencerImages: [],
-      images: [],
-      degraded: true,
-      degradedMessage: DEGRADED_MESSAGE,
-    };
-  }
-
-  // ── Apply per-mode field assignment (D-01, D-04) ──
-  const result = applyPerModeShaping(productsToUse, influencersToUse, imagesToUse, mode);
-
-  // Log resolver output for audit trail (per 29-PATTERNS.md)
-  console.log(
-    `[seedance] Resolver: sku=${sku}, mode=${mode}, productImages.length=${result.productImages.length}, influencerImages.length=${result.influencerImages.length}, images.length=${result.images.length}, degraded=false`
+  // ── Per-mode field assignment (D-01, D-04) ──
+  const result = applyPerModeShaping(
+    productsToUse,
+    influencersToUse,
+    imagesToUse,
+    mode
   );
 
   return {
@@ -162,11 +152,12 @@ function applyPerModeShaping(
   };
 
   if (mode === "ugc") {
-    // UGC: products[] + influencers[] (≤9 combined)
-    // Distribute up to 9 images across products and influencers
-    const combined = [...productsRef, ...influencersRef];
-    base.productImages = combined.slice(0, 9);
-    base.influencerImages = [];
+    // UGC: products[] and influencers[] are SEPARATE Enhancor fields with a
+    // ≤9 COMBINED cap. Product refs → products[]; face/avatar refs → influencers[].
+    // Never collapse them into one field (would miscategorize a face as a product).
+    base.productImages = productsRef.slice(0, 9);
+    const remaining = Math.max(0, 9 - base.productImages.length);
+    base.influencerImages = influencersRef.slice(0, remaining);
     return base;
   }
 
