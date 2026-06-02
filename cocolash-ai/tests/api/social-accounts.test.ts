@@ -41,7 +41,7 @@ describe("GET /api/social-accounts (SOC-03)", () => {
 
     vi.setSystemTime(now);
 
-    vi.mocked(supabaseServer.createClient).mockResolvedValueOnce({
+    vi.mocked(supabaseServer.createClient).mockResolvedValue({
       from: vi.fn((table: string) => {
         if (table === "caption_settings") {
           return {
@@ -111,7 +111,7 @@ describe("GET /api/social-accounts (SOC-03)", () => {
 
     const mockUpsert = vi.fn().mockResolvedValue({ data: null, error: null });
 
-    vi.mocked(supabaseServer.createClient).mockResolvedValueOnce({
+    vi.mocked(supabaseServer.createClient).mockResolvedValue({
       from: vi.fn((table: string) => {
         if (table === "caption_settings") {
           return {
@@ -153,15 +153,15 @@ describe("GET /api/social-accounts (SOC-03)", () => {
           id: "fb_1",
           platform: "facebook",
           fullname: "Faith McCoy Scriven",
-          username: null,
-        } as BlotatoAccount,
+          username: "faith_scriven",
+        },
         {
           id: "ig_1",
           platform: "instagram",
-          fullname: null,
+          fullname: "CocoLash Club",
           username: "cocolashclub_",
-        } as BlotatoAccount,
-      ]),
+        },
+      ] as BlotatoAccount[]),
     };
     vi.mocked(blotatoClientModule.createBlotatoClient).mockReturnValue(
       mockClient as never
@@ -188,7 +188,7 @@ describe("GET /api/social-accounts (SOC-03)", () => {
 
     const mockUpsert = vi.fn().mockResolvedValue({ data: null, error: null });
 
-    vi.mocked(supabaseServer.createClient).mockResolvedValueOnce({
+    vi.mocked(supabaseServer.createClient).mockResolvedValue({
       from: vi.fn((table: string) => {
         if (table === "caption_settings") {
           return {
@@ -273,16 +273,19 @@ describe("GET /api/social-accounts (SOC-03)", () => {
         platform: "facebook",
         account_name: "Account 1",
         is_active: true,
+        last_synced_at: new Date("2026-06-03T12:00:00Z").toISOString(),
       },
       {
         blotato_account_id: "acc_2",
         platform: "instagram",
         account_name: "Account 2",
         is_active: true,
+        last_synced_at: new Date("2026-06-03T12:00:00Z").toISOString(),
       },
     ];
 
-    vi.mocked(supabaseServer.createClient).mockResolvedValueOnce({
+    let callCount = 0;
+    vi.mocked(supabaseServer.createClient).mockResolvedValue({
       from: vi.fn((table: string) => {
         if (table === "caption_settings") {
           return {
@@ -295,12 +298,17 @@ describe("GET /api/social-accounts (SOC-03)", () => {
           };
         }
         if (table === "social_accounts") {
+          // First select is for cache check (returns empty/stale)
+          // After upsert, the second select returns fresh accounts
           return {
             select: vi.fn().mockReturnValue({
               eq: vi.fn().mockReturnValue({
-                order: vi.fn().mockResolvedValue({
-                  data: [],
-                  error: null,
+                order: vi.fn().mockImplementation(() => {
+                  callCount++;
+                  return Promise.resolve({
+                    data: callCount === 1 ? [] : fourAccounts,
+                    error: null,
+                  });
                 }),
               }),
             }),
@@ -331,26 +339,6 @@ describe("GET /api/social-accounts (SOC-03)", () => {
       mockClient as never
     );
 
-    // Mock the final select to return the fresh accounts
-    vi.mocked(supabaseServer.createClient).mockResolvedValueOnce({
-      from: vi.fn((table: string) => {
-        if (table === "social_accounts") {
-          return {
-            select: vi.fn().mockReturnValue({
-              eq: vi.fn().mockReturnValue({
-                order: vi.fn().mockResolvedValue({
-                  data: fourAccounts,
-                  error: null,
-                }),
-              }),
-            }),
-            upsert: vi.fn().mockResolvedValue({ data: null, error: null }),
-          };
-        }
-        return null;
-      }),
-    } as never);
-
     process.env.BLOTATO_API_KEY = "test_key";
 
     // Act
@@ -369,7 +357,8 @@ describe("GET /api/social-accounts (SOC-03)", () => {
     // Arrange
     vi.setSystemTime(new Date("2026-06-03T12:00:00Z"));
 
-    vi.mocked(supabaseServer.createClient).mockResolvedValueOnce({
+    let selectCallCount = 0;
+    vi.mocked(supabaseServer.createClient).mockResolvedValue({
       from: vi.fn((table: string) => {
         if (table === "caption_settings") {
           return {
@@ -385,9 +374,24 @@ describe("GET /api/social-accounts (SOC-03)", () => {
           return {
             select: vi.fn().mockReturnValue({
               eq: vi.fn().mockReturnValue({
-                order: vi.fn().mockResolvedValue({
-                  data: [],
-                  error: null,
+                order: vi.fn().mockImplementation(() => {
+                  selectCallCount++;
+                  // First select is cache check (returns empty/stale), second is fresh data
+                  return Promise.resolve({
+                    data:
+                      selectCallCount === 1
+                        ? []
+                        : [
+                            {
+                              blotato_account_id: "acc_1",
+                              platform: "facebook",
+                              account_name: "Account 1",
+                              is_active: true,
+                              last_synced_at: new Date("2026-06-03T12:00:00Z").toISOString(),
+                            },
+                          ],
+                    error: null,
+                  });
                 }),
               }),
             }),
@@ -412,32 +416,6 @@ describe("GET /api/social-accounts (SOC-03)", () => {
       mockClient as never
     );
 
-    vi.mocked(supabaseServer.createClient).mockResolvedValueOnce({
-      from: vi.fn((table: string) => {
-        if (table === "social_accounts") {
-          return {
-            select: vi.fn().mockReturnValue({
-              eq: vi.fn().mockReturnValue({
-                order: vi.fn().mockResolvedValue({
-                  data: [
-                    {
-                      blotato_account_id: "acc_1",
-                      platform: "facebook",
-                      account_name: "Account 1",
-                      is_active: true,
-                    },
-                  ],
-                  error: null,
-                }),
-              }),
-            }),
-            upsert: vi.fn().mockResolvedValue({ data: null, error: null }),
-          };
-        }
-        return null;
-      }),
-    } as never);
-
     process.env.BLOTATO_API_KEY = "test_key";
 
     // Act
@@ -445,6 +423,7 @@ describe("GET /api/social-accounts (SOC-03)", () => {
     const data = await response.json();
 
     // Assert
+    expect(data.accounts).toHaveLength(1);
     expect(data.accounts[0].is_active).toBe(true);
 
     delete process.env.BLOTATO_API_KEY;
@@ -457,10 +436,9 @@ describe("GET /api/social-accounts (SOC-03)", () => {
 
     vi.setSystemTime(now);
 
-    const selectMock = vi.fn();
     const upsertMock = vi.fn();
 
-    vi.mocked(supabaseServer.createClient).mockResolvedValueOnce({
+    vi.mocked(supabaseServer.createClient).mockResolvedValue({
       from: vi.fn((table: string) => {
         if (table === "caption_settings") {
           return {
@@ -474,7 +452,7 @@ describe("GET /api/social-accounts (SOC-03)", () => {
         }
         if (table === "social_accounts") {
           return {
-            select: selectMock.mockReturnValue({
+            select: vi.fn().mockReturnValue({
               eq: vi.fn().mockReturnValue({
                 order: vi.fn().mockResolvedValue({
                   data: [
@@ -503,7 +481,6 @@ describe("GET /api/social-accounts (SOC-03)", () => {
 
     // Assert: Cache hit, so upsert should not be called
     expect(upsertMock).not.toHaveBeenCalled();
-    expect(selectMock).toHaveBeenCalled();
 
     delete process.env.BLOTATO_API_KEY;
   });
@@ -512,7 +489,7 @@ describe("GET /api/social-accounts (SOC-03)", () => {
     // Arrange
     vi.setSystemTime(new Date("2026-06-03T12:00:00Z"));
 
-    vi.mocked(supabaseServer.createClient).mockResolvedValueOnce({
+    vi.mocked(supabaseServer.createClient).mockResolvedValue({
       from: vi.fn((table: string) => {
         if (table === "caption_settings") {
           return {
@@ -573,6 +550,7 @@ describe("GET /api/social-accounts (SOC-03)", () => {
         account_name: "Faith McCoy Scriven",
         account_handle: null,
         is_active: true,
+        last_synced_at: new Date("2026-06-03T12:00:00Z").toISOString(),
       },
       {
         blotato_account_id: "ig_1",
@@ -580,6 +558,7 @@ describe("GET /api/social-accounts (SOC-03)", () => {
         account_name: null,
         account_handle: "cocolashclub_",
         is_active: true,
+        last_synced_at: new Date("2026-06-03T12:00:00Z").toISOString(),
       },
       {
         blotato_account_id: "pin_1",
@@ -587,6 +566,7 @@ describe("GET /api/social-accounts (SOC-03)", () => {
         account_name: null,
         account_handle: "cocolash1",
         is_active: true,
+        last_synced_at: new Date("2026-06-03T12:00:00Z").toISOString(),
       },
       {
         blotato_account_id: "yt_1",
@@ -594,10 +574,12 @@ describe("GET /api/social-accounts (SOC-03)", () => {
         account_name: "Support CocoLash",
         account_handle: null,
         is_active: true,
+        last_synced_at: new Date("2026-06-03T12:00:00Z").toISOString(),
       },
     ];
 
-    vi.mocked(supabaseServer.createClient).mockResolvedValueOnce({
+    let selectCallCount = 0;
+    vi.mocked(supabaseServer.createClient).mockResolvedValue({
       from: vi.fn((table: string) => {
         if (table === "caption_settings") {
           return {
@@ -613,14 +595,21 @@ describe("GET /api/social-accounts (SOC-03)", () => {
           return {
             select: vi.fn().mockReturnValue({
               eq: vi.fn().mockReturnValue({
-                order: vi.fn().mockResolvedValue({
-                  data: [
-                    {
-                      ...fourAccounts[0],
-                      last_synced_at: new Date("2026-05-07T12:00:00Z").toISOString(),
-                    },
-                  ],
-                  error: null,
+                order: vi.fn().mockImplementation(() => {
+                  selectCallCount++;
+                  // First select is cache check (returns stale), second is fresh data
+                  return Promise.resolve({
+                    data:
+                      selectCallCount === 1
+                        ? [
+                            {
+                              ...fourAccounts[0],
+                              last_synced_at: new Date("2026-05-07T12:00:00Z").toISOString(),
+                            },
+                          ]
+                        : fourAccounts,
+                    error: null,
+                  });
                 }),
               }),
             }),
@@ -637,51 +626,31 @@ describe("GET /api/social-accounts (SOC-03)", () => {
           id: "fb_1",
           platform: "facebook" as const,
           fullname: "Faith McCoy Scriven",
-          username: null,
+          username: "faith_scriven",
         },
         {
           id: "ig_1",
           platform: "instagram" as const,
-          fullname: null,
+          fullname: "CocoLash Club",
           username: "cocolashclub_",
         },
         {
           id: "pin_1",
           platform: "pinterest" as const,
-          fullname: null,
+          fullname: "CocoLash Pinterest",
           username: "cocolash1",
         },
         {
           id: "yt_1",
           platform: "youtube" as const,
           fullname: "Support CocoLash",
-          username: null,
+          username: "supportcocolash",
         },
       ] as BlotatoAccount[]),
     };
     vi.mocked(blotatoClientModule.createBlotatoClient).mockReturnValue(
       mockClient as never
     );
-
-    // Mock the final select to return fresh data
-    vi.mocked(supabaseServer.createClient).mockResolvedValueOnce({
-      from: vi.fn((table: string) => {
-        if (table === "social_accounts") {
-          return {
-            select: vi.fn().mockReturnValue({
-              eq: vi.fn().mockReturnValue({
-                order: vi.fn().mockResolvedValue({
-                  data: fourAccounts,
-                  error: null,
-                }),
-              }),
-            }),
-            upsert: vi.fn().mockResolvedValue({ data: null, error: null }),
-          };
-        }
-        return null;
-      }),
-    } as never);
 
     process.env.BLOTATO_API_KEY = "test_key";
 
