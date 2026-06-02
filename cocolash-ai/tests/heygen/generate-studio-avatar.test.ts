@@ -98,8 +98,11 @@ vi.mock("@/lib/brand/get-product-references", () => ({
  * beforeEach re-installs defaultFetch so a per-test override (RCH-01) never leaks.
  */
 function makeImageResponse(): Response {
-  const fakeJpegBuffer = Buffer.from("fake-jpeg-data", "utf-8");
-  return new Response(fakeJpegBuffer.toString("base64"), {
+  // Return RAW image bytes (not base64) so the route's
+  // Buffer.from(await resp.arrayBuffer()).toString("base64") is exercised realistically
+  // (mirrors a real HTTP image response; avoids a double-encode false-positive).
+  const fakeJpegBytes = new Uint8Array([0xff, 0xd8, 0xff, 0xe0, 0x00, 0x10]); // JPEG SOI marker
+  return new Response(fakeJpegBytes, {
     status: 200,
     headers: { "content-type": "image/jpeg" },
   });
@@ -290,7 +293,8 @@ describe("POST /api/heygen/generate-studio-avatar — reference conditioning", (
       // RCH-02: Assert prompt contains canonical product-truth field labels
       // These must match the Seedance Director's exact wording from product-truth-injection.test.ts
       expect(prompt as string).toMatch(/^- Display name:\s*Single Black Tray$/m);
-      expect(prompt as string).toMatch(/^- Lash type:\s*clusters$/m);
+      // Includes the optional length range, exactly like the Seedance Director (D-04 parity).
+      expect(prompt as string).toMatch(/^- Lash type:\s*clusters\s*\(6-14mm\)$/m);
       expect(prompt as string).toMatch(/^- Band material:\s*cotton$/m);
       expect(prompt as string).toMatch(/^- Magnetic closure:\s*NO\s*—\s*never claim magnetic$/m);
       expect(prompt as string).toMatch(/^- Packaging:\s*single-pack lash tray$/m);

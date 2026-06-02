@@ -186,7 +186,13 @@ function buildProductTruthBlock(productTruth: ProductTruthEntry): string {
   const lines: string[] = [];
   lines.push("PRODUCT TRUTH (use as anchor — do not contradict):");
   lines.push(`- Display name: ${productTruth.displayName}`);
-  lines.push(`- Lash type: ${productTruth.lashType}`);
+  // Mirror the Seedance Director's exact wording (one product-truth source, both pipelines):
+  // include the optional length range so the two pipelines are byte-identical (D-04).
+  lines.push(
+    `- Lash type: ${productTruth.lashType}${
+      productTruth.lengthRange ? ` (${productTruth.lengthRange})` : ""
+    }`
+  );
   lines.push(`- Band material: ${productTruth.bandMaterial}`);
   lines.push(
     `- Magnetic closure: ${

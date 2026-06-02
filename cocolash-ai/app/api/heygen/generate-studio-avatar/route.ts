@@ -216,24 +216,27 @@ const VALID_LASH_STYLES: LashStyle[] = [
 const VALID_ASPECT_RATIOS: VideoAspectRatio[] = ["9:16", "1:1", "16:9"];
 
 // Normalize ethnicity: "south-asian" -> "South Asian", capitalize each word
+// Normalize ethnicity: "south-asian" / "SOUTH-ASIAN" -> "South Asian"
 function normalizeEthnicity(value: unknown): string | undefined {
   if (typeof value !== "string") return undefined;
   return value
+    .toLowerCase()
     .split("-")
     .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
     .join(" ");
 }
 
-// Normalize skin tone: "medium" -> "Medium", capitalize first letter only
+// Normalize skin tone: "medium" / "MEDIUM" -> "Medium" (capitalize first letter only)
 function normalizeSkinTone(value: unknown): string | undefined {
   if (typeof value !== "string") return undefined;
-  return value.charAt(0).toUpperCase() + value.slice(1);
+  const lower = value.toLowerCase();
+  return lower.charAt(0).toUpperCase() + lower.slice(1);
 }
 
-// Normalize hair style: "straight-long" -> "Straight long", first word cap only
+// Normalize hair style: "straight-long" / "STRAIGHT-LONG" -> "Straight long"
 function normalizeHairStyle(value: unknown): string | undefined {
   if (typeof value !== "string") return undefined;
-  const withSpaces = value.replace(/-/g, " ");
+  const withSpaces = value.toLowerCase().replace(/-/g, " ");
   return withSpaces.charAt(0).toUpperCase() + withSpaces.slice(1);
 }
 
