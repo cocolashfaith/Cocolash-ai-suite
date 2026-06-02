@@ -88,27 +88,34 @@ vi.mock("@/lib/brand/get-product-references", () => ({
 
 /**
  * Mock global fetch: converts URLs to base64-encoded image data.
- * D-05 — Fetch each ref URL to base64; per-image failure is logged and omitted.
+ *
+ * Two named implementations:
+ * - allSuccessFetch: every ref URL fetches successfully (used by RCH-01 to prove that
+ *   ALL of a SKU's reference images reach generateImage — none silently dropped).
+ * - defaultFetch: fails `ref-2.jpg` so the D-05 graceful-degradation test can assert that
+ *   a single failed fetch is logged and omitted while the rest still flow through.
+ *
+ * beforeEach re-installs defaultFetch so a per-test override (RCH-01) never leaks.
  */
-global.fetch = vi.fn(async (url: unknown) => {
-  const urlStr = typeof url === "string" ? url : String(url);
+function makeImageResponse(): Response {
+  const fakeJpegBuffer = Buffer.from("fake-jpeg-data", "utf-8");
+  return new Response(fakeJpegBuffer.toString("base64"), {
+    status: 200,
+    headers: { "content-type": "image/jpeg" },
+  });
+}
 
-  // Simulate fetch error for a specific URL (for D-05 test)
+const allSuccessFetch = async (_url: unknown): Promise<Response> => makeImageResponse();
+
+const defaultFetch = async (url: unknown): Promise<Response> => {
+  const urlStr = typeof url === "string" ? url : String(url);
   if (urlStr.includes("ref-2.jpg")) {
     throw new Error("Simulated fetch error: 500 Server Error");
   }
+  return makeImageResponse();
+};
 
-  // Simulate successful fetch with fake JPEG bytes
-  const fakeJpegBuffer = Buffer.from("fake-jpeg-data", "utf-8");
-  const base64Data = fakeJpegBuffer.toString("base64");
-
-  return new Response(base64Data, {
-    status: 200,
-    headers: {
-      "content-type": "image/jpeg",
-    },
-  });
-});
+global.fetch = vi.fn(defaultFetch) as typeof fetch;
 
 /**
  * Mock generateImage: spy on calls to assert referenceImages and prompt content.
@@ -172,6 +179,8 @@ describe("POST /api/heygen/generate-studio-avatar — reference conditioning", (
   beforeEach(() => {
     // Reset all mocks before each test
     vi.clearAllMocks();
+    // Re-install the default fetch (fails ref-2.jpg) so a per-test override never leaks.
+    vi.mocked(global.fetch).mockImplementation(defaultFetch as typeof fetch);
     mockGenerateImage.mockResolvedValueOnce({
       buffer: Buffer.from("fake-image-data"),
       mimeType: "image/png",
@@ -204,6 +213,11 @@ describe("POST /api/heygen/generate-studio-avatar — reference conditioning", (
         productSku: "single-black-tray", // ← D-01: SKU parameter
       };
 
+      // RCH-01 proves that when the SKU's reference images are all available, ALL of
+      // them reach generateImage (none silently dropped). Use the all-success fetch so
+      // this is independent of D-05's deliberate single-image failure case.
+      vi.mocked(global.fetch).mockImplementation(allSuccessFetch as typeof fetch);
+
       const mockRequest = new NextRequest(new URL("http://localhost:3000/api/heygen/generate-studio-avatar"), {
         method: "POST",
         body: JSON.stringify(body),
@@ -215,9 +229,9 @@ describe("POST /api/heygen/generate-studio-avatar — reference conditioning", (
       const responseData = await response.json();
 
       // Assert: generateImage was called with referenceImages array
-      // RCH-01: Verify param 3 (referenceImages) is non-empty
+      // RCH-01: Verify param 3 (referenceImages) is non-empty and carries all 3 refs
       expect(mockGenerateImage).toHaveBeenCalled();
-      const calls = mockGenerateImage.mock.calls as [string, string, { base64Data: string; mimeType: string }[]][];
+      const calls = mockGenerateImage.mock.calls as unknown as [string, string, { base64Data: string; mimeType: string }[]][];
       expect(calls.length).toBeGreaterThan(0);
 
       const [prompt, aspect, referenceImages] = calls[0];
@@ -270,7 +284,7 @@ describe("POST /api/heygen/generate-studio-avatar — reference conditioning", (
 
       // Assert: Capture prompt passed to generateImage (param 1)
       expect(mockGenerateImage).toHaveBeenCalled();
-      const calls = mockGenerateImage.mock.calls as [string, string, { base64Data: string; mimeType: string }[]][];
+      const calls = mockGenerateImage.mock.calls as unknown as [string, string, { base64Data: string; mimeType: string }[]][];
       const [prompt] = calls[0];
 
       // RCH-02: Assert prompt contains canonical product-truth field labels
@@ -368,7 +382,7 @@ describe("POST /api/heygen/generate-studio-avatar — reference conditioning", (
       expect(mockGenerateImage).toHaveBeenCalled();
 
       // Verify: prompt does NOT contain product-truth labels
-      const calls = mockGenerateImage.mock.calls as [string, string, { base64Data: string; mimeType: string }[]][];
+      const calls = mockGenerateImage.mock.calls as unknown as [string, string, { base64Data: string; mimeType: string }[]][];
       const [prompt] = calls[0];
       expect(prompt as string).not.toMatch(/^- Display name:/m);
       expect(prompt as string).not.toMatch(/^- Lash type:/m);
@@ -410,7 +424,7 @@ describe("POST /api/heygen/generate-studio-avatar — reference conditioning", (
 
       // Assert: generateImage was called with 2 ReferenceImage objects (1st and 3rd succeeded, 2nd failed)
       expect(mockGenerateImage).toHaveBeenCalled();
-      const calls = mockGenerateImage.mock.calls as [string, string, { base64Data: string; mimeType: string }[]][];
+      const calls = mockGenerateImage.mock.calls as unknown as [string, string, { base64Data: string; mimeType: string }[]][];
       const [, , referenceImages] = calls[0];
 
       // D-05: Exactly 2 successful references
