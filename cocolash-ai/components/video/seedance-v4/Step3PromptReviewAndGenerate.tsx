@@ -43,6 +43,7 @@ export function Step3PromptReviewAndGenerate({ state, setState, onReset }: Step3
   );
   const [isGenerating, setIsGenerating] = useState(false);
   const [generationStarted, setGenerationStarted] = useState(false);
+  const [isSkuDegraded, setIsSkuDegraded] = useState(false);
 
   const writeDirectorPrompt = useCallback(async () => {
     setIsWriting(true);
@@ -91,6 +92,41 @@ export function Step3PromptReviewAndGenerate({ state, setState, onReset }: Step3
   }, [state, setState]);
 
   /**
+   * Pre-check SKU degradation status (D-04) — call /api/seedance/check-references
+   * when the SKU or mode changes. This determines whether to show a warning banner
+   * before the user clicks "Generate".
+   */
+  useEffect(() => {
+    async function checkSkuDegradation() {
+      if (!state.productSku || !state.mode) {
+        setIsSkuDegraded(false);
+        return;
+      }
+
+      try {
+        const res = await fetch(
+          `/api/seedance/check-references?sku=${encodeURIComponent(
+            state.productSku
+          )}&mode=${state.mode}`
+        );
+        if (!res.ok) {
+          // Safe default: if check fails, don't warn
+          setIsSkuDegraded(false);
+          return;
+        }
+
+        const data = await res.json();
+        setIsSkuDegraded(data.degraded === true);
+      } catch {
+        // Safe default: if check throws, don't warn
+        setIsSkuDegraded(false);
+      }
+    }
+
+    void checkSkuDegradation();
+  }, [state.productSku, state.mode]);
+
+  /**
    * Run the Director when:
    *   - First mount and no cached prompt exists, OR
    *   - The user navigated back to a previous step, changed inputs, and came
@@ -130,6 +166,16 @@ export function Step3PromptReviewAndGenerate({ state, setState, onReset }: Step3
       if (!res.ok) {
         throw new Error(data.error || "Seedance queue submission failed");
       }
+
+      // Check for degraded flag from /api/seedance/generate response (D-04)
+      // and display safety toast if the product had no reference images
+      if (data.degraded) {
+        toast.warning(
+          `⚠️ This product has no reference images. The video may not show it accurately.`,
+          { duration: 7000 }
+        );
+      }
+
       toast.success(
         "Submitted to Seedance. You'll see the video in the gallery when it's ready."
       );
@@ -298,6 +344,21 @@ export function Step3PromptReviewAndGenerate({ state, setState, onReset }: Step3
             state.mode !== "lipsyncing" && state.mode !== "text_to_video",
         })}
       />
+
+      {/* Pre-check warning banner (D-04) — shown before user clicks Generate */}
+      {isSkuDegraded && (
+        <div className="flex items-start gap-3 rounded-xl border-2 border-yellow-200 bg-yellow-50 p-4">
+          <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0 text-yellow-600" />
+          <div>
+            <p className="text-sm font-semibold text-yellow-900">
+              Limited reference images
+            </p>
+            <p className="mt-0.5 text-xs text-yellow-800">
+              This product has no reference images. Your video may not be perfectly accurate, but you can still proceed.
+            </p>
+          </div>
+        </div>
+      )}
 
       {/* Approve & generate */}
       {generationStarted && !isGenerating ? (
