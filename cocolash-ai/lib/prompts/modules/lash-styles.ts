@@ -23,6 +23,8 @@ const LASH_STYLE_DESCRIPTORS: Record<LashStyle, string> = {
     "hybrid lash extensions combining classic individual lashes with volume fans, the perfect balance of natural definition and glamorous fullness",
   "mega-volume":
     "mega-volume lash extensions with ultra-dense, fluffy fans creating the most dramatic and full effect, maximum impact with feathery-soft texture",
+  clusters:
+    "cluster lash extensions with pre-formed bundles creating instant volume and definition, each cluster combining multiple fibers for a bold, dramatic look with effortless fullness",
 };
 
 /**
@@ -44,4 +46,5 @@ export const LASH_STYLE_OPTIONS: { value: LashStyle; label: string; description:
   { value: "doll-eye", label: "Doll Eye", description: "Wide-eyed, center-focused curl" },
   { value: "hybrid", label: "Hybrid", description: "Classic + volume blend" },
   { value: "mega-volume", label: "Mega Volume", description: "Ultra-dense, maximum impact" },
+  { value: "clusters", label: "Clusters", description: "Pre-formed bundles for instant volume" },
 ];

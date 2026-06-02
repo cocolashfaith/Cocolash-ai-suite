@@ -115,7 +115,8 @@ export type LashStyle =
   | "wispy"
   | "doll-eye"
   | "hybrid"
-  | "mega-volume";
+  | "mega-volume"
+  | "clusters";
 
 // ── Hair Styles ───────────────────────────────────────────────
 export type HairStyleGroup = "natural" | "protective" | "styled";
