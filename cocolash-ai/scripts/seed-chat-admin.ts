@@ -30,6 +30,14 @@ if (!email) {
   process.exit(1);
 }
 
+// Email format validation
+const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+if (!emailRegex.test(email)) {
+  // eslint-disable-next-line no-console
+  console.error(`❌ Invalid email format: "${email}"`);
+  process.exit(1);
+}
+
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
 const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
@@ -51,7 +59,11 @@ const supabase = createClient(supabaseUrl, serviceRoleKey);
 
     if (!userId) {
       // eslint-disable-next-line no-console
-      console.error(`No auth user found for "${email}". They must sign in once first.`);
+      console.error(
+        `❌ Error: User with email "${email}" has not signed in yet.\n\n` +
+        `Please ask them to sign in to the application first (create an account or log in).\n` +
+        `Once they have signed in, their record will exist in auth.users and you can seed them as an admin.`
+      );
       process.exit(1);
     }
 
@@ -69,7 +81,7 @@ const supabase = createClient(supabaseUrl, serviceRoleKey);
     }
 
     // eslint-disable-next-line no-console
-    console.log(`Seeded ${email} as ${role}`);
+    console.log(`✓ Seeded ${email} as chat admin (role: ${role}).\nThey can now access /chatbot/admin.`);
     process.exit(0);
   } catch (err) {
     // eslint-disable-next-line no-console
