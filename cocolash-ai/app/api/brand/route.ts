@@ -5,6 +5,29 @@ import { MASTER_BRAND_DNA } from "@/lib/prompts/brand-dna";
 import { DEFAULT_NEGATIVE_PROMPT } from "@/lib/prompts/negative";
 
 /**
+ * Reframe the misleading "60-30-10" color framing in a stored brand DNA prompt
+ * while PRESERVING the actual brand colors. Faith's DAT-01 feedback was that the
+ * rigid "60% Primary / 30% Secondary / 10% Accents" 60-30-10 rule "doesn't add up";
+ * this relabels it as dominant/supporting/accent guidelines without dropping the
+ * hex colors that follow each label. Idempotent; safe on null/undefined.
+ */
+export function scrubColorRuleFraming(
+  text: string | null | undefined
+): string | null | undefined {
+  if (!text) return text;
+  return text
+    .replace(
+      /\(60-?30-?10[^)]*\)/gi,
+      "(dominant / supporting / accent — guidelines, not hard ratios)"
+    )
+    .replace(/-\s*60%\s*Primary\b\s*:?/gi, "- Dominant (~60%):")
+    .replace(/-\s*30%\s*Secondary\b\s*:?/gi, "- Supporting (~30%):")
+    .replace(/-\s*10%\s*Accents?\b\s*:?/gi, "- Accents (~10%):")
+    .replace(/60-?30-?10\s*Rule/gi, "dominant/supporting/accent guideline")
+    .replace(/60-?30-?10/g, "dominant/supporting/accent");
+}
+
+/**
  * GET /api/brand — Fetch the brand profile.
  *
  * Returns the first (and only) brand profile from the database.
@@ -39,11 +62,9 @@ export async function GET() {
         "Dominant (~60%): Soft Pink or Creamy Beige | Supporting (~30%): Warm/Golden Brown | " +
         "Accents (~10%): Charcoal or Clean White — percentages are guidelines, not hard ratios.";
 
-      // Scrub any "60-30-10" substring from the served brand_dna_prompt
-      // to ensure consistency with the corrected rule
-      const scrubbed_brand_dna = profile.brand_dna_prompt
-        ? profile.brand_dna_prompt.replace(/.*60-30-10.*/g, "")
-        : profile.brand_dna_prompt;
+      // Reframe the misleading "60-30-10" color framing in the served
+      // brand_dna_prompt while PRESERVING the actual brand colors (DAT-01).
+      const scrubbed_brand_dna = scrubColorRuleFraming(profile.brand_dna_prompt);
 
       return NextResponse.json({
         profile: {

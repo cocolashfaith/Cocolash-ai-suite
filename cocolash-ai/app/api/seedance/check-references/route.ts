@@ -26,6 +26,24 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
       );
     }
 
+    // Validate mode against the known SeedanceMode union before casting
+    // (a raw query string must not be trusted as a typed enum).
+    const VALID_MODES: readonly SeedanceMode[] = [
+      "ugc",
+      "multi_reference",
+      "multi_frame",
+      "lipsyncing",
+      "first_n_last_frames",
+    ];
+    if (!VALID_MODES.includes(modeParam as SeedanceMode)) {
+      return NextResponse.json(
+        {
+          error: `Invalid mode. Must be one of: ${VALID_MODES.join(", ")}`,
+        },
+        { status: 400 }
+      );
+    }
+
     const supabase = await createClient();
     const mode = modeParam as SeedanceMode;
 

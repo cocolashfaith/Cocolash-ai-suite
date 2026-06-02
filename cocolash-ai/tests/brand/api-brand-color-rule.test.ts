@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { COLOR_RULE } from "@/lib/constants/brand";
 import { MASTER_BRAND_DNA } from "@/lib/prompts/brand-dna";
+import { scrubColorRuleFraming } from "@/app/api/brand/route";
 
 /**
  * Phase 31 Wave 0 — RED phase test for DAT-01: Brand API color-rule override
@@ -68,22 +69,41 @@ describe("Phase 31 DAT-01 — /api/brand GET returns corrected color rule", () =
     // brand_profiles row contains staleBrandRule.
   });
 
-  it("override logic: when stored row is served, brand_dna_prompt is scrubbed of '60-30-10' string", () => {
-    // Arrange: Simulate the stale stored brand_dna_prompt
-    const staleBrandDnaPrompt =
-      "CocoLash is a premium lash brand... 60-30-10 Rule: 60% Primary Color..." +
-      "This is the old marketing copy that must be removed.";
+  it("scrubColorRuleFraming reframes the 60-30-10 framing while PRESERVING brand colors and other sections", () => {
+    // Arrange: the real stale brand_dna_prompt color section (per Phase 28 evidence)
+    const stale =
+      "2. LIGHTING: soft window light.\n" +
+      "3. COLOR PALETTE (60-30-10 Rule):\n" +
+      "   - 60% Primary: Soft Pink (#ead1c1), Creamy Beige (#ede5d6)\n" +
+      "   - 30% Secondary: Warm Dark Brown (#28150e), Golden Brown (#ce9765)\n" +
+      "   - 10% Accents: Charcoal (#242424), Clean White (#ffffff)\n" +
+      "4. MOOD: Confident, Friendly, Warm, Proud.";
 
-    // Assert: This is the problematic version that exists in production
-    expect(staleBrandDnaPrompt).toContain("60-30-10");
+    const scrubbed = scrubColorRuleFraming(stale) as string;
 
-    // After Wave 1 override in app/api/brand/route.ts, the served prompt
-    // must not contain "60-30-10" substring
-    const scrubbed = staleBrandDnaPrompt.replace(/.*60-30-10.*/, "");
+    // No misleading "60-30-10" framing remains
     expect(scrubbed).not.toContain("60-30-10");
+    // Rigid "60% Primary / 30% Secondary / 10% Accents" labels are reframed
+    expect(scrubbed).not.toMatch(/-\s*60%\s*Primary/i);
+    expect(scrubbed).toContain("Dominant (~60%):");
+    expect(scrubbed).toContain("Supporting (~30%):");
+    expect(scrubbed).toContain("Accents (~10%):");
+    // The actual brand colors are PRESERVED (the prior line-delete scrub orphaned/dropped these)
+    expect(scrubbed).toContain("#ead1c1");
+    expect(scrubbed).toContain("#ce9765");
+    expect(scrubbed).toContain("#242424");
+    // Unrelated sections are untouched
+    expect(scrubbed).toContain("2. LIGHTING: soft window light.");
+    expect(scrubbed).toContain("4. MOOD: Confident, Friendly, Warm, Proud.");
+  });
 
-    // Note: Wave 1 will implement scrubbing logic to remove "60-30-10" blocks
-    // from brand_dna_prompt when serving the response
+  it("scrubColorRuleFraming is safe on null/undefined and idempotent", () => {
+    expect(scrubColorRuleFraming(null)).toBeNull();
+    expect(scrubColorRuleFraming(undefined)).toBeUndefined();
+    const once = scrubColorRuleFraming("(60-30-10 Rule): - 60% Primary: Pink") as string;
+    const twice = scrubColorRuleFraming(once) as string;
+    expect(twice).toBe(once);
+    expect(twice).not.toContain("60-30-10");
   });
 
   it("fresh seeding scenario: new profile uses corrected COLOR_RULE constant (no '60-30-10')", () => {
