@@ -57,6 +57,8 @@ export interface SeedanceInput {
   fast_mode?: boolean;
   fixed_lens?: boolean;
   generate_audio?: boolean;
+  degraded?: boolean;
+  degradedMessage?: string;
 }
 
 export interface SeedanceCreateTaskRequest {
@@ -78,6 +80,8 @@ export interface SeedanceCreateTaskRequest {
   last_frame_image?: string;
   lipsyncing_audio?: string;
   multi_frame_prompts?: SeedanceMultiFramePrompt[];
+  degraded?: boolean;
+  degradedMessage?: string;
 }
 
 // ── Seedance API Response Types ──────────────────────────────

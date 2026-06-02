@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/server";
 import { generateVideoScript } from "@/lib/openrouter/captions";
 import { createSeedanceTask } from "@/lib/seedance/client";
+import { resolveSkuReferences } from "@/lib/seedance/reference-resolver";
 import {
   buildSeedanceDirectorPromptFallback,
   generateSeedanceDirectorPrompt,
@@ -157,6 +158,7 @@ export async function POST(request: NextRequest) {
       personDescription,
       productDescription: productDescriptionFromBody,
       overridePrompt,
+      productSku,
     } = body as SeedanceGenerateBody;
 
     // v4.1 callers don't supply legacy fields when overridePrompt is set.
@@ -320,7 +322,24 @@ export async function POST(request: NextRequest) {
 
     const videoId = videoRecord.id;
 
-    // ── Step 4: Submit to Enhancor.ai ────────────────────────
+    // ── Step 4: Resolve SKU references ──────────────────────────
+    // Call the reference resolver to get DB-sourced images per mode,
+    // honoring request-body overrides (D-08, D-09).
+    const {
+      productImages: resolvedProductImages,
+      influencerImages: resolvedInfluencerImages,
+      images: resolvedImagesFromDb,
+      firstFrameImage: resolvedFirstFrameImage,
+      lastFrameImage: resolvedLastFrameImage,
+      degraded,
+      degradedMessage,
+    } = await resolveSkuReferences(supabase, productSku, seedanceMode, {
+      products,
+      influencers,
+      images,
+    });
+
+    // ── Step 5: Submit to Enhancor.ai ────────────────────────
     try {
       console.log("[seedance/generate] Final prompt (full):", seedancePrompt);
       console.log("[seedance/generate] Reference URLs:", {
@@ -337,22 +356,15 @@ export async function POST(request: NextRequest) {
       const referenceImageUrls = productImageUrl ? [productImageUrl] : [];
       const referenceAudioUrls =
         effectiveAudioMode === "uploaded-audio" && audioUrl ? [audioUrl] : undefined;
-      const resolvedProducts =
-        products && products.length > 0
-          ? products
-          : productImageUrl
-          ? [productImageUrl]
-          : [];
-      const resolvedInfluencers =
-        influencers && influencers.length > 0
-          ? influencers
-          : personImageUrl
-          ? [personImageUrl]
-          : [];
-      const resolvedImages =
-        images && images.length > 0
-          ? images
-          : [personImageUrl, productImageUrl].filter(
+      // Use resolved refs from DB, with request-body as final fallback for backward compat
+      const finalProducts = (products && products.length > 0) ? products : resolvedProductImages;
+      const finalInfluencers = (influencers && influencers.length > 0) ? influencers : resolvedInfluencerImages;
+      const finalImages = (images && images.length > 0) ? images : resolvedImagesFromDb;
+      const finalFirstFrameImage = firstFrameImage || resolvedFirstFrameImage || personImageUrl;
+      const finalLastFrameImage = lastFrameImage || resolvedLastFrameImage;
+      const resolvedProducts = finalProducts;
+      const resolvedInfluencers = finalInfluencers;
+      const resolvedImages = finalImages.length > 0 ? finalImages : [personImageUrl, productImageUrl].filter(
               (u): u is string => typeof u === "string" && u.length > 0
             );
       const resolvedAudios =
@@ -366,8 +378,8 @@ export async function POST(request: NextRequest) {
           mode: seedanceMode,
           prompt: seedancePrompt,
           first_frame_url: personImageUrl,
-          first_frame_image: firstFrameImage || personImageUrl,
-          ...(lastFrameImage && { last_frame_image: lastFrameImage }),
+          first_frame_image: finalFirstFrameImage,
+          ...(finalLastFrameImage && { last_frame_image: finalLastFrameImage }),
           reference_image_urls: referenceImageUrls,
           ...(referenceAudioUrls && { reference_audio_urls: referenceAudioUrls }),
           products: resolvedProducts,
@@ -384,11 +396,12 @@ export async function POST(request: NextRequest) {
           fast_mode: fastMode,
           fixed_lens: fixedLens,
           generate_audio: generateAudio,
+          ...(degraded && { degraded: true, degradedMessage }),
         },
         getEnhancorWebhookUrl()
       );
 
-      // ── Step 5: Update DB with requestId ───────────────────
+      // ── Step 6: Update DB with requestId ───────────────────
       await supabase
         .from("generated_videos")
         .update({
@@ -413,6 +426,7 @@ export async function POST(request: NextRequest) {
         taskId,
         status: "processing",
         estimatedCost: Number(estimatedCost.toFixed(3)),
+        ...(degraded && { degraded: true, degradedMessage }),
       });
     } catch (submitError) {
       console.error("[seedance/generate] Enhancor submit error:", submitError);
