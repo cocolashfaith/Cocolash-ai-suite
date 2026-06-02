@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createAdminClient, createClient, getCurrentUserId } from "@/lib/supabase/server";
-import { generateImage } from "@/lib/gemini/generate";
+import { generateImage, type ReferenceImage } from "@/lib/gemini/generate";
 import { uploadGeneratedImage } from "@/lib/supabase/storage";
 import {
   buildMinimalSelectionsForVideoAsset,
@@ -27,6 +27,8 @@ import type {
   UGCHairStyle,
 } from "@/lib/seedance/ugc-image-prompt";
 import type { LashStyle, VideoAspectRatio } from "@/lib/types";
+import { getProductTruthBySku, type ProductTruthEntry } from "@/lib/brand/product-truth";
+import { getProductReferenceImagesByCategoryKey } from "@/lib/brand/get-product-references";
 
 /**
  * POST /api/heygen/generate-studio-avatar
@@ -59,10 +61,87 @@ export async function POST(request: NextRequest) {
       customPrompt: body.customPrompt,
     };
 
-    const { prompt, negativePrompt } = buildStudioAvatarPrompt(params);
+    // Initialize product-truth, reference images, and degraded flag
+    let productTruth: ProductTruthEntry | undefined;
+    let referenceImages: ReferenceImage[] = [];
+    let degraded = false;
+    let degradedMessage: string | undefined;
+
+    // SKU resolution and reference image fetching (D-01, D-03, D-05, D-06)
+    const productSku = body.productSku as string | undefined;
+    if (productSku) {
+      try {
+        // Resolve SKU to product-truth
+        const truthEntry = getProductTruthBySku(productSku);
+        if (truthEntry && truthEntry.categoryKey) {
+          productTruth = truthEntry;
+
+          // Fetch reference images for this category
+          const supabaseAdmin = await createAdminClient();
+          const urls = await getProductReferenceImagesByCategoryKey(
+            supabaseAdmin,
+            truthEntry.categoryKey
+          );
+
+          // Fetch each URL in parallel (D-05: per-image failure is non-fatal)
+          if (urls.length > 0) {
+            const refImagePromises = urls.map(async (url) => {
+              try {
+                const resp = await fetch(url);
+                if (!resp.ok) throw new Error(`Fetch returned ${resp.status}`);
+                const buffer = await resp.arrayBuffer();
+                const base64Data = Buffer.from(buffer).toString("base64");
+                const mimeType = resp.headers.get("content-type") || "image/jpeg";
+                return { base64Data, mimeType } as ReferenceImage;
+              } catch (e) {
+                console.warn(`[heygen] Failed to fetch reference image ${url}:`, e);
+                return null;
+              }
+            });
+
+            referenceImages = (await Promise.all(refImagePromises)).filter(
+              (img): img is ReferenceImage => img !== null
+            );
+
+            // D-06: Set degraded flag if all fetches failed (D-05: single failures are omitted)
+            if (urls.length > 0 && referenceImages.length === 0) {
+              degraded = true;
+              degradedMessage =
+                "This product has no reference images. Output may drift toward generic or unrelated product types.";
+            }
+          } else {
+            // No URLs resolved for this category
+            degraded = true;
+            degradedMessage =
+              "This product has no reference images. Output may drift toward generic or unrelated product types.";
+          }
+        } else if (truthEntry) {
+          // SKU exists but has no categoryKey (e.g., a tool)
+          productTruth = truthEntry;
+          degraded = true;
+          degradedMessage =
+            "This product has no reference images. Output may drift toward generic or unrelated product types.";
+        }
+        // If truthEntry is null, SKU is unknown; proceed without product-truth (not an error per D-01)
+      } catch (error) {
+        // Graceful degradation: log error and proceed without product-truth
+        console.warn("[heygen] Error resolving product SKU:", error);
+      }
+    }
+
+    const { prompt, negativePrompt } = buildStudioAvatarPrompt(
+      params,
+      productTruth
+    );
     const fullPrompt = `${prompt}\n\n[NEGATIVE PROMPT — avoid these qualities entirely]\n${negativePrompt}`;
 
-    const result = await generateImage(fullPrompt, imageAspect, undefined, undefined, "1K");
+    const result = await generateImage(
+      fullPrompt,
+      imageAspect,
+      referenceImages.length > 0 ? referenceImages : undefined,
+      undefined,
+      "1K"
+    );
 
     const supabase = await createAdminClient();
     const { url: imageUrl, path: storagePath } = await uploadGeneratedImage(
@@ -104,6 +183,8 @@ export async function POST(request: NextRequest) {
       storagePath,
       model: result.model,
       galleryImageId,
+      degraded,
+      ...(degradedMessage && { degradedMessage }),
     });
   } catch (error: unknown) {
     console.error("[heygen/generate-studio-avatar] Error:", error);
@@ -130,24 +211,71 @@ const VALID_FRAMINGS = STUDIO_FRAMING_OPTIONS.map((o) => o.value);
 const VALID_EXPRESSIONS = STUDIO_EXPRESSION_OPTIONS.map((o) => o.value);
 const VALID_LASH_STYLES: LashStyle[] = [
   "natural", "volume", "dramatic", "cat-eye",
-  "wispy", "doll-eye", "hybrid", "mega-volume",
+  "wispy", "doll-eye", "hybrid", "mega-volume", "clusters",
 ];
 const VALID_ASPECT_RATIOS: VideoAspectRatio[] = ["9:16", "1:1", "16:9"];
+
+// Normalize ethnicity: "south-asian" -> "South Asian", capitalize each word
+function normalizeEthnicity(value: unknown): string | undefined {
+  if (typeof value !== "string") return undefined;
+  return value
+    .split("-")
+    .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
+    .join(" ");
+}
+
+// Normalize skin tone: "medium" -> "Medium", capitalize first letter only
+function normalizeSkinTone(value: unknown): string | undefined {
+  if (typeof value !== "string") return undefined;
+  return value.charAt(0).toUpperCase() + value.slice(1);
+}
+
+// Normalize hair style: "straight-long" -> "Straight long", first word cap only
+function normalizeHairStyle(value: unknown): string | undefined {
+  if (typeof value !== "string") return undefined;
+  const withSpaces = value.replace(/-/g, " ");
+  return withSpaces.charAt(0).toUpperCase() + withSpaces.slice(1);
+}
+
+// Normalize ageRange: attempt to match to known ranges
+function normalizeAgeRange(value: unknown): string | undefined {
+  if (typeof value !== "string") return undefined;
+  // Try exact match first
+  if (VALID_AGE_RANGES.includes(value as UGCAgeRange)) return value;
+  // Try normalizing: "25-35" might be user error for "25-34"
+  if (value === "25-35") return "25-34";
+  return value;
+}
 
 function validateRequest(body: Record<string, unknown>): string[] {
   const errors: string[] = [];
 
-  if (!body.ethnicity || !VALID_ETHNICITIES.includes(body.ethnicity as UGCEthnicity)) {
+  const ethnicity = normalizeEthnicity(body.ethnicity);
+  if (!ethnicity || !VALID_ETHNICITIES.includes(ethnicity as UGCEthnicity)) {
     errors.push(`ethnicity must be one of: ${VALID_ETHNICITIES.join(", ")}`);
+  } else {
+    body.ethnicity = ethnicity;
   }
-  if (!body.skinTone || !VALID_SKIN_TONES.includes(body.skinTone as UGCSkinTone)) {
+
+  const skinTone = normalizeSkinTone(body.skinTone);
+  if (!skinTone || !VALID_SKIN_TONES.includes(skinTone as UGCSkinTone)) {
     errors.push(`skinTone must be one of: ${VALID_SKIN_TONES.join(", ")}`);
+  } else {
+    body.skinTone = skinTone;
   }
-  if (!body.ageRange || !VALID_AGE_RANGES.includes(body.ageRange as UGCAgeRange)) {
+
+  const ageRange = normalizeAgeRange(body.ageRange);
+  if (!ageRange || !VALID_AGE_RANGES.includes(ageRange as UGCAgeRange)) {
     errors.push(`ageRange must be one of: ${VALID_AGE_RANGES.join(", ")}`);
+  } else {
+    body.ageRange = ageRange;
   }
-  if (!body.hairStyle || !VALID_HAIR_STYLES.includes(body.hairStyle as UGCHairStyle)) {
+
+  const hairStyle = normalizeHairStyle(body.hairStyle);
+  if (!hairStyle || !VALID_HAIR_STYLES.includes(hairStyle as UGCHairStyle)) {
     errors.push(`hairStyle must be one of: ${VALID_HAIR_STYLES.join(", ")}`);
+  } else {
+    body.hairStyle = hairStyle;
   }
   if (!body.scene || !VALID_SCENES.includes(body.scene as StudioScene)) {
     errors.push(`scene must be one of: ${VALID_SCENES.join(", ")}`);
@@ -166,6 +294,9 @@ function validateRequest(body: Record<string, unknown>): string[] {
   }
   if (body.aspectRatio && !VALID_ASPECT_RATIOS.includes(body.aspectRatio as VideoAspectRatio)) {
     errors.push(`aspectRatio must be one of: ${VALID_ASPECT_RATIOS.join(", ")}`);
+  }
+  if (body.productSku !== undefined && typeof body.productSku !== "string") {
+    errors.push(`productSku must be a string if provided`);
   }
 
   return errors;

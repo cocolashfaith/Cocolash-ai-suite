@@ -10,6 +10,7 @@
 import type { LashStyle, CampaignType } from "@/lib/types";
 import type { UGCEthnicity, UGCSkinTone, UGCAgeRange, UGCHairStyle } from "@/lib/seedance/ugc-image-prompt";
 import { getLashStyleDescriptor } from "@/lib/prompts/modules/lash-styles";
+import type { ProductTruthEntry } from "@/lib/brand/product-truth";
 
 // ── Studio-Specific Types ────────────────────────────────────
 
@@ -35,7 +36,8 @@ export type StudioOutfit =
   | "minimalist-tee"
   | "cozy-sweater"
   | "silk-blouse"
-  | "crisp-shirt";
+  | "crisp-shirt"
+  | "neutral-button-up";
 
 export type StudioFraming = "head-chest" | "head-waist";
 
@@ -128,6 +130,7 @@ const OUTFIT_MAP: Record<StudioOutfit, string> = {
   "cozy-sweater": "a cozy, warm-toned cable-knit sweater that feels approachable and relatable",
   "silk-blouse": "an elegant silk or satin blouse in a soft, muted color — professional but feminine",
   "crisp-shirt": "a crisp, tailored button-down shirt with a clean collar, sleeves slightly rolled",
+  "neutral-button-up": "a neutral-toned button-up shirt, crisp and professional",
 };
 
 // ── Expression Descriptions ──────────────────────────────────
@@ -179,7 +182,29 @@ function pickRandom<T>(arr: T[], count: number): T[] {
   return shuffled.slice(0, count);
 }
 
-export function buildStudioAvatarPrompt(params: StudioAvatarParams): {
+function buildProductTruthBlock(productTruth: ProductTruthEntry): string {
+  const lines: string[] = [];
+  lines.push("PRODUCT TRUTH (use as anchor — do not contradict):");
+  lines.push(`- Display name: ${productTruth.displayName}`);
+  lines.push(`- Lash type: ${productTruth.lashType}`);
+  lines.push(`- Band material: ${productTruth.bandMaterial}`);
+  lines.push(
+    `- Magnetic closure: ${
+      productTruth.magneticClosure ? "YES" : "NO — never claim magnetic"
+    }`
+  );
+  lines.push(`- Packaging: ${productTruth.packagingType}`);
+  if (productTruth.kitContents && productTruth.kitContents.length > 0) {
+    lines.push(`- Kit contents: ${productTruth.kitContents.join(", ")}`);
+  }
+  lines.push(`- Tone/colour: ${productTruth.colorTone ?? "—"}`);
+  return lines.join("\n");
+}
+
+export function buildStudioAvatarPrompt(
+  params: StudioAvatarParams,
+  productTruth?: ProductTruthEntry
+): {
   prompt: string;
   negativePrompt: string;
 } {
@@ -223,6 +248,7 @@ export function buildStudioAvatarPrompt(params: StudioAvatarParams): {
     `Shot on an 85mm lens at f/2.0 with shallow depth of field, natural color grading with warm tones. NOT color-corrected to perfection — slight warmth bias, muted highlights. The image should feel like a still frame pulled from a high-quality YouTube talking-head video, not a planned photoshoot.`,
     "",
     `Critical: This must NOT look AI-generated. No symmetrical features, no uniform skin smoothness, no perfect teeth, no uncanny valley. She should look like a real content creator filming in a real space.`,
+    ...(productTruth ? ["", buildProductTruthBlock(productTruth)] : []),
     ...(customPrompt ? ["", customPrompt] : []),
   ]
     .join("\n")
@@ -266,6 +292,7 @@ export const STUDIO_OUTFIT_OPTIONS: { value: StudioOutfit; label: string }[] = [
   { value: "cozy-sweater", label: "Cozy Sweater" },
   { value: "silk-blouse", label: "Silk Blouse" },
   { value: "crisp-shirt", label: "Crisp Shirt" },
+  { value: "neutral-button-up", label: "Neutral Button-Up" },
 ];
 
 export const STUDIO_FRAMING_OPTIONS: { value: StudioFraming; label: string }[] = [
