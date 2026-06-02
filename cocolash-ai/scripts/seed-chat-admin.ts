@@ -25,7 +25,7 @@ const email = emailIndex >= 0 ? args[emailIndex + 1] : undefined;
 const role = roleIndex >= 0 ? args[roleIndex + 1] : "admin";
 
 if (!email) {
-  // eslint-disable-next-line no-console
+   
   console.error("Usage: npx tsx scripts/seed-chat-admin.ts --email <email> --role <admin|operator>");
   process.exit(1);
 }
@@ -33,7 +33,7 @@ if (!email) {
 // Email format validation
 const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 if (!emailRegex.test(email)) {
-  // eslint-disable-next-line no-console
+   
   console.error(`❌ Invalid email format: "${email}"`);
   process.exit(1);
 }
@@ -42,7 +42,7 @@ const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
 const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
 if (!supabaseUrl || !serviceRoleKey) {
-  // eslint-disable-next-line no-console
+   
   console.error("Error: NEXT_PUBLIC_SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY env vars are required.");
   process.exit(1);
 }
@@ -58,7 +58,7 @@ const supabase = createClient(supabaseUrl, serviceRoleKey);
     const userId = user?.id;
 
     if (!userId) {
-      // eslint-disable-next-line no-console
+       
       console.error(
         `❌ Error: User with email "${email}" has not signed in yet.\n\n` +
         `Please ask them to sign in to the application first (create an account or log in).\n` +
@@ -75,16 +75,16 @@ const supabase = createClient(supabaseUrl, serviceRoleKey);
     });
 
     if (error) {
-      // eslint-disable-next-line no-console
+       
       console.error("Upsert error:", error);
       process.exit(1);
     }
 
-    // eslint-disable-next-line no-console
+     
     console.log(`✓ Seeded ${email} as chat admin (role: ${role}).\nThey can now access /chatbot/admin.`);
     process.exit(0);
   } catch (err) {
-    // eslint-disable-next-line no-console
+     
     console.error("Unexpected error:", err);
     process.exit(1);
   }

@@ -240,7 +240,7 @@ export function Step3PromptReviewAndGenerate({ state, setState, onReset }: Step3
             </button>
           </div>
           <p className="text-[11px] text-coco-brown-medium/60">
-            The Director split your {state.duration}s clip into {editedSegments.length} segments. Edit each segment's prompt or duration before approving.
+            The Director split your {state.duration}s clip into {editedSegments.length} segments. Edit each segment&apos;s prompt or duration before approving.
           </p>
           {editedSegments.map((seg, i) => (
             <div
