@@ -16,7 +16,7 @@ export async function GET(): Promise<NextResponse<StatusResponse>> {
 
     const { data: settings, error } = await supabase
       .from("caption_settings")
-      .select("blotato_api_key, blotato_last_tested_at, blotato_accounts_found")
+      .select("blotato_api_key")
       .limit(1);
 
     if (error) {
@@ -24,16 +24,12 @@ export async function GET(): Promise<NextResponse<StatusResponse>> {
     }
 
     const hasDbKey = !!(settings && settings.length > 0 && settings[0].blotato_api_key);
-    const lastTestedAt =
-      settings && settings.length > 0 ? settings[0].blotato_last_tested_at : null;
-    const accountsFound =
-      settings && settings.length > 0 ? settings[0].blotato_accounts_found : null;
 
     return NextResponse.json({
       hasEnvKey,
       hasDbKey,
-      lastTestedAt,
-      accountsFound,
+      lastTestedAt: null,
+      accountsFound: null,
     });
   } catch (error: unknown) {
     console.error("[settings/blotato/status] Error:", error);
