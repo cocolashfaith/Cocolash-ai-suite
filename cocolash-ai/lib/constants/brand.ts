@@ -75,4 +75,4 @@ export const BRAND_PERSONAS = {
 } as const;
 
 // ── Color Palette Rule ────────────────────────────────────────
-export const COLOR_RULE = "60-30-10 Rule: 60% Primary (Pink/Beige), 30% Secondary (Brown/Gold), 10% Accents (Charcoal/White)";
+export const COLOR_RULE = "Dominant (~60%): Soft Pink or Creamy Beige | Supporting (~30%): Warm/Golden Brown | Accents (~10%): Charcoal or Clean White — percentages are guidelines, not hard ratios.";

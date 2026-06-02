@@ -30,19 +30,41 @@ export async function GET() {
       );
     }
 
-    // If profile exists, return it
+    // If profile exists, apply read-side override for corrected color rule
     if (profile) {
-      return NextResponse.json({ profile });
+      // Serve the corrected color rule, consistent with brand-dna.ts (D-01)
+      // This ensures the response contains the corrected rule even when
+      // the stored brand_profiles row is stale (created before Phase 31)
+      const correctedRule =
+        "Dominant (~60%): Soft Pink or Creamy Beige | Supporting (~30%): Warm/Golden Brown | " +
+        "Accents (~10%): Charcoal or Clean White — percentages are guidelines, not hard ratios.";
+
+      // Scrub any "60-30-10" substring from the served brand_dna_prompt
+      // to ensure consistency with the corrected rule
+      const scrubbed_brand_dna = profile.brand_dna_prompt
+        ? profile.brand_dna_prompt.replace(/.*60-30-10.*/g, "")
+        : profile.brand_dna_prompt;
+
+      return NextResponse.json({
+        profile: {
+          ...profile,
+          color_palette: {
+            ...profile.color_palette,
+            rule: correctedRule,
+          },
+          brand_dna_prompt: scrubbed_brand_dna,
+        },
+      });
     }
 
-    // No profile exists — seed defaults
+    // No profile exists — seed defaults with corrected rule constant
     const defaultProfile = {
       name: "CocoLash",
       color_palette: {
         primary: BRAND_COLORS.primary,
         secondary: BRAND_COLORS.secondary,
         accents: BRAND_COLORS.accents,
-        rule: COLOR_RULE,
+        rule: COLOR_RULE, // Now corrected per Phase 31 D-01
       },
       tone_keywords: [...DEFAULT_TONE_KEYWORDS],
       brand_dna_prompt: MASTER_BRAND_DNA,
