@@ -218,8 +218,10 @@ describe("Generate Route Integration — Resolver → Client → Payload (RCS-02
 
   it("omits all image fields for Text-to-Video mode (RCS-05)", async () => {
     // Arrange: Verify T2V contract — even if resolver returns images, T2V payload omits them
+    // Note: T2V does not use a SeedanceMode (mode is undefined for text-to-video type)
     const mockSupabase = {} as any;
 
+    // For T2V, resolver would not normally be called, but if it were, its result would be ignored
     vi.mocked(resolveSkuReferences).mockResolvedValue({
       productImages: ["https://db.com/violet-1.jpg"],
       influencerImages: [],
@@ -229,14 +231,9 @@ describe("Generate Route Integration — Resolver → Client → Payload (RCS-02
 
     vi.mocked(createSeedanceTask).mockResolvedValue("task-789");
 
-    // Act: T2V mode should not use resolved images
-    const resolved = await resolveSkuReferences(
-      mockSupabase,
-      "single-black-tray",
-      "text-to-video"
-    );
-
-    // Route would create T2V input WITHOUT image fields
+    // Act: T2V type (no mode) should not use resolved images
+    // In the actual route, for text-to-video, the resolver result is ignored
+    // and createSeedanceTask is called with only prompt + universal fields
     await createSeedanceTask(
       {
         type: "text-to-video",
