@@ -90,13 +90,13 @@ describe("Phase 31 DAT-04 — /api/seedance/check-references endpoint", () => {
     expect(result.productImages).toHaveLength(5);
   });
 
-  it("endpoint works for all image-anchored modes (ugc, multi_frame, lip_sync, first_and_last)", async () => {
+  it("endpoint works for all image-anchored modes (ugc, multi_frame, lipsyncing, first_n_last_frames)", async () => {
     // Arrange
     const modes: SeedanceMode[] = [
       "ugc",
       "multi_frame",
-      "lip_sync",
-      "first_and_last",
+      "lipsyncing",
+      "first_n_last_frames",
     ];
     const mockResolveSkuReferences = vi.mocked(resolveSkuReferences);
 
