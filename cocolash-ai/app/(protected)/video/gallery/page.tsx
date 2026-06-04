@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useRef, useState, useCallback } from "react";
 import { Film, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -9,7 +9,21 @@ import { cn } from "@/lib/utils";
 
 import { VideoCard } from "@/components/video/VideoCard";
 import { VideoModal } from "@/components/video/VideoModal";
-import type { GeneratedVideo, HeyGenVideoStatus, VideoPipeline, VideoScript } from "@/lib/types";
+import {
+  applyStatusUpdate,
+  inFlightKey,
+  statusEndpoint,
+} from "@/lib/video/reconcile";
+import type {
+  GeneratedVideo,
+  HeyGenVideoStatus,
+  VideoPipeline,
+  VideoScript,
+  VideoStatusResponse,
+} from "@/lib/types";
+
+/** How often the gallery re-polls providers for videos still generating. */
+const RECONCILE_INTERVAL_MS = 15_000;
 
 type StatusFilter = HeyGenVideoStatus | "all";
 type PipelineFilter = VideoPipeline | "all";
@@ -86,6 +100,57 @@ export default function VideoGalleryPage() {
   useEffect(() => {
     fetchVideos(0);
   }, [fetchVideos]);
+
+  // Keep a ref of the latest videos so the reconciliation effect can look up a
+  // card's pipeline without re-subscribing every time a card updates.
+  const videosRef = useRef<GeneratedVideo[]>([]);
+  useEffect(() => {
+    videosRef.current = videos;
+  }, [videos]);
+
+  // ── Self-healing reconciliation ──────────────────────────────────
+  // Any card still "processing"/"pending"/"captioning" is polled against its
+  // provider's status route, which finalizes the DB row if the provider is
+  // actually done. This recovers videos whose completion webhook was missed
+  // (deploy/cold-start/tunnel) instead of leaving a permanent spinner.
+  const pollKey = inFlightKey(videos);
+  useEffect(() => {
+    if (!pollKey) return; // nothing generating — no poller needed
+
+    let cancelled = false;
+
+    const reconcile = async () => {
+      if (typeof document !== "undefined" && document.visibilityState === "hidden") {
+        return; // don't poll a backgrounded tab
+      }
+
+      const ids = pollKey.split(",");
+      await Promise.all(
+        ids.map(async (id) => {
+          const video = videosRef.current.find((v) => v.id === id);
+          if (!video) return;
+          try {
+            const res = await fetch(statusEndpoint(video));
+            if (!res.ok || cancelled) return;
+            const data = (await res.json()) as VideoStatusResponse;
+            if (cancelled || !data.status) return;
+            setVideos((prev) =>
+              prev.map((v) => (v.id === id ? applyStatusUpdate(v, data) : v))
+            );
+          } catch {
+            // Transient — the next interval tick will retry.
+          }
+        })
+      );
+    };
+
+    void reconcile(); // reconcile immediately on open / when the set changes
+    const timer = setInterval(reconcile, RECONCILE_INTERVAL_MS);
+    return () => {
+      cancelled = true;
+      clearInterval(timer);
+    };
+  }, [pollKey]);
 
   const handleLoadMore = () => {
     const newOffset = offset + limit;
