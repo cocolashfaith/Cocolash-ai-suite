@@ -22,6 +22,24 @@ import type { CampaignType, ScriptTone, VideoDuration } from "@/lib/types";
 
 export const maxDuration = 300;
 
+/**
+ * Pick the reference-image set for a payload field using a 3-tier fallback
+ * (first non-empty wins): caller-supplied request-body refs → DB-resolved refs
+ * for the selected SKU → a single legacy fallback URL (the generated avatar or
+ * product image). The legacy fallback is what keeps UGC valid (Enhancor requires
+ * at least one product or influencer image) when a SKU resolves to no refs.
+ */
+export function pickRefs(
+  bodyRefs: string[] | undefined,
+  dbRefs: string[],
+  legacyFallback: string | undefined
+): string[] {
+  if (bodyRefs && bodyRefs.length > 0) return bodyRefs;
+  if (dbRefs.length > 0) return dbRefs;
+  if (legacyFallback) return [legacyFallback];
+  return [];
+}
+
 const VALID_CAMPAIGN_TYPES: CampaignType[] = [
   "product-showcase", "testimonial", "promo",
   "educational", "unboxing", "before-after",
@@ -356,9 +374,15 @@ export async function POST(request: NextRequest) {
       const referenceImageUrls = productImageUrl ? [productImageUrl] : [];
       const referenceAudioUrls =
         effectiveAudioMode === "uploaded-audio" && audioUrl ? [audioUrl] : undefined;
-      // Use resolved refs from DB, with request-body as final fallback for backward compat
-      const finalProducts = (products && products.length > 0) ? products : resolvedProductImages;
-      const finalInfluencers = (influencers && influencers.length > 0) ? influencers : resolvedInfluencerImages;
+      // Resolution order for products/influencers (first non-empty wins):
+      //   1. caller-supplied request-body refs (explicit override),
+      //   2. DB-resolved reference images for the selected SKU (Phase 29 conditioning),
+      //   3. the legacy single-image fallback — the generated avatar (personImageUrl)
+      //      or the product image (productImageUrl). The fallback MUST be preserved:
+      //      UGC requires at least one product OR influencer image, and the avatar is
+      //      what satisfies that when a SKU resolves to no influencer refs. (Regression fix.)
+      const finalProducts = pickRefs(products, resolvedProductImages, productImageUrl);
+      const finalInfluencers = pickRefs(influencers, resolvedInfluencerImages, personImageUrl);
       const finalImages = (images && images.length > 0) ? images : resolvedImagesFromDb;
       const finalFirstFrameImage = firstFrameImage || resolvedFirstFrameImage || personImageUrl;
       const finalLastFrameImage = lastFrameImage || resolvedLastFrameImage;

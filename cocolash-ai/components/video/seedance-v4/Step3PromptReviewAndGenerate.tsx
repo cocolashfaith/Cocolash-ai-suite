@@ -501,6 +501,11 @@ function buildEnhancorBody(
     campaignType: state.campaignType,
     tone: state.tone,
     seedanceMode: state.mode === "text_to_video" ? "ugc" : state.mode,
+    // Pass the selected SKU so the generate route can resolve its DB reference
+    // images and attach them to the Enhancor payload (Phase 29 reference
+    // conditioning). Without this the resolver receives undefined and no
+    // product references reach generation.
+    productSku: state.productSku || undefined,
     fullAccess: true,
     // Carry the script for downstream (some current API code expects it)
     scriptText: state.scriptText,
