@@ -5,7 +5,6 @@ import type { SeedanceV4WizardState } from "./types";
 import type {
   CampaignType,
   ScriptTone,
-  VideoDuration,
 } from "@/lib/types";
 
 // Note: UGC is the only mode offered. Mode picker is removed (D-34-13).
@@ -44,7 +43,7 @@ export function Step1ScriptAndMode({ state, setState, onAdvance }: Step1Props) {
             <select
               id="duration"
               value={state.duration ?? 15}
-              onChange={(e) => setState({ duration: parseInt(e.target.value) as VideoDuration })}
+              onChange={(e) => setState({ duration: parseInt(e.target.value) })}
               className="w-full rounded-lg border-2 border-coco-beige-dark/50 bg-white px-3 py-2 text-sm text-coco-brown transition-all focus:border-coco-golden"
             >
               {[4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15].map((d) => (
@@ -144,6 +143,7 @@ export function Step1ScriptAndMode({ state, setState, onAdvance }: Step1Props) {
           </p>
         </div>
         <SeedanceScriptStep
+          duration={state.duration ?? 15}
           onScriptSelected={(script, meta, editedText) => {
             setState({
               script,
@@ -151,7 +151,7 @@ export function Step1ScriptAndMode({ state, setState, onAdvance }: Step1Props) {
               scriptId: meta.scriptId,
               campaignType: meta.campaignType as CampaignType,
               tone: meta.tone as ScriptTone,
-              duration: meta.duration as VideoDuration,
+              // duration is owned by the Video Settings panel above — not clobbered here.
             });
             // Auto-advance — single-button advance UX.
             onAdvance();

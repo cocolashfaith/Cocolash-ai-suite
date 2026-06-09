@@ -1,4 +1,4 @@
-import type { CampaignType, ScriptTone, VideoDuration } from "@/lib/types";
+import type { CampaignType, ScriptTone } from "@/lib/types";
 import type { ScriptUserPromptParams } from "./user";
 import { CAMPAIGN_TEMPLATES } from "./templates";
 
@@ -134,12 +134,30 @@ const TONE_NOTES: Record<ScriptTone, string> = {
   professional: "polished creator voice, credible but still natural on TikTok/Reels",
 };
 
-const DURATION_RULES: Record<VideoDuration, string> = {
-  15: "15 seconds: 32-42 words. One idea only. The first sentence must work as the visual hook.",
-  30: "30 seconds: 65-75 words. Hook, 2 proof/action beats, CTA.",
-  60: "60 seconds: 125-145 words. Hook, 3 clear beats, proof, CTA. Keep it speakable.",
-  90: "90 seconds: 190-210 words. Allowed only for deeper educational/story formats; still write in short spoken sentences.",
-};
+/**
+ * Size the spoken script to the actual Seedance clip duration (4–15s).
+ * Spoken pace is ~2.5–3 words/sec, so we give the model a concrete word band
+ * plus structure guidance scaled to the available time. Seedance caps at 15s,
+ * so there is no 30/60/90s case — the script must fit the clip exactly.
+ */
+export function buildSeedanceDurationRule(seconds: number): string {
+  const s = Math.max(4, Math.min(15, Math.round(seconds)));
+  const minWords = Math.round(s * 2.3);
+  const maxWords = Math.round(s * 3);
+
+  let structure: string;
+  if (s <= 6) {
+    structure =
+      "One single idea only. The first sentence must work as the visual hook. No separate CTA — fold the ask into the close.";
+  } else if (s <= 10) {
+    structure = "Hook + one proof/benefit beat + a short CTA.";
+  } else {
+    structure =
+      "Hook + two quick beats + CTA. Short, speakable sentences only.";
+  }
+
+  return `${s} seconds: ${minWords}-${maxWords} words (spoken pace ~2.5-3 words/sec). ${structure}`;
+}
 
 export function buildSeedanceScriptSystemPrompt(): string {
   return `You are a UGC script writer for CocoLash videos generated with Seedance 2.0.
@@ -196,7 +214,7 @@ export function buildSeedanceScriptUserPrompt(
     ...framework.avoid.map((item) => `- ${item}`),
     "",
     `TONE: ${params.tone} (${TONE_NOTES[params.tone]})`,
-    DURATION_RULES[params.duration] ?? `${params.duration} seconds: keep the script concise and naturally speakable.`,
+    buildSeedanceDurationRule(params.duration),
     "",
     `PRODUCT: ${params.productName ?? "CocoLash premium false lashes"}`,
     "",

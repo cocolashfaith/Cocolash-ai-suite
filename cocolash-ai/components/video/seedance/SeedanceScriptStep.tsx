@@ -12,7 +12,6 @@ import {
   Tag,
   GraduationCap,
   Package,
-  ArrowLeftRight,
   Pencil,
   Mic,
   RefreshCw,
@@ -26,7 +25,6 @@ import { ScriptLibraryPicker } from "../ScriptLibraryPicker";
 import type {
   CampaignType,
   ScriptTone,
-  VideoDuration,
   ScriptResult,
   VideoScript,
 } from "@/lib/types";
@@ -34,12 +32,14 @@ import type {
 type ScriptMode = "generate" | "library" | "manual";
 
 interface SeedanceScriptStepProps {
+  /** Clip duration in seconds (4–15), owned by the parent's Video Settings.
+   *  The script is sized to this; there is no separate duration picker here. */
+  duration: number;
   onScriptSelected: (
     script: ScriptResult,
     meta: {
       campaignType: CampaignType;
       tone: ScriptTone;
-      duration: VideoDuration;
       scriptId?: string;
     },
     editedText?: string
@@ -57,7 +57,6 @@ const CAMPAIGN_TYPES: {
   { value: "promo", label: "Sale / Promo", description: "Urgency-driven offer", icon: Tag },
   { value: "educational", label: "Educational", description: "Tips & tutorials", icon: GraduationCap },
   { value: "unboxing", label: "Unboxing", description: "First look & reveal", icon: Package },
-  { value: "before-after", label: "Before & After", description: "Transformation content", icon: ArrowLeftRight },
 ];
 
 const TONES: { value: ScriptTone; label: string; emoji: string }[] = [
@@ -67,23 +66,16 @@ const TONES: { value: ScriptTone; label: string; emoji: string }[] = [
   { value: "professional", label: "Professional", emoji: "💎" },
 ];
 
-const DURATIONS: { value: VideoDuration; label: string; platforms: string }[] = [
-  { value: 15, label: "15s", platforms: "TikTok, Reels" },
-  { value: 30, label: "30s", platforms: "Reels, Stories" },
-  { value: 60, label: "60s", platforms: "TikTok, YouTube Shorts" },
-];
-
 const MODE_TABS: { value: ScriptMode; label: string; icon: React.ElementType }[] = [
   { value: "generate", label: "Generate with AI", icon: Sparkles },
   { value: "library", label: "Saved Scripts", icon: Library },
   { value: "manual", label: "Write My Own", icon: FileEdit },
 ];
 
-export function SeedanceScriptStep({ onScriptSelected }: SeedanceScriptStepProps) {
+export function SeedanceScriptStep({ duration, onScriptSelected }: SeedanceScriptStepProps) {
   const [mode, setMode] = useState<ScriptMode>("generate");
   const [campaignType, setCampaignType] = useState<CampaignType>("product-showcase");
   const [tone, setTone] = useState<ScriptTone>("casual");
-  const [duration, setDuration] = useState<VideoDuration>(15);
   const [isGenerating, setIsGenerating] = useState(false);
   const [scripts, setScripts] = useState<ScriptResult[]>([]);
   const [scriptIds, setScriptIds] = useState<string[]>([]);
@@ -161,7 +153,7 @@ export function SeedanceScriptStep({ onScriptSelected }: SeedanceScriptStepProps
       (scriptId || currentText === script.full_script.trim()) ? undefined : currentText;
     onScriptSelected(
       script,
-      { campaignType, tone, duration, scriptId },
+      { campaignType, tone, scriptId },
       finalText
     );
   };
@@ -235,7 +227,6 @@ export function SeedanceScriptStep({ onScriptSelected }: SeedanceScriptStepProps
       {
         campaignType: libraryScript.campaign_type,
         tone: libraryScript.tone,
-        duration: libraryScript.duration_seconds as VideoDuration,
         scriptId,
       },
       finalText
@@ -264,7 +255,7 @@ export function SeedanceScriptStep({ onScriptSelected }: SeedanceScriptStepProps
       style_match: 1,
     };
     const scriptId = manualSavedId && manualSavedText === trimmed ? manualSavedId : undefined;
-    onScriptSelected(script, { campaignType, tone, duration, scriptId }, scriptId ? undefined : trimmed);
+    onScriptSelected(script, { campaignType, tone, scriptId }, scriptId ? undefined : trimmed);
   };
 
   const handleSaveManualScript = async () => {
@@ -400,32 +391,6 @@ export function SeedanceScriptStep({ onScriptSelected }: SeedanceScriptStepProps
                   >
                     <span className="text-lg">{t.emoji}</span>
                     <span className={cn("text-xs font-medium", isActive ? "text-coco-brown" : "text-coco-brown-medium")}>{t.label}</span>
-                  </button>
-                );
-              })}
-            </div>
-          </div>
-
-          {/* Duration */}
-          <div className="space-y-2">
-            <label className="text-sm font-semibold text-coco-brown">Duration</label>
-            <div className="grid grid-cols-3 gap-3">
-              {DURATIONS.map((d) => {
-                const isActive = duration === d.value;
-                return (
-                  <button
-                    key={d.value}
-                    type="button"
-                    onClick={() => setDuration(d.value)}
-                    className={cn(
-                      "rounded-xl border-2 py-3 text-center transition-all duration-200",
-                      isActive
-                        ? "border-coco-golden bg-coco-golden/10 shadow-sm"
-                        : "border-coco-beige-dark bg-white hover:border-coco-golden/40"
-                    )}
-                  >
-                    <p className={cn("text-lg font-bold", isActive ? "text-coco-golden" : "text-coco-brown-medium")}>{d.label}</p>
-                    <p className="text-[10px] text-coco-brown-medium/60">{d.platforms}</p>
                   </button>
                 );
               })}
@@ -580,31 +545,6 @@ export function SeedanceScriptStep({ onScriptSelected }: SeedanceScriptStepProps
       {mode === "manual" && (
         <>
           <div className="space-y-2">
-            <label className="text-sm font-semibold text-coco-brown">Duration</label>
-            <div className="grid grid-cols-3 gap-3">
-              {DURATIONS.map((d) => {
-                const isActive = duration === d.value;
-                return (
-                  <button
-                    key={d.value}
-                    type="button"
-                    onClick={() => setDuration(d.value)}
-                    className={cn(
-                      "rounded-xl border-2 py-3 text-center transition-all duration-200",
-                      isActive
-                        ? "border-coco-golden bg-coco-golden/10 shadow-sm"
-                        : "border-coco-beige-dark bg-white hover:border-coco-golden/40"
-                    )}
-                  >
-                    <p className={cn("text-lg font-bold", isActive ? "text-coco-golden" : "text-coco-brown-medium")}>{d.label}</p>
-                    <p className="text-[10px] text-coco-brown-medium/60">{d.platforms}</p>
-                  </button>
-                );
-              })}
-            </div>
-          </div>
-
-          <div className="space-y-2">
             <label className="text-sm font-semibold text-coco-brown">
               Your Script
             </label>
@@ -617,9 +557,9 @@ export function SeedanceScriptStep({ onScriptSelected }: SeedanceScriptStepProps
             />
             <p className="text-[10px] text-coco-brown-medium/50">
               {manualText.trim().split(/\s+/).filter(Boolean).length} words
-              {duration === 15 && " (aim for ~35-40 words)"}
-              {duration === 30 && " (aim for ~65-70 words)"}
-              {duration === 60 && " (aim for ~130-140 words)"}
+              {` (aim for ~${Math.round(duration * 2.3)}-${Math.round(
+                duration * 3
+              )} words for a ${duration}s clip)`}
             </p>
           </div>
 

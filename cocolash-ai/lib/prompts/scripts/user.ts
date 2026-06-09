@@ -14,7 +14,8 @@ import { CAMPAIGN_TEMPLATES } from "./templates";
 export interface ScriptUserPromptParams {
   campaignType: CampaignType;
   tone: ScriptTone;
-  duration: VideoDuration;
+  /** Target script duration in seconds. HeyGen uses 15/30/60/90; Seedance 4–15. */
+  duration: number;
   pipeline?: "heygen" | "seedance";
   productName?: string;
   keyFeatures?: string[];
@@ -82,7 +83,11 @@ export function buildScriptUserPrompt(params: ScriptUserPromptParams): string {
   } = params;
 
   const template = CAMPAIGN_TEMPLATES[campaignType];
-  const durationInstructions = DURATION_INSTRUCTIONS[duration];
+  const durationInstructions =
+    DURATION_INSTRUCTIONS[duration as VideoDuration] ??
+    `DURATION: ${duration} seconds (~${Math.round(duration * 2.3)}-${Math.round(
+      duration * 3
+    )} words). Keep it concise and naturally speakable for the available time.`;
   const toneDesc = TONE_ADJECTIVES[tone];
 
   const lines: string[] = [

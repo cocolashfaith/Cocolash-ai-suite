@@ -15,7 +15,6 @@ import type {
   CampaignType,
   ScriptResult,
   ScriptTone,
-  VideoDuration,
 } from "@/lib/types";
 import type { DirectorMode } from "@/lib/ai/director/types";
 
@@ -25,7 +24,8 @@ export interface SeedanceV4WizardState {
   // Step 1: Script + Settings
   campaignType: CampaignType;
   tone: ScriptTone;
-  duration: VideoDuration;
+  /** Seedance clip duration in seconds (4–15). Script is sized to this. */
+  duration: number;
   mode: SeedanceV4Mode;
   script: ScriptResult | null;
   scriptText: string;

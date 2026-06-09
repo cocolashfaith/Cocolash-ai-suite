@@ -6,7 +6,6 @@ import type {
   CampaignType,
   ScriptTone,
   VideoPipeline,
-  VideoDuration,
   VideoScript,
 } from "@/lib/types";
 
@@ -24,7 +23,10 @@ const VALID_CAMPAIGN_TYPES: CampaignType[] = [
 ];
 
 const VALID_TONES: ScriptTone[] = ["casual", "energetic", "calm", "professional"];
-const VALID_DURATIONS: VideoDuration[] = [15, 30, 60, 90];
+// Seedance clips run 4–15s; HeyGen uses 15/30/60/90. Accept any whole-second
+// value in [4, 90] and let the script generator size the copy to it.
+const MIN_DURATION_SECONDS = 4;
+const MAX_DURATION_SECONDS = 90;
 const VALID_PIPELINES: VideoPipeline[] = ["heygen", "seedance"];
 
 /**
@@ -94,9 +96,15 @@ export async function POST(request: NextRequest) {
     }
 
     const durationNum = Number(duration);
-    if (!VALID_DURATIONS.includes(durationNum as VideoDuration)) {
+    if (
+      !Number.isInteger(durationNum) ||
+      durationNum < MIN_DURATION_SECONDS ||
+      durationNum > MAX_DURATION_SECONDS
+    ) {
       return NextResponse.json(
-        { error: `duration must be one of: ${VALID_DURATIONS.join(", ")}` },
+        {
+          error: `duration must be a whole number of seconds between ${MIN_DURATION_SECONDS} and ${MAX_DURATION_SECONDS}`,
+        },
         { status: 400 }
       );
     }
@@ -214,7 +222,7 @@ export async function POST(request: NextRequest) {
     const scripts = await generateVideoScript({
       campaignType,
       tone,
-      duration: durationNum as VideoDuration,
+      duration: durationNum,
       pipeline,
       productName,
       keyFeatures,

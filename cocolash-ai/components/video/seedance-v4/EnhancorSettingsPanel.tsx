@@ -229,8 +229,7 @@ export function EnhancorSettingsPanel({
                 <button
                   key={d.value}
                   type="button"
-                  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-                  onClick={() => setState({ duration: d.value as any })}
+                  onClick={() => setState({ duration: d.value })}
                   className={cn(
                     "rounded-lg border-2 px-3 py-2 text-center transition-all",
                     active
