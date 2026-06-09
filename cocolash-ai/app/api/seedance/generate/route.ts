@@ -3,6 +3,7 @@ import { createAdminClient } from "@/lib/supabase/server";
 import { generateVideoScript } from "@/lib/openrouter/captions";
 import { createSeedanceTask } from "@/lib/seedance/client";
 import { resolveSkuReferences } from "@/lib/seedance/reference-resolver";
+import { validateScriptAgainstProductTruth } from "@/lib/brand/product-truth";
 import {
   buildSeedanceDirectorPromptFallback,
   generateSeedanceDirectorPrompt,
@@ -255,6 +256,20 @@ export async function POST(request: NextRequest) {
     const seedanceDuration =
       requestedSeedanceDuration ??
       (String(duration <= 5 ? 5 : duration <= 8 ? 8 : duration <= 10 ? 10 : 15) as SeedanceDuration);
+
+    // ── Step 1.5: Validate script against product truth ──────
+    // Per D-34-04 (BLOCKER 1): productSku is optional; brand-wide CocoLash truth applies.
+    // If no SKU: validation checks only brand-wide rules (e.g., no magnetic closures).
+    // If SKU provided: also checks product-specific features.
+    // Warnings are logged but don't block generation (user reviewed script in Step 3).
+    const validation = validateScriptAgainstProductTruth(scriptText, productSku);
+    if (!validation.valid) {
+      console.warn(
+        "[seedance/generate] Script validation warnings (brand-wide check):",
+        validation.warnings
+      );
+      // Proceed anyway; user has reviewed the prompt in Step 3
+    }
 
     // ── Step 2: Build Seedance director prompt ───────────────
     const promptMode: SeedanceDirectorPromptParams["mode"] =
