@@ -89,7 +89,7 @@ function pickRandom<T>(arr: readonly { value: T }[]): T {
  * page outputs.
  */
 export function UgcMode({ state, setState, onReady }: UgcModeProps) {
-  const [activeTab, setActiveTab] = useState<"generate" | "gallery">("generate");
+  const [activeTab, setActiveTab] = useState<"generate" | "gallery" | "enhancor-parity">("generate");
 
   // Avatar params
   const [ethnicity, setEthnicity] = useState<UGCEthnicity>("Latina");
@@ -122,6 +122,10 @@ export function UgcMode({ state, setState, onReady }: UgcModeProps) {
   const [galleryAvatars, setGalleryAvatars] = useState<GalleryAvatar[]>([]);
   const [loadingGallery, setLoadingGallery] = useState(false);
   const [selectedGalleryUrl, setSelectedGalleryUrl] = useState<string | null>(null);
+
+  // Enhancor-parity inputs (D-34-02, D-34-03): 1 influencer + 2–9 product images
+  const [influencerImageUrl, setInfluencerImageUrl] = useState<string | null>(null);
+  const [productAngleUrls, setProductAngleUrls] = useState<string[]>([]);
 
   useEffect(() => {
     void fetchProductImages();
@@ -236,6 +240,30 @@ export function UgcMode({ state, setState, onReady }: UgcModeProps) {
   }
 
   const handleContinue = useCallback(() => {
+    // Enhancor-parity path (D-34-02, D-34-03): influencer + product angles
+    if (activeTab === "enhancor-parity") {
+      if (!influencerImageUrl) {
+        toast.error("Select an influencer image first.");
+        return;
+      }
+      if (productAngleUrls.length < 2) {
+        toast.error("Upload at least 2 product angle images.");
+        return;
+      }
+      if (productAngleUrls.length > 9) {
+        toast.error("Maximum 9 product images allowed.");
+        return;
+      }
+      // Per WARNING fix: influencer FIRST, then products
+      setState({
+        ugcInfluencerImageUrl: influencerImageUrl,
+        ugcProductImageUrls: productAngleUrls,
+      });
+      onReady();
+      return;
+    }
+
+    // Avatar generation paths (generate / gallery tabs)
     const finalAvatar =
       activeTab === "gallery" ? selectedGalleryUrl : generatedAvatarUrl;
     if (!finalAvatar) {
@@ -271,6 +299,8 @@ export function UgcMode({ state, setState, onReady }: UgcModeProps) {
     generatedHasProduct,
     showHoldingProduct,
     seedanceProductUrl,
+    influencerImageUrl,
+    productAngleUrls,
     setState,
     onReady,
   ]);
@@ -281,17 +311,19 @@ export function UgcMode({ state, setState, onReady }: UgcModeProps) {
       : !!selectedGalleryUrl; // gallery avatars never include the product
 
   const canContinue =
-    (activeTab === "gallery" ? selectedGalleryUrl : generatedAvatarUrl) &&
-    (showHoldingProduct
-      ? generatedHasProduct // toggle-on must have generated WITH product
-      : !!seedanceProductUrl);
+    activeTab === "enhancor-parity"
+      ? !!influencerImageUrl && productAngleUrls.length >= 2 && productAngleUrls.length <= 9
+      : (activeTab === "gallery" ? selectedGalleryUrl : generatedAvatarUrl) &&
+          (showHoldingProduct
+            ? generatedHasProduct // toggle-on must have generated WITH product
+            : !!seedanceProductUrl);
 
   return (
     <div className="space-y-6">
       <CapabilityCard mode="ugc" />
 
       {/* Tab switcher */}
-      <div className="flex gap-1.5 rounded-lg bg-coco-beige/50 p-1">
+      <div className="flex flex-wrap gap-1.5 rounded-lg bg-coco-beige/50 p-1">
         <TabBtn
           active={activeTab === "generate"}
           onClick={() => setActiveTab("generate")}
@@ -303,6 +335,12 @@ export function UgcMode({ state, setState, onReady }: UgcModeProps) {
           onClick={() => setActiveTab("gallery")}
           icon={ImageIcon}
           label="Select from Gallery"
+        />
+        <TabBtn
+          active={activeTab === "enhancor-parity"}
+          onClick={() => setActiveTab("enhancor-parity")}
+          icon={Package}
+          label="Direct Image Input"
         />
       </div>
 
@@ -567,6 +605,58 @@ export function UgcMode({ state, setState, onReady }: UgcModeProps) {
         </section>
       )}
 
+      {/* Enhancor-parity tab: direct influencer + product angle images (D-34-02, D-34-03) */}
+      {activeTab === "enhancor-parity" && (
+        <>
+          {/* Influencer image picker */}
+          <section className="space-y-3 rounded-xl border-2 border-coco-beige-dark/50 bg-white/50 p-4">
+            <div>
+              <h3 className="text-sm font-semibold text-coco-brown">
+                Influencer Image <span className="text-coco-golden">*</span>
+              </h3>
+              <p className="mt-0.5 text-[11px] text-coco-brown-medium/60">
+                The creator or talent who will appear in the video.
+              </p>
+            </div>
+            <InfluencerPicker
+              selectedUrl={influencerImageUrl}
+              onSelect={setInfluencerImageUrl}
+            />
+            {!influencerImageUrl && (
+              <p className="text-sm text-coco-red-500">Influencer image is required</p>
+            )}
+          </section>
+
+          {/* Product angle images picker */}
+          <section className="space-y-3 rounded-xl border-2 border-coco-beige-dark/50 bg-white/50 p-4">
+            <div>
+              <h3 className="text-sm font-semibold text-coco-brown">
+                Product Angle Images <span className="text-coco-golden">*</span>
+              </h3>
+              <p className="mt-0.5 text-[11px] text-coco-brown-medium/60">
+                Upload 2–9 different angles of the same product. This helps the AI understand the product from multiple perspectives.
+              </p>
+            </div>
+            <ProductAnglePicker
+              selectedUrls={productAngleUrls}
+              onAdd={(urls) => setProductAngleUrls([...productAngleUrls, ...urls])}
+              onRemove={(idx) => setProductAngleUrls(productAngleUrls.filter((_, i) => i !== idx))}
+            />
+            {productAngleUrls.length < 2 && (
+              <p className="text-sm text-coco-red-500">Upload at least 2 product angles</p>
+            )}
+            {productAngleUrls.length > 9 && (
+              <p className="text-sm text-coco-red-500">Maximum 9 product images allowed</p>
+            )}
+            {productAngleUrls.length > 0 && productAngleUrls.length <= 9 && (
+              <p className="text-xs text-coco-brown-medium/60">
+                {productAngleUrls.length} image{productAngleUrls.length !== 1 ? "s" : ""} selected
+              </p>
+            )}
+          </section>
+        </>
+      )}
+
       <Button
         onClick={handleContinue}
         disabled={!canContinue || isGeneratingAvatar}
@@ -786,6 +876,216 @@ function Dropdown({
           </option>
         ))}
       </select>
+    </div>
+  );
+}
+
+function InfluencerPicker({
+  selectedUrl,
+  onSelect,
+}: {
+  selectedUrl: string | null;
+  onSelect: (url: string) => void;
+}) {
+  const fileRef = useRef<HTMLInputElement>(null);
+  const [uploading, setUploading] = useState(false);
+
+  async function handleUpload(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (!file.type.startsWith("image/")) {
+      toast.error("Please select an image file");
+      return;
+    }
+    if (file.size > 10 * 1024 * 1024) {
+      toast.error("Image must be under 10 MB");
+      return;
+    }
+    setUploading(true);
+    try {
+      const fd = new FormData();
+      fd.append("file", file);
+      const res = await fetch("/api/images/upload", {
+        method: "POST",
+        body: fd,
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Upload failed");
+      onSelect(data.image.image_url);
+      toast.success("Influencer image uploaded.");
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Upload failed");
+    } finally {
+      setUploading(false);
+      if (fileRef.current) fileRef.current.value = "";
+    }
+  }
+
+  return (
+    <div className="space-y-2">
+      <input
+        ref={fileRef}
+        type="file"
+        accept="image/*"
+        onChange={handleUpload}
+        className="hidden"
+      />
+      <button
+        type="button"
+        onClick={() => fileRef.current?.click()}
+        disabled={uploading}
+        className={cn(
+          "w-full rounded-lg border-2 border-dashed border-coco-beige-dark px-4 py-6 text-center transition-all hover:border-coco-golden/40 hover:bg-coco-golden/5",
+          uploading && "opacity-50"
+        )}
+      >
+        {uploading ? (
+          <>
+            <Loader2 className="mx-auto h-5 w-5 animate-spin text-coco-golden" />
+            <p className="mt-1 text-xs text-coco-brown-medium">Uploading…</p>
+          </>
+        ) : (
+          <>
+            <Upload className="mx-auto h-5 w-5 text-coco-brown-medium/60" />
+            <p className="mt-1 text-sm font-medium text-coco-brown">Click to upload influencer image</p>
+          </>
+        )}
+      </button>
+      {selectedUrl && (
+        <div className="overflow-hidden rounded-lg border-2 border-coco-golden/30 bg-white">
+          <img
+            src={selectedUrl}
+            alt="Selected influencer"
+            className="h-64 w-full object-cover"
+          />
+          <div className="border-t border-coco-beige px-3 py-2">
+            <p className="flex items-center gap-1.5 text-[11px] text-coco-brown-medium">
+              <Check className="h-3.5 w-3.5 text-coco-golden" />
+              Influencer image selected
+            </p>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function ProductAnglePicker({
+  selectedUrls,
+  onAdd,
+  onRemove,
+}: {
+  selectedUrls: string[];
+  onAdd: (urls: string[]) => void;
+  onRemove: (idx: number) => void;
+}) {
+  const fileRef = useRef<HTMLInputElement>(null);
+  const [uploading, setUploading] = useState(false);
+
+  async function handleUpload(e: React.ChangeEvent<HTMLInputElement>) {
+    const files = e.target.files;
+    if (!files || files.length === 0) return;
+
+    const newUrls: string[] = [];
+    setUploading(true);
+
+    try {
+      for (const file of Array.from(files)) {
+        if (!file.type.startsWith("image/")) {
+          toast.error(`${file.name} is not an image file`);
+          continue;
+        }
+        if (file.size > 10 * 1024 * 1024) {
+          toast.error(`${file.name} is over 10 MB`);
+          continue;
+        }
+
+        const fd = new FormData();
+        fd.append("file", file);
+        const res = await fetch("/api/images/upload", {
+          method: "POST",
+          body: fd,
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || "Upload failed");
+        newUrls.push(data.image.image_url);
+      }
+
+      if (newUrls.length > 0) {
+        onAdd(newUrls);
+        toast.success(`${newUrls.length} product angle(s) uploaded.`);
+      }
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Upload failed");
+    } finally {
+      setUploading(false);
+      if (fileRef.current) fileRef.current.value = "";
+    }
+  }
+
+  return (
+    <div className="space-y-2">
+      <input
+        ref={fileRef}
+        type="file"
+        accept="image/*"
+        multiple
+        onChange={handleUpload}
+        className="hidden"
+      />
+      <button
+        type="button"
+        onClick={() => fileRef.current?.click()}
+        disabled={uploading || selectedUrls.length >= 9}
+        className={cn(
+          "w-full rounded-lg border-2 border-dashed border-coco-beige-dark px-4 py-6 text-center transition-all hover:border-coco-golden/40 hover:bg-coco-golden/5",
+          (uploading || selectedUrls.length >= 9) && "opacity-50"
+        )}
+      >
+        {uploading ? (
+          <>
+            <Loader2 className="mx-auto h-5 w-5 animate-spin text-coco-golden" />
+            <p className="mt-1 text-xs text-coco-brown-medium">Uploading…</p>
+          </>
+        ) : selectedUrls.length >= 9 ? (
+          <>
+            <Check className="mx-auto h-5 w-5 text-coco-golden" />
+            <p className="mt-1 text-sm font-medium text-coco-brown">Maximum images reached</p>
+          </>
+        ) : (
+          <>
+            <Upload className="mx-auto h-5 w-5 text-coco-brown-medium/60" />
+            <p className="mt-1 text-sm font-medium text-coco-brown">Click to upload product angles</p>
+            <p className="text-xs text-coco-brown-medium/60">Select multiple images at once</p>
+          </>
+        )}
+      </button>
+      {selectedUrls.length > 0 && (
+        <div className="grid grid-cols-3 gap-2 sm:grid-cols-4">
+          {selectedUrls.map((url, idx) => (
+            <div key={idx} className="relative">
+              <div className="overflow-hidden rounded-lg border-2 border-coco-beige-dark/30 bg-coco-beige-light">
+                <img
+                  src={url}
+                  alt={`Product angle ${idx + 1}`}
+                  className="aspect-square w-full object-cover"
+                />
+              </div>
+              <button
+                type="button"
+                onClick={() => onRemove(idx)}
+                className="absolute -right-2 -top-2 flex h-6 w-6 items-center justify-center rounded-full bg-coco-golden text-white transition-all hover:bg-coco-golden-dark"
+                title="Remove this image"
+              >
+                ×
+              </button>
+              <p className="mt-1 text-center text-[10px] text-coco-brown-medium/60">
+                Angle {idx + 1}
+              </p>
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }

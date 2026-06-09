@@ -22,7 +22,7 @@ import type { DirectorMode } from "@/lib/ai/director/types";
 export type SeedanceV4Mode = DirectorMode;
 
 export interface SeedanceV4WizardState {
-  // Step 1
+  // Step 1: Script + Settings
   campaignType: CampaignType;
   tone: ScriptTone;
   duration: VideoDuration;
@@ -30,6 +30,11 @@ export interface SeedanceV4WizardState {
   script: ScriptResult | null;
   scriptText: string;
   scriptId?: string;
+
+  // Step 1: Settings panel (D-34-09)
+  fullAccess?: boolean; // "Pass Faces" toggle (default true)
+  unrestricted?: boolean; // "Unrestricted" toggle
+  quality?: string; // Quality dropdown (default "standard")
 
   // Step 2 — mode-specific inputs (only the ones for the chosen mode are populated)
   /** UGC composed image (avatar already holding product, single image)
@@ -40,6 +45,12 @@ export interface SeedanceV4WizardState {
   /** UGC toggle-off path only — the separate product image that goes
    *  alongside the avatar to Seedance as a second reference. */
   ugcSeparateProductUrl?: string;
+
+  // UGC Enhancor-parity inputs (D-34-02, D-34-03): 1 influencer + 2–9 product images
+  /** UGC: single influencer image URL */
+  ugcInfluencerImageUrl?: string;
+  /** UGC: array of 2–9 product angle images */
+  ugcProductImageUrls?: string[];
 
   /** multi_reference: array of {url, role} */
   multiReferenceImages?: Array<{
@@ -67,7 +78,7 @@ export interface SeedanceV4WizardState {
   /** multi_frame: free-text subject brief (text-only flow per D-26-01) */
   subjectBrief?: string;
 
-  /** Product SKU selected in Step 1 — grounds the Director in product truth (Phase 27, D-27-10) */
+  /** Product SKU — retained internally for script grounding (D-34-04 note: not user-facing selector) */
   productSku?: string;
 
   // Step 3 — Director output (one of the two will be populated based on mode)
@@ -104,6 +115,12 @@ export const DEFAULT_V4_STATE: SeedanceV4WizardState = {
   scriptText: "",
   subjectBrief: "",
   productSku: "",
+  // Settings (D-34-09)
+  fullAccess: true,
+  unrestricted: false,
+  quality: "standard",
+  // UGC Enhancor-parity inputs
+  ugcProductImageUrls: [],
   aspectRatio: "9:16",
   resolution: "720p",
   fastMode: false,

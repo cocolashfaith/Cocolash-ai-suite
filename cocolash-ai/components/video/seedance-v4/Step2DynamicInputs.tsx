@@ -23,10 +23,15 @@ interface Step2Props {
  * Step 1's `mode` choice. Each mode component is responsible for collecting
  * its own inputs into the shared wizard state and calling onReady() when
  * the user is ready to advance.
+ *
+ * NOTE: As of Phase 34, only UGC mode is offered to users (D-34-13).
+ * Mode selector removed from Step 1; mode always set to "ugc" in initial state.
+ * Other mode code paths remain for backward compatibility.
  */
 export function Step2DynamicInputs({ state, setState, onAdvance }: Step2Props) {
   const props = { state, setState, onReady: onAdvance };
 
+  // Per D-34-13: UGC is the only user-facing mode (hardcoded from Step 1)
   switch (state.mode) {
     case "ugc":
       return <UgcMode {...props} />;
