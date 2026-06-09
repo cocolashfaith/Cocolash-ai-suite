@@ -620,49 +620,57 @@ export function getProductTruthByHandle(
 }
 
 /**
+ * Patterns that flag a magnetic-closure claim — including leaky phrasings the
+ * original single regex missed ("magnetic close", "clicks open with a magnet").
+ * Tuned to avoid partial-word false positives like "magneticness".
+ */
+const MAGNETIC_PHANTOM_PATTERNS: RegExp[] = [
+  // "magnetic <closure-word>": closure, lid, box, seal, case, clasp, snap, click, close, pack(aging)
+  /\bmagnetic\s+(closure|lid|box|seal|case|clasp|snap|click|close|pack|packaging)\b/i,
+  // "magnet" followed by a closing action within the same clause
+  /\bmagnet(?:s|ic)?\b[^.!?]{0,40}\b(?:snap|snaps|snapped|click|clicks|clicked|close|closes|closed|closing|shut|seal|seals)\b/i,
+  // a closing action followed by "magnet" ("clicks open with a magnet")
+  /\b(?:snap|snaps|snapped|click|clicks|clicked|close|closes|closed|closing|shut)\b[^.!?]{0,40}\bmagnet(?:s|ic)?\b/i,
+];
+
+/**
  * Detect claims in a script that don't match the product's actual features.
  * Returns an array of warnings; empty array means no false claims detected.
  *
  * Per D-34-04 + BLOCKER 1 decision: Can be called with or without productSku.
- * If no SKU: applies brand-wide CocoLash truth (no magnetic closures anywhere,
- * flexible bands, hardcover packaging).
- * If SKU provided: also checks product-specific features.
+ * SKU-aware magnetic guard: lash trays and multi-lash books have NO magnetic
+ * closure (the vast majority of the line); only the full CocoLash KITS do. When
+ * the SKU is a known kit, magnetic talk is legitimate; otherwise (non-kit, or no
+ * SKU) it is treated as a phantom feature. If SKU provided, also checks
+ * product-specific features (band material, packaging).
  *
- * Example: script says "magnetic closure" but the product has magneticClosure: false.
- * This function returns: ["Script mentions 'magnetic closure' but NO CocoLash product has this feature"]
- *
- * Brand-wide checks apply even without SKU, preventing hallucinated features
- * that are never true for ANY CocoLash product.
+ * Example: script says "magnetic closure" but the product is a single tray.
+ * Returns: ["Script mentions a magnetic closure, but this product has none ..."]
  */
 export function detectPhantomFeatures(
   script: string,
   productSku?: string
 ): string[] {
   const phantoms: string[] = [];
-  const lower = script.toLowerCase();
 
-  // ── Brand-wide CocoLash truth guards (no SKU needed) ──
-  const brandTruthChecks = [
-    {
-      pattern: /magnetic\s+(closure|lid|box|seal)/i,
-      allowed: false, // NO CocoLash product has magnetic closure
-      message:
-        "Script mentions 'magnetic closure' but NO CocoLash product has this feature",
-    },
-  ];
+  // Resolve product truth up front (only if a known SKU is supplied).
+  const truth = productSku ? getProductTruthBySku(productSku) : null;
 
-  brandTruthChecks.forEach(({ pattern, allowed, message }) => {
-    if (pattern.test(script) && !allowed) {
-      phantoms.push(message);
-    }
-  });
+  // ── Magnetic-closure guard (brand-wide, SKU-aware) ──
+  // Allowed only when the resolved product is genuinely a magnetic kit.
+  // Non-blocking backstop — the vision-grounded script is the real fix.
+  const magneticAllowed = truth?.magneticClosure === true;
+  if (!magneticAllowed && MAGNETIC_PHANTOM_PATTERNS.some((p) => p.test(script))) {
+    phantoms.push(
+      "Script mentions a magnetic closure, but this product has none (only CocoLash kits are magnetic)"
+    );
+  }
 
-  // ── Product-specific checks (if SKU provided) ──
+  // ── Product-specific checks (only when SKU resolves to known truth) ──
   if (productSku) {
-    const truth = getProductTruthBySku(productSku);
     if (!truth) {
-      // Unknown SKU; can't validate product-specific features
-      // Don't block — return only brand-truth violations
+      // Unknown SKU; can't validate product-specific features.
+      // Don't block — return only brand-wide violations.
       return phantoms;
     }
 

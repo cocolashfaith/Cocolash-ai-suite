@@ -124,15 +124,21 @@ describe("Seedance Script Validation", () => {
       expect(warnings).toEqual([]);
     });
 
-    it("handles kit products with magnetic closures", () => {
+    it("ALLOWS magnetic for a known kit SKU (kits genuinely have magnetic boxes)", () => {
+      // Phase 34.1: the guard is SKU-aware. Kits ARE magnetic, so a magnetic
+      // claim is honest for a kit SKU and must NOT be flagged. Only lash trays
+      // and books (the non-kit majority) treat "magnetic" as a phantom.
       const script = "The magnetic box is so convenient.";
       const warnings = detectPhantomFeatures(script, "kit-daisy");
 
-      // Kits DO have magnetic closures, but the brand-wide rule still rejects
-      // "magnetic" as a feature claim because the logic is: "NO CocoLash product
-      // has magnetic closure" from a feature-parity standpoint (user-facing view).
-      // The internal productSku may have it, but we're checking script honesty.
-      expect(warnings.length).toBeGreaterThan(0);
+      expect(warnings.filter((w) => /magnet/i.test(w))).toEqual([]);
+    });
+
+    it("still flags magnetic for a non-kit SKU", () => {
+      const script = "The magnetic box is so convenient.";
+      const warnings = detectPhantomFeatures(script, "peony");
+
+      expect(warnings.some((w) => /magnet/i.test(w))).toBe(true);
     });
 
     it("accepts scripts mentioning 'box' or 'packaging' without 'leather'", () => {

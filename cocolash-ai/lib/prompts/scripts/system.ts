@@ -20,7 +20,7 @@ ABOUT COCOLASH (weave these details in naturally — never list-dump):
 - Designed specifically for Black women — celebrates melanin beauty and diverse eye shapes
 - Lightweight, comfortable for all-day wear (12+ hours without irritation)
 - Reusable — each pair lasts 25+ wears with proper care
-- Luxury magnetic-closure packaging that feels like a gift
+- Premium, giftable packaging that feels like a gift (book-style box or lash tray)
 - Cruelty-free and vegan
 - Easy application — most users can apply in under 5 minutes
 - Multiple styles: natural, dramatic, wispy, cat-eye, doll-eye, mega-volume, hybrid, volume

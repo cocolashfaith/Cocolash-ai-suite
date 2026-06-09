@@ -67,6 +67,42 @@ describe("Product Truth Validation", () => {
       expect(warnings.length).toBeGreaterThan(0);
     });
 
+    // ── Leaky variants the original single regex MISSED (Phase 34.1 validation) ──
+
+    it("rejects 'magnetic close' (no trailing closure-word)", () => {
+      const script = "This magnetic close just snapped and I got butterflies.";
+      const warnings = detectPhantomFeatures(script);
+      expect(warnings.length).toBeGreaterThan(0);
+    });
+
+    it("rejects 'clicks open with a magnet' (action-then-magnet)", () => {
+      const script = "It clicks open with a magnet and inside the lashes are resting.";
+      const warnings = detectPhantomFeatures(script);
+      expect(warnings.length).toBeGreaterThan(0);
+    });
+
+    it("rejects 'snaps shut, the magnet is so satisfying'", () => {
+      const script = "The lid snaps shut and the magnet is so satisfying.";
+      const warnings = detectPhantomFeatures(script);
+      expect(warnings.length).toBeGreaterThan(0);
+    });
+
+    // ── Kits genuinely ARE magnetic → must NOT be flagged when SKU known ──
+
+    it("ALLOWS magnetic claim for a kit SKU (kits have magnetic boxes)", () => {
+      const kit = getProductTruthBySku("kit-daisy");
+      expect(kit?.magneticClosure).toBe(true); // guard the assumption
+      const script = "The magnetic closure on this kit box clicks shut so satisfyingly.";
+      const warnings = detectPhantomFeatures(script, "kit-daisy");
+      const magneticWarnings = warnings.filter((w) => /magnet/i.test(w));
+      expect(magneticWarnings).toEqual([]);
+    });
+
+    it("still flags magnetic for a non-kit SKU (single tray)", () => {
+      const warnings = detectPhantomFeatures("The magnetic closure is great.", "poppy");
+      expect(warnings.some((w) => /magnet/i.test(w))).toBe(true);
+    });
+
     // ── Product-specific checks ──
 
     it("detects band material mismatch when productSku provided", () => {

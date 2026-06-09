@@ -122,7 +122,7 @@ export function buildScriptUserPrompt(params: ScriptUserPromptParams): string {
       `- Flexible cotton band — lightweight, comfortable all-day wear`,
       `- Easy application — takes under 5 minutes even for beginners`,
       `- Reusable 25+ times with proper care`,
-      `- Luxury magnetic-closure packaging`,
+      `- Premium, giftable packaging (book-style box or lash tray)`,
       `- Designed specifically for Black women — celebrates melanin beauty and diverse eye shapes`
     );
   }

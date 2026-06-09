@@ -93,7 +93,7 @@ const FRAMEWORKS: Partial<Record<CampaignType, SeedanceScriptFramework>> = {
       "Make the packaging and first-touch experience feel tactile, premium, and satisfying.",
     structure: [
       "Anticipation: package just arrived",
-      "Reveal: open the box or show the magnetic closure",
+      "Reveal: open the box and show the lashes resting inside",
       "Tactile detail: fibers, softness, band, tray, packaging",
       "First reaction: surprise or delight",
       "Try-on or shop CTA",
@@ -205,7 +205,7 @@ export function buildSeedanceScriptUserPrompt(
     `- Flexible cotton band for comfort`,
     `- Reusable 25+ wears with proper care`,
     `- Lightweight enough for all-day wear`,
-    `- Luxury magnetic-closure packaging`,
+    `- Premium, giftable packaging (book-style box or lash tray)`,
     `- Cruelty-free and vegan`,
     "",
     `CAMPAIGN FOCUS AREAS:`,

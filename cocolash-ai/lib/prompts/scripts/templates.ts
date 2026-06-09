@@ -57,7 +57,7 @@ export const CAMPAIGN_TEMPLATES: Record<CampaignType, CampaignTemplate> = {
       "Quality commitment — hand-crafted fibers, flexible cotton bands, 25+ wears per pair",
       "Community and representation — designed by the community it serves",
       "Cruelty-free and vegan values — why this matters to the brand and its customers",
-      "The luxury experience — from the magnetic packaging to the first wear",
+      "The luxury experience — from the premium packaging to the first wear",
       "Customer stories and impact — how CocoLash has changed someone's beauty routine or confidence",
     ],
     exampleHooks: [
@@ -127,7 +127,7 @@ export const CAMPAIGN_TEMPLATES: Record<CampaignType, CampaignTemplate> = {
       "Hand-crafted fibers — the construction process and why hand-made means better fit",
       "Style breakdown — what makes each style different (natural, volume, dramatic, cat-eye, wispy, doll-eye, hybrid, mega-volume)",
       "Reusability and longevity — how the 25+ wear claim works and how to maximize it",
-      "The magnetic closure packaging — unboxing experience, storage, travel-friendliness",
+      "The premium packaging — unboxing experience, storage, travel-friendliness",
       "Material sourcing — cruelty-free, vegan, and what that means for the product",
       "Fit and comfort science — why lightweight construction matters over 12+ hours of wear",
       "How to identify your ideal CocoLash style based on desired look, eye shape, and occasion",
@@ -149,7 +149,7 @@ export const CAMPAIGN_TEMPLATES: Record<CampaignType, CampaignTemplate> = {
     description:
       "Highlight the product itself — packaging, quality, craftsmanship, and what makes CocoLash stand out in a saturated market. The product is the star; the person is the storyteller.",
     focusAreas: [
-      "Unboxing or first impression — the weight of the box, the magnetic closure, the presentation",
+      "Unboxing or first impression — the weight of the box, the packaging, the presentation",
       "Quality close-ups — the hand-crafted lash fibers, the flexible cotton band, the reusable design",
       "What makes CocoLash different: designed by and for Black women, cruelty-free, up to 25+ wears per pair",
       "The 'treat yourself' moment — luxury at an accessible price point",
@@ -216,7 +216,7 @@ export const CAMPAIGN_TEMPLATES: Record<CampaignType, CampaignTemplate> = {
       "First-look, unboxing experience — ASMR-adjacent, visual, tactile, and satisfying. Let the packaging speak for itself.",
     focusAreas: [
       "The shipping package arrival — anticipation, branded packaging, care in presentation",
-      "The box — magnetic closure, the weight, the design, tissue paper or inserts",
+      "The box — the weight, the design, tissue paper or inserts",
       "First tactile impression — lifting the lashes out, feeling the fibers, examining the band",
       "What's included — lash pair, case, tools, thank-you card, brand touches",
       "The satisfying reveal moment — camera close-up, slow pull",
@@ -253,7 +253,7 @@ export const CAMPAIGN_CONCEPT_POOLS: Partial<Record<CampaignType, string[]>> = {
   "brand-story": [
     "The moment we realized most lash brands weren't designing for Black women",
     "Why we chose cruelty-free, vegan materials from day one",
-    "The story behind our magnetic-closure luxury packaging",
+    "The story behind our luxury packaging",
     "How customer feedback shaped our style range",
     "What 'designed by us, for us' means in practice",
     "The gap between drugstore lashes and what we wanted to create",
@@ -291,7 +291,7 @@ export const CAMPAIGN_CONCEPT_POOLS: Partial<Record<CampaignType, string[]>> = {
     "Understanding the 8 CocoLash styles and which suits you",
     "How hand-crafted fibers differ from machine-made",
     "The science behind 25+ wears per pair",
-    "What makes the magnetic-closure packaging special",
+    "What makes the premium packaging special",
     "CocoLash materials: cruelty-free, vegan, and why it matters",
     "Comfort science: why lightweight construction matters over 12 hours",
     "How to match your CocoLash style to your eye shape and occasion",
@@ -316,7 +316,7 @@ export const CAMPAIGN_CONCEPT_POOLS: Partial<Record<CampaignType, string[]>> = {
     "The luxury packaging reveal",
     "First touch and feel impressions",
     "Comparing lash weight and flexibility",
-    "The magnetic closure box experience",
+    "The premium box experience",
   ],
   testimonial: [
     "How CocoLash changed my daily routine",

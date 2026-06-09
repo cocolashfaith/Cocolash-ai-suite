@@ -261,7 +261,7 @@ PRODUCT TRUTH AND HONESTY:
 
 Based on what you see in the images:
 - CocoLash lashes are cluster/wispy bands on FLEXIBLE bands (NOT rigid, NOT plastic)
-- CocoLash does NOT have magnetic closures anywhere in the product line
+- CocoLash lash trays and multi-lash books do NOT have magnetic closures — only the full kits do; never invent a magnetic closure you cannot clearly see in the images
 - CocoLash packaging is a black hardcover-style book or tray (not leather, not a case)
 
 Do NOT invent features you don't see in the images. If the images show something, describe it. If you don't see it, don't mention it.
