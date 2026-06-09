@@ -1,6 +1,7 @@
 "use client";
 
 import { SeedanceScriptStep } from "../seedance/SeedanceScriptStep";
+import { ProductReferencePicker } from "./ProductReferencePicker";
 import type { SeedanceV4WizardState } from "./types";
 import type {
   CampaignType,
@@ -19,7 +20,10 @@ interface Step1Props {
 }
 
 export function Step1ScriptAndMode({ state, setState, onAdvance }: Step1Props) {
-  // UGC always requires a script (can be generated or provided)
+  // Products are the spine of the flow — picked here, before the script, so the
+  // script is grounded in the actual product. Script generation is gated until
+  // at least one product image is selected (R-34.1-03).
+  const hasProducts = (state.ugcProductImageUrls?.length ?? 0) >= 1;
 
   return (
     <div className="space-y-8">
@@ -132,7 +136,10 @@ export function Step1ScriptAndMode({ state, setState, onAdvance }: Step1Props) {
         </div>
       </section>
 
-      {/* Script — required for UGC mode */}
+      {/* ── Product images (the spine — picked before the script) ──────── */}
+      <ProductReferencePicker state={state} setState={setState} />
+
+      {/* Script — required for UGC mode; gated until ≥1 product is selected */}
       <section className="space-y-3 rounded-xl border-2 border-coco-beige-dark/50 bg-white/50 p-4">
         <div className="flex items-baseline justify-between gap-3">
           <label className="text-sm font-semibold text-coco-brown">
@@ -142,21 +149,33 @@ export function Step1ScriptAndMode({ state, setState, onAdvance }: Step1Props) {
             What the creator says in the video.
           </p>
         </div>
-        <SeedanceScriptStep
-          duration={state.duration ?? 15}
-          onScriptSelected={(script, meta, editedText) => {
-            setState({
-              script,
-              scriptText: (editedText ?? script.full_script).trim(),
-              scriptId: meta.scriptId,
-              campaignType: meta.campaignType as CampaignType,
-              tone: meta.tone as ScriptTone,
-              // duration is owned by the Video Settings panel above — not clobbered here.
-            });
-            // Auto-advance — single-button advance UX.
-            onAdvance();
-          }}
-        />
+        {hasProducts ? (
+          <SeedanceScriptStep
+            duration={state.duration ?? 15}
+            onScriptSelected={(script, meta, editedText) => {
+              setState({
+                script,
+                scriptText: (editedText ?? script.full_script).trim(),
+                scriptId: meta.scriptId,
+                campaignType: meta.campaignType as CampaignType,
+                tone: meta.tone as ScriptTone,
+                // duration is owned by the Video Settings panel above — not clobbered here.
+              });
+              // Auto-advance — single-button advance UX.
+              onAdvance();
+            }}
+          />
+        ) : (
+          <div className="rounded-xl border-2 border-dashed border-coco-beige-dark bg-coco-beige-light/40 p-6 text-center">
+            <p className="text-sm font-medium text-coco-brown">
+              Select a product image first
+            </p>
+            <p className="mt-1 text-[11px] text-coco-brown-medium/60">
+              Pick at least one product above — the script is written from what
+              the product actually looks like.
+            </p>
+          </div>
+        )}
       </section>
     </div>
   );
