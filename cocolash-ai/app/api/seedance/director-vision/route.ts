@@ -49,6 +49,7 @@ const VisionDirectorBodySchema = z.object({
     .min(1, "campaignType is required and must be non-empty"),
   productSku: z.string().optional(),
   intent: z.string().optional(),
+  productFacts: z.string().optional(),
 });
 
 type VisionDirectorBody = z.infer<typeof VisionDirectorBodySchema>;
@@ -78,6 +79,7 @@ export async function POST(request: NextRequest) {
       campaignType: parsed.campaignType,
       productSku: parsed.productSku,
       intent: parsed.intent,
+      productFacts: parsed.productFacts,
     };
 
     const result = await generateSeedanceVisionPrompt(visionPromptInput);

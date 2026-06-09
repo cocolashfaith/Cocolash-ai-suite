@@ -13,6 +13,7 @@ import type {
   DirectorMode,
 } from "@/lib/ai/director/types";
 import { estimateV4Cost } from "@/lib/costs/estimates";
+import { formatProductFactsForPrompt } from "@/lib/ai/director/product-fact-extractor";
 
 interface Step3Props {
   state: SeedanceV4WizardState;
@@ -78,6 +79,11 @@ export function Step3PromptReviewAndGenerate({ state, setState, onReset, goToSte
           productImageUrls: state.ugcProductImageUrls,
           script: state.scriptText,
           campaignType: state.campaignType,
+          // R-34.1-04: reuse the SAME cached facts the script was grounded in, so
+          // the prompt and the script share one source of truth and can't drift.
+          ...(state.productFacts
+            ? { productFacts: formatProductFactsForPrompt(state.productFacts) }
+            : {}),
           // Per BLOCKER 1 (D-34-04): NO productSku required — images are sole source of identity
         }),
       });

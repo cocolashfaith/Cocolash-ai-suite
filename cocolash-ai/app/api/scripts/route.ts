@@ -2,6 +2,10 @@ import { NextRequest, NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/server";
 import { generateVideoScript } from "@/lib/openrouter/captions";
 import { CAMPAIGN_CONCEPT_POOLS } from "@/lib/prompts/scripts/templates";
+import {
+  formatProductFactsForPrompt,
+  type ProductFacts,
+} from "@/lib/ai/director/product-fact-extractor";
 import type {
   CampaignType,
   ScriptTone,
@@ -49,6 +53,7 @@ export async function POST(request: NextRequest) {
       campaignFocus,
       customInstructions,
       excludeHooks,
+      productFacts,
       pipeline = "heygen",
       action = "generate",
       scriptText,
@@ -72,6 +77,7 @@ export async function POST(request: NextRequest) {
       campaignFocus?: string;
       customInstructions?: string;
       excludeHooks?: string[];
+      productFacts?: ProductFacts;
     };
 
     if (!campaignType || !VALID_CAMPAIGN_TYPES.includes(campaignType)) {
@@ -219,6 +225,11 @@ export async function POST(request: NextRequest) {
       }
     }
 
+    const formattedFacts =
+      productFacts && typeof productFacts === "object"
+        ? formatProductFactsForPrompt(productFacts)
+        : undefined;
+
     const scripts = await generateVideoScript({
       campaignType,
       tone,
@@ -233,6 +244,7 @@ export async function POST(request: NextRequest) {
       autoConcept,
       noveltySeed,
       recentScriptSummaries,
+      productFacts: formattedFacts || undefined,
     });
 
     return NextResponse.json({

@@ -74,15 +74,23 @@ export function ProductReferencePicker({
   }
 
   function toggle(url: string) {
+    // Any change to the product set invalidates cached vision facts — clearing
+    // productFacts forces a fresh "extract once" on the next script generation.
     if (selected.includes(url)) {
-      setState({ ugcProductImageUrls: selected.filter((u) => u !== url) });
+      setState({
+        ugcProductImageUrls: selected.filter((u) => u !== url),
+        productFacts: undefined,
+      });
       return;
     }
     if (selected.length >= MAX_PRODUCTS) {
       toast.error(`Maximum ${MAX_PRODUCTS} product images allowed.`);
       return;
     }
-    setState({ ugcProductImageUrls: [...selected, url] });
+    setState({
+      ugcProductImageUrls: [...selected, url],
+      productFacts: undefined,
+    });
   }
 
   async function handleUpload(e: React.ChangeEvent<HTMLInputElement>) {
@@ -110,7 +118,10 @@ export function ProductReferencePicker({
       };
       setImages((prev) => [newProduct, ...prev]);
       if (selected.length < MAX_PRODUCTS) {
-        setState({ ugcProductImageUrls: [...selected, newProduct.image_url] });
+        setState({
+          ugcProductImageUrls: [...selected, newProduct.image_url],
+          productFacts: undefined,
+        });
       }
       if (data.warning) toast.warning(data.warning);
       else toast.success("Product image added — saved for next time.");

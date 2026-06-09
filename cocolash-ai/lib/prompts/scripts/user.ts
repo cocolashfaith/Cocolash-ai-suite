@@ -26,6 +26,9 @@ export interface ScriptUserPromptParams {
   autoConcept?: string;
   noveltySeed?: string;
   recentScriptSummaries?: string[];
+  /** Phase 34.1 (R-34.1-04): vision-extracted product facts, pre-formatted as a
+   *  prompt block. When present, grounds the script in the real product. */
+  productFacts?: string;
 }
 
 const DURATION_INSTRUCTIONS: Record<VideoDuration, string> = {

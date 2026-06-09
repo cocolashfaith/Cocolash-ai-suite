@@ -40,6 +40,10 @@ export interface VisionPromptInput {
   productSku?: string;
   /** OPTIONAL: Creator's stated direction or intent */
   intent?: string;
+  /** OPTIONAL: Pre-extracted product facts (R-34.1-04), already formatted as a
+   *  prompt block. Shares the script's source of truth so prompt and script
+   *  can't drift. */
+  productFacts?: string;
 }
 
 /**
@@ -302,6 +306,11 @@ function buildVisionDirectorUserPrompt(
   lines.push("");
 
   lines.push(`Campaign type: ${input.campaignType}`);
+
+  if (input.productFacts) {
+    lines.push("");
+    lines.push(input.productFacts);
+  }
 
   if (input.intent) {
     lines.push(`Creator intent / direction: ${input.intent}`);

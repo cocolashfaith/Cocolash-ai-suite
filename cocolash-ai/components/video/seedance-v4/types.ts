@@ -17,6 +17,7 @@ import type {
   ScriptTone,
 } from "@/lib/types";
 import type { DirectorMode } from "@/lib/ai/director/types";
+import type { ProductFacts } from "@/lib/ai/director/product-fact-extractor";
 
 export type SeedanceV4Mode = DirectorMode;
 
@@ -51,6 +52,11 @@ export interface SeedanceV4WizardState {
   ugcInfluencerImageUrl?: string;
   /** UGC: array of 2–9 product angle images */
   ugcProductImageUrls?: string[];
+
+  /** Phase 34.1 (R-34.1-04): vision-extracted facts for the chosen products,
+   *  cached once and reused by the script generator + Step-3 prompt agent.
+   *  Cleared whenever the product selection changes (re-extract on next gen). */
+  productFacts?: ProductFacts;
 
   /** multi_reference: array of {url, role} */
   multiReferenceImages?: Array<{

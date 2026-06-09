@@ -150,13 +150,13 @@ export function buildSeedanceDurationRule(seconds: number): string {
     structure =
       "One single idea only. The first sentence must work as the visual hook. No separate CTA — fold the ask into the close.";
   } else if (s <= 10) {
-    structure = "Hook + one proof/benefit beat + a short CTA.";
+    structure = "Hook + one proof/benefit beat + a short CTA. Do NOT cover every framework beat — pick the strongest one or two.";
   } else {
     structure =
       "Hook + two quick beats + CTA. Short, speakable sentences only.";
   }
 
-  return `${s} seconds: ${minWords}-${maxWords} words (spoken pace ~2.5-3 words/sec). ${structure}`;
+  return `HARD LENGTH LIMIT — the clip is only ${s} seconds long. The full_script MUST be ${minWords}-${maxWords} words and MUST NOT exceed ${maxWords} words (spoken pace ~2.5-3 words/sec). A longer script gets cut off mid-sentence in the video. Count the words before you finish. ${structure}`;
 }
 
 export function buildSeedanceScriptSystemPrompt(): string {
@@ -167,10 +167,11 @@ Your job is to write SPOKEN DIALOGUE first. Another AI layer will turn the selec
 Write scripts that a human-looking creator can say naturally while holding, showing, unboxing, applying, or reacting to CocoLash lashes.
 
 Core rules:
+- LENGTH IS A HARD CONSTRAINT. The clip is only a few seconds long — obey the word limit in the user message exactly. Every full_script MUST fit the limit; count the words. A script that runs long gets cut off mid-sentence in the video. When in doubt, write fewer words.
 - Write for speech, not captions. Use contractions and short sentences.
 - Every script must contain a visual action opportunity: hold product, show packaging, point to lashes, turn face, reveal result, or react.
 - Keep the dialogue realistic for AI lip movement. Avoid tongue-twisters, dense clauses, and rapid lists.
-- Match the campaign framework exactly.
+- Follow the campaign framework's INTENT, but the length limit always wins — compress or drop framework beats to fit the clip. Do not try to cover every beat in a short clip.
 - Mention CocoLash naturally at least once.
 - Do not write camera directions, shot labels, hashtags, emojis, markdown, or stage directions inside full_script.
 - Do not use bracketed actions like [holds product]. The next layer handles action direction.
@@ -218,17 +219,25 @@ export function buildSeedanceScriptUserPrompt(
     "",
     `PRODUCT: ${params.productName ?? "CocoLash premium false lashes"}`,
     "",
-    `BRAND FACTS TO WEAVE IN NATURALLY WHEN RELEVANT:`,
+  ];
+
+  // Phase 34.1 (R-34.1-04): image-derived product facts come FIRST and override
+  // the generic brand facts below where they conflict (especially packaging).
+  if (params.productFacts) {
+    lines.push(params.productFacts, "");
+  }
+
+  lines.push(
+    `BRAND FACTS TO WEAVE IN NATURALLY WHEN RELEVANT (generic — defer to the product facts above if they conflict):`,
     `- Premium false lashes made for Black women and diverse eye shapes`,
     `- Flexible cotton band for comfort`,
     `- Reusable 25+ wears with proper care`,
     `- Lightweight enough for all-day wear`,
-    `- Premium, giftable packaging (book-style box or lash tray)`,
     `- Cruelty-free and vegan`,
     "",
     `CAMPAIGN FOCUS AREAS:`,
-    ...template.focusAreas.slice(0, 6).map((item) => `- ${item}`),
-  ];
+    ...template.focusAreas.slice(0, 6).map((item) => `- ${item}`)
+  );
 
   if (params.autoConcept) {
     lines.push("", `SUGGESTED ANGLE: ${params.autoConcept}`);

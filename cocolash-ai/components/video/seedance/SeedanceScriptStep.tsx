@@ -28,6 +28,7 @@ import type {
   ScriptResult,
   VideoScript,
 } from "@/lib/types";
+import type { ProductFacts } from "@/lib/ai/director/product-fact-extractor";
 
 type ScriptMode = "generate" | "library" | "manual";
 
@@ -35,6 +36,12 @@ interface SeedanceScriptStepProps {
   /** Clip duration in seconds (4–15), owned by the parent's Video Settings.
    *  The script is sized to this; there is no separate duration picker here. */
   duration: number;
+  /** Product images chosen in Step 1 — used to extract grounding facts. */
+  productImageUrls: string[];
+  /** Cached vision-extracted product facts (extract once, reuse twice). */
+  productFacts?: ProductFacts;
+  /** Called after a fresh extraction so the parent can cache the facts. */
+  onProductFacts?: (facts: ProductFacts) => void;
   onScriptSelected: (
     script: ScriptResult,
     meta: {
@@ -72,7 +79,13 @@ const MODE_TABS: { value: ScriptMode; label: string; icon: React.ElementType }[]
   { value: "manual", label: "Write My Own", icon: FileEdit },
 ];
 
-export function SeedanceScriptStep({ duration, onScriptSelected }: SeedanceScriptStepProps) {
+export function SeedanceScriptStep({
+  duration,
+  productImageUrls,
+  productFacts,
+  onProductFacts,
+  onScriptSelected,
+}: SeedanceScriptStepProps) {
   const [mode, setMode] = useState<ScriptMode>("generate");
   const [campaignType, setCampaignType] = useState<CampaignType>("product-showcase");
   const [tone, setTone] = useState<ScriptTone>("casual");
@@ -106,6 +119,28 @@ export function SeedanceScriptStep({ duration, onScriptSelected }: SeedanceScrip
         ? scripts.map((s) => s.hook)
         : undefined;
 
+      // Extract once, reuse twice: ground the script in the actual product.
+      // Use cached facts if we have them; otherwise extract from the Step-1
+      // images now and hand them back to the parent to cache. Non-fatal — if
+      // extraction fails, the script still generates (just less grounded).
+      let facts = productFacts;
+      if (!facts && productImageUrls.length > 0) {
+        try {
+          const fres = await fetch("/api/seedance/extract-product-facts", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ productImageUrls }),
+          });
+          const fdata = await fres.json();
+          if (fres.ok && fdata.facts) {
+            facts = fdata.facts as ProductFacts;
+            onProductFacts?.(facts);
+          }
+        } catch {
+          // ignore — proceed without grounding facts
+        }
+      }
+
       const res = await fetch("/api/scripts", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -114,6 +149,7 @@ export function SeedanceScriptStep({ duration, onScriptSelected }: SeedanceScrip
           tone,
           duration,
           pipeline: "seedance",
+          ...(facts ? { productFacts: facts } : {}),
           ...(excludeHooks ? { excludeHooks } : {}),
         }),
       });
