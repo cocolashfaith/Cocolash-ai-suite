@@ -618,3 +618,97 @@ export function getProductTruthByHandle(
 ): ProductTruthEntry | undefined {
   return PRODUCT_TRUTH.find((p) => p.productHandle === handle);
 }
+
+/**
+ * Detect claims in a script that don't match the product's actual features.
+ * Returns an array of warnings; empty array means no false claims detected.
+ *
+ * Per D-34-04 + BLOCKER 1 decision: Can be called with or without productSku.
+ * If no SKU: applies brand-wide CocoLash truth (no magnetic closures anywhere,
+ * flexible bands, hardcover packaging).
+ * If SKU provided: also checks product-specific features.
+ *
+ * Example: script says "magnetic closure" but the product has magneticClosure: false.
+ * This function returns: ["Script mentions 'magnetic closure' but NO CocoLash product has this feature"]
+ *
+ * Brand-wide checks apply even without SKU, preventing hallucinated features
+ * that are never true for ANY CocoLash product.
+ */
+export function detectPhantomFeatures(
+  script: string,
+  productSku?: string
+): string[] {
+  const phantoms: string[] = [];
+  const lower = script.toLowerCase();
+
+  // ── Brand-wide CocoLash truth guards (no SKU needed) ──
+  const brandTruthChecks = [
+    {
+      pattern: /magnetic\s+(closure|lid|box|seal)/i,
+      allowed: false, // NO CocoLash product has magnetic closure
+      message:
+        "Script mentions 'magnetic closure' but NO CocoLash product has this feature",
+    },
+  ];
+
+  brandTruthChecks.forEach(({ pattern, allowed, message }) => {
+    if (pattern.test(script) && !allowed) {
+      phantoms.push(message);
+    }
+  });
+
+  // ── Product-specific checks (if SKU provided) ──
+  if (productSku) {
+    const truth = getProductTruthBySku(productSku);
+    if (!truth) {
+      // Unknown SKU; can't validate product-specific features
+      // Don't block — return only brand-truth violations
+      return phantoms;
+    }
+
+    const productSpecificChecks = [
+      {
+        pattern: /plastic\s+band/i,
+        allowed: truth.bandMaterial === "plastic",
+        message: `Script mentions "plastic band" but ${truth.displayName} uses ${truth.bandMaterial} band`,
+      },
+      {
+        pattern: /cotton\s+band/i,
+        allowed: truth.bandMaterial === "cotton",
+        message: `Script mentions "cotton band" but ${truth.displayName} uses ${truth.bandMaterial} band`,
+      },
+      {
+        pattern: /leather\s+(case|box|pouch|packaging)/i,
+        allowed: (truth.packagingType || "").toLowerCase().includes("leather"),
+        message: `Script mentions "leather" but ${truth.displayName} packaging is ${truth.packagingType}`,
+      },
+    ];
+
+    productSpecificChecks.forEach(({ pattern, allowed, message }) => {
+      if (pattern.test(script) && !allowed) {
+        phantoms.push(message);
+      }
+    });
+  }
+
+  return phantoms;
+}
+
+/**
+ * Validates a script against product truth.
+ * Returns { valid: boolean, warnings: string[] }.
+ * valid = true if no phantom features detected; warnings lists any issues.
+ *
+ * Per D-34-04: Works with or without productSku. Brand-wide checks apply
+ * regardless; product-specific checks only if SKU is provided.
+ */
+export function validateScriptAgainstProductTruth(
+  script: string,
+  productSku?: string
+): { valid: boolean; warnings: string[] } {
+  const warnings = detectPhantomFeatures(script, productSku);
+  return {
+    valid: warnings.length === 0,
+    warnings,
+  };
+}
