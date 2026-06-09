@@ -94,11 +94,11 @@ export async function POST(request: NextRequest) {
     });
   } catch (error) {
     if (error instanceof z.ZodError) {
-      console.error("[seedance/director-vision] Validation error:", error.errors);
+      console.error("[seedance/director-vision] Validation error:", error.issues);
       return NextResponse.json(
         {
           error: "Invalid request body",
-          details: error.errors,
+          details: error.issues,
         },
         { status: 400 }
       );

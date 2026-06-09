@@ -143,7 +143,7 @@ describe("Product Truth Validation", () => {
 
       scripts.forEach((script) => {
         const warnings = detectPhantomFeatures(script);
-        expect(warnings.length).toBeGreaterThan(0, `Failed for: ${script}`);
+        expect(warnings.length, `Failed for: ${script}`).toBeGreaterThan(0);
       });
     });
   });

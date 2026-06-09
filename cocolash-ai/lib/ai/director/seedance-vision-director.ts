@@ -5,7 +5,7 @@
  * generates a high-quality Seedance-ready prompt with @-mention role
  * assignment and product-grounded details.
  *
- * Model: Claude 3.5 Sonnet (or Opus 4 for deeper reasoning) via Anthropic SDK.
+ * Model: Claude 3.5 Sonnet (vision-capable) via the project's OpenRouter client.
  * Per D-34-04 (BLOCKER 1 decision): productSku is OPTIONAL; images are the
  * primary source of truth. Vision agent grounds prompts in actual images;
  * product-truth is supplementary.
@@ -13,6 +13,10 @@
 
 import { getProductTruthBySku } from "@/lib/brand/product-truth";
 import type { ProductTruthEntry } from "@/lib/brand/product-truth";
+import { getOpenRouterClient, openrouterRequest } from "@/lib/openrouter/client";
+
+/** Vision-capable model id (OpenRouter). Used for image-grounded prompt writing. */
+export const SEEDANCE_VISION_DIRECTOR_MODEL = "anthropic/claude-3.5-sonnet";
 
 /**
  * Input to the vision director. Images are the PRIMARY source of product truth.
@@ -74,7 +78,7 @@ export async function generateSeedanceVisionPrompt(
 
   // Resolve product truth for supplementary grounding (OPTIONAL per D-34-04)
   const productTruth = input.productSku
-    ? getProductTruthBySku(input.productSku)
+    ? getProductTruthBySku(input.productSku) ?? null
     : null;
 
   const truthContext = productTruth
@@ -100,7 +104,7 @@ export async function generateSeedanceVisionPrompt(
   return {
     prompt,
     diagnostics: {
-      model: "claude-3-5-sonnet-20241022",
+      model: SEEDANCE_VISION_DIRECTOR_MODEL,
       durationMs,
       inputSummary: summarizeVisionInput(input, productTruth),
     },
@@ -156,8 +160,10 @@ function validateVisionInput(input: VisionPromptInput): void {
 /**
  * Call the vision model to analyze images and generate the prompt.
  *
- * This function is designed to be mockable for testing (see tests/ai/director/seedance-vision-director.test.ts).
- * In production, it uses the Anthropic SDK to call Claude with vision.
+ * Designed to be mockable for testing (see tests/ai/director/seedance-vision-director.test.ts).
+ * In production it uses the project's OpenRouter client (OpenAI-compatible) to call a
+ * vision-capable Claude model, passing images as `image_url` content parts in a
+ * deterministic order: influencer first, then products in array order.
  */
 export async function callVisionModel(
   systemPrompt: string,
@@ -165,64 +171,33 @@ export async function callVisionModel(
   influencerImageUrl: string,
   productImageUrls: string[]
 ): Promise<string> {
-  // This is where the actual Anthropic SDK call happens.
-  // For testing, this function is mocked to return a test response.
-  // See: lib/ai/director/seedance-vision-director.ts (imports Anthropic at runtime)
+  const client = getOpenRouterClient();
 
-  // Import Anthropic dynamically to avoid requiring it in tests
-  const AnthropicModule = await import("@anthropic-ai/sdk");
-  const Anthropic = AnthropicModule.default;
-
-  const client = new Anthropic({
-    apiKey: process.env.ANTHROPIC_API_KEY,
-  });
-
-  // Build image content blocks
-  // Order: influencer first, then products in array order
-  const imageContents = [
-    {
-      type: "image" as const,
-      source: {
-        type: "url" as const,
-        url: influencerImageUrl,
-      },
-    },
+  // Image content parts — influencer first so @influencer_image1 maps to it,
+  // then products so @product_image1..N map in array order.
+  const imageParts = [
+    { type: "image_url" as const, image_url: { url: influencerImageUrl } },
     ...productImageUrls.map((url) => ({
-      type: "image" as const,
-      source: {
-        type: "url" as const,
-        url,
-      },
+      type: "image_url" as const,
+      image_url: { url },
     })),
   ];
 
-  const response = await client.messages.create({
-    model: "claude-3-5-sonnet-20241022",
-    max_tokens: 1024,
-    system: systemPrompt,
-    messages: [
-      {
-        role: "user",
-        content: [
-          ...imageContents,
-          {
-            type: "text",
-            text: userPrompt,
-          },
-        ],
-      },
-    ],
-  });
-
-  // Extract text from response
-  const prompt = response.content
-    .filter((block) => block.type === "text")
-    .map((block) => {
-      if (block.type === "text") return block.text;
-      return "";
+  const completion = await openrouterRequest(() =>
+    client.chat.completions.create({
+      model: SEEDANCE_VISION_DIRECTOR_MODEL,
+      max_tokens: 1024,
+      messages: [
+        { role: "system", content: systemPrompt },
+        {
+          role: "user",
+          content: [...imageParts, { type: "text" as const, text: userPrompt }],
+        },
+      ],
     })
-    .join("\n")
-    .trim();
+  );
+
+  const prompt = completion.choices[0]?.message?.content?.trim() ?? "";
 
   if (!prompt) {
     throw new VisionDirectorError(
