@@ -5,7 +5,8 @@
  * generates a high-quality Seedance-ready prompt with @-mention role
  * assignment and product-grounded details.
  *
- * Model: Claude 3.5 Sonnet (vision-capable) via the project's OpenRouter client.
+ * Model: Claude Opus 4.7 (vision-capable) via the project's OpenRouter client —
+ * the same model the text Seedance Director uses (a known-good OpenRouter endpoint).
  * Per D-34-04 (BLOCKER 1 decision): productSku is OPTIONAL; images are the
  * primary source of truth. Vision agent grounds prompts in actual images;
  * product-truth is supplementary.
@@ -15,8 +16,12 @@ import { getProductTruthBySku } from "@/lib/brand/product-truth";
 import type { ProductTruthEntry } from "@/lib/brand/product-truth";
 import { getOpenRouterClient, openrouterRequest } from "@/lib/openrouter/client";
 
-/** Vision-capable model id (OpenRouter). Used for image-grounded prompt writing. */
-export const SEEDANCE_VISION_DIRECTOR_MODEL = "anthropic/claude-3.5-sonnet";
+/**
+ * Vision-capable model id (OpenRouter). Image-grounded prompt writing.
+ * Matches the text Director's model (`anthropic/claude-opus-4.7`) — a current
+ * Opus model (≥ 4.6) confirmed available on this project's OpenRouter account.
+ */
+export const SEEDANCE_VISION_DIRECTOR_MODEL = "anthropic/claude-opus-4.7";
 
 /**
  * Input to the vision director. Images are the PRIMARY source of product truth.
