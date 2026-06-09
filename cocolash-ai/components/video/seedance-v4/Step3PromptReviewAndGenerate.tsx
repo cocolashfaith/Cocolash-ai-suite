@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState, useCallback } from "react";
-import { Loader2, Sparkles, RefreshCw, Check, AlertTriangle } from "lucide-react";
+import { Loader2, Sparkles, RefreshCw, Check, AlertTriangle, Image as ImageIcon } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -22,19 +22,25 @@ interface Step3Props {
       | ((prev: SeedanceV4WizardState) => Partial<SeedanceV4WizardState>)
   ) => void;
   onReset: () => void;
+  goToStep?: (step: number) => void;
 }
 
 /**
  * Step 3 — review the AI-written Seedance prompt, edit if you want, approve & generate.
  *
- * Flow:
- *   1. On mount, POST to /api/seedance/director with the wizard's mode + inputs.
- *   2. Director (Claude Opus 4.7) writes the optimized prompt and returns it.
- *   3. User reviews / edits the prompt.
- *   4. User clicks [Approve & Generate] → POST to /api/seedance/generate
- *      with the FINAL (potentially user-edited) prompt + the right Enhancor inputs.
+ * For UGC mode with Enhancor-parity images (influencer + product angles):
+ *   1. Call vision agent (/api/seedance/director-vision) to generate prompt from images
+ *   2. Display image gallery (influencer + product thumbnails)
+ *   3. Show generated prompt in editable textarea
+ *   4. Show settings recap
+ *   5. User can edit prompt and click "Approve & Generate"
+ *
+ * For other modes:
+ *   1. Call legacy Director (/api/seedance/director)
+ *   2. Display prompt in editable textarea
+ *   3. User clicks [Approve & Generate]
  */
-export function Step3PromptReviewAndGenerate({ state, setState, onReset }: Step3Props) {
+export function Step3PromptReviewAndGenerate({ state, setState, onReset, goToStep }: Step3Props) {
   const [isWriting, setIsWriting] = useState(false);
   const [writeError, setWriteError] = useState<string | null>(null);
   const [editedPrompt, setEditedPrompt] = useState<string>(state.directorPrompt ?? "");
@@ -44,6 +50,61 @@ export function Step3PromptReviewAndGenerate({ state, setState, onReset }: Step3
   const [isGenerating, setIsGenerating] = useState(false);
   const [generationStarted, setGenerationStarted] = useState(false);
   const [isSkuDegraded, setIsSkuDegraded] = useState(false);
+  const [visionLoading, setVisionLoading] = useState(false);
+  const [visionError, setVisionError] = useState<string | null>(null);
+
+  // Detect if we're in Enhancor-parity UGC mode (has influencer + product images)
+  const isEnhancorParityMode =
+    state.mode === "ugc" &&
+    !!state.ugcInfluencerImageUrl &&
+    state.ugcProductImageUrls &&
+    state.ugcProductImageUrls.length > 0;
+
+  /**
+   * Vision agent path: call /api/seedance/director-vision with influencer + product images
+   * (Enhancor-parity mode only)
+   */
+  const generatePromptFromVisionAgent = useCallback(async () => {
+    if (!isEnhancorParityMode) return;
+
+    setVisionLoading(true);
+    setVisionError(null);
+    try {
+      const response = await fetch("/api/seedance/director-vision", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          influencerImageUrl: state.ugcInfluencerImageUrl,
+          productImageUrls: state.ugcProductImageUrls,
+          script: state.scriptText,
+          campaignType: state.campaignType,
+          // Per BLOCKER 1 (D-34-04): NO productSku required — images are sole source of identity
+        }),
+      });
+
+      const data = await response.json();
+      if (!response.ok) {
+        throw new Error(data.error || `Vision agent failed: ${response.statusText}`);
+      }
+
+      // Capture the inputsVersion at the time the vision agent ran
+      const versionAtRun = state.inputsVersion;
+
+      setState({
+        directorPrompt: data.prompt,
+        directorDiagnostics: data.diagnostics,
+        directorPromptVersion: versionAtRun,
+      });
+      setEditedPrompt(data.prompt);
+      toast.success("Vision agent generated your prompt from the images.");
+    } catch (error) {
+      const msg = error instanceof Error ? error.message : "Failed to generate prompt";
+      setVisionError(msg);
+      toast.error(msg);
+    } finally {
+      setVisionLoading(false);
+    }
+  }, [isEnhancorParityMode, state, setState]);
 
   const writeDirectorPrompt = useCallback(async () => {
     setIsWriting(true);
@@ -127,36 +188,50 @@ export function Step3PromptReviewAndGenerate({ state, setState, onReset }: Step3
   }, [state.productSku, state.mode]);
 
   /**
-   * Run the Director when:
-   *   - First mount and no cached prompt exists, OR
-   *   - The user navigated back to a previous step, changed inputs, and came
-   *     forward again (detected via inputsVersion > directorPromptVersion).
+   * For Enhancor-parity UGC mode: call vision agent on mount or when images/script change.
+   * For other modes: call legacy Director when inputs change (existing logic).
    *
-   * Faith reported: editing inputs after seeing a generated prompt should
-   * regenerate it, not show the stale result. This is that fix.
+   * The vision agent runs once images are selected (Step 2 complete).
+   * If user goes back to Step 2, changes images, and returns, we regenerate.
    */
   useEffect(() => {
-    if (isWriting) return;
-    const haveCachedOutput =
-      !!state.directorPrompt || !!state.directorMultiFramePrompts?.length;
-    const isStale =
-      haveCachedOutput &&
-      typeof state.directorPromptVersion === "number" &&
-      state.inputsVersion > state.directorPromptVersion;
+    if (isEnhancorParityMode) {
+      if (visionLoading) return;
+      const haveCachedOutput = !!state.directorPrompt;
+      const isStale =
+        haveCachedOutput &&
+        typeof state.directorPromptVersion === "number" &&
+        state.inputsVersion > state.directorPromptVersion;
 
-    if (!haveCachedOutput || isStale) {
-      void writeDirectorPrompt();
+      if (!haveCachedOutput || isStale) {
+        void generatePromptFromVisionAgent();
+      }
+    } else {
+      // Legacy Director path for non-UGC or non-Enhancor-parity modes
+      if (isWriting) return;
+      const haveCachedOutput =
+        !!state.directorPrompt || !!state.directorMultiFramePrompts?.length;
+      const isStale =
+        haveCachedOutput &&
+        typeof state.directorPromptVersion === "number" &&
+        state.inputsVersion > state.directorPromptVersion;
+
+      if (!haveCachedOutput || isStale) {
+        void writeDirectorPrompt();
+      }
     }
-    // Re-evaluate when inputs change. directorPromptVersion is set by
-    // writeDirectorPrompt itself — including it makes the loop terminating.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [state.inputsVersion, state.directorPromptVersion]);
+  }, [state.inputsVersion, state.directorPromptVersion, isEnhancorParityMode]);
 
   async function handleApproveAndGenerate() {
     setIsGenerating(true);
     setGenerationStarted(true);
     try {
-      const body = buildEnhancorBody(state, editedPrompt, editedSegments);
+      // For Enhancor-parity UGC mode, build payload with influencers[] and products[] arrays
+      const body = isEnhancorParityMode
+        ? buildEnhancorBodyV4UGC(state, editedPrompt)
+        : buildEnhancorBody(state, editedPrompt, editedSegments);
+
       const res = await fetch("/api/seedance/generate", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -187,7 +262,24 @@ export function Step3PromptReviewAndGenerate({ state, setState, onReset }: Step3
     }
   }
 
-  if (isWriting) {
+  // Loading states
+  if (isEnhancorParityMode && visionLoading) {
+    return (
+      <div className="space-y-4 rounded-xl border-2 border-coco-golden/30 bg-coco-golden/5 p-8 text-center">
+        <Loader2 className="mx-auto h-8 w-8 animate-spin text-coco-golden" />
+        <div>
+          <p className="text-sm font-semibold text-coco-brown">
+            Vision agent is analyzing your images…
+          </p>
+          <p className="mt-1 text-xs text-coco-brown-medium/60">
+            Generating a Seedance prompt from your selected influencer and product images.
+          </p>
+        </div>
+      </div>
+    );
+  }
+
+  if (!isEnhancorParityMode && isWriting) {
     return (
       <div className="space-y-4 rounded-xl border-2 border-coco-golden/30 bg-coco-golden/5 p-8 text-center">
         <Loader2 className="mx-auto h-8 w-8 animate-spin text-coco-golden" />
@@ -203,7 +295,26 @@ export function Step3PromptReviewAndGenerate({ state, setState, onReset }: Step3
     );
   }
 
-  if (writeError) {
+  // Error states
+  if (isEnhancorParityMode && visionError) {
+    return (
+      <div className="space-y-3 rounded-xl border-2 border-red-300 bg-red-50 p-4">
+        <div className="flex items-start gap-2">
+          <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0 text-red-600" />
+          <div>
+            <p className="text-sm font-semibold text-red-900">Vision agent failed</p>
+            <p className="mt-0.5 text-xs text-red-800">{visionError}</p>
+          </div>
+        </div>
+        <Button onClick={generatePromptFromVisionAgent} variant="outline" size="sm" className="gap-1.5">
+          <RefreshCw className="h-3 w-3" />
+          Retry
+        </Button>
+      </div>
+    );
+  }
+
+  if (!isEnhancorParityMode && writeError) {
     return (
       <div className="space-y-3 rounded-xl border-2 border-red-300 bg-red-50 p-4">
         <div className="flex items-start gap-2">
@@ -223,6 +334,38 @@ export function Step3PromptReviewAndGenerate({ state, setState, onReset }: Step3
 
   return (
     <div className="space-y-6">
+      {/* Image Gallery (Enhancor-parity UGC mode only) */}
+      {isEnhancorParityMode && (
+        <section className="space-y-3">
+          <h3 className="text-sm font-semibold text-coco-brown">Selected Images</h3>
+          <div className="grid grid-cols-4 gap-4">
+            {/* Influencer image (first) */}
+            {state.ugcInfluencerImageUrl && (
+              <div className="relative">
+                <img
+                  src={state.ugcInfluencerImageUrl}
+                  alt="Influencer"
+                  className="w-full aspect-square object-cover rounded-lg border border-coco-beige-dark"
+                />
+                <p className="text-xs text-coco-brown-medium mt-1">Influencer</p>
+              </div>
+            )}
+
+            {/* Product images (subsequent) */}
+            {state.ugcProductImageUrls?.map((url, idx) => (
+              <div key={idx} className="relative">
+                <img
+                  src={url}
+                  alt={`Product ${idx + 1}`}
+                  className="w-full aspect-square object-cover rounded-lg border border-coco-beige-dark"
+                />
+                <p className="text-xs text-coco-brown-medium mt-1">Product {idx + 1}</p>
+              </div>
+            ))}
+          </div>
+        </section>
+      )}
+
       {/* Director output */}
       {state.mode === "multi_frame" ? (
         <section className="space-y-3">
@@ -315,10 +458,10 @@ export function Step3PromptReviewAndGenerate({ state, setState, onReset }: Step3
         </section>
       )}
 
-      {/* Enhancor settings — visible for every mode */}
+      {/* Enhancor settings — read-only for Enhancor-parity, editable for others */}
       <EnhancorSettingsPanel
         state={state}
-        setState={setState}
+        setState={isEnhancorParityMode ? undefined : setState}
         hideDuration={state.mode === "lipsyncing"}
         hideTopLevelDuration={state.mode === "multi_frame"}
       />
@@ -375,13 +518,25 @@ export function Step3PromptReviewAndGenerate({ state, setState, onReset }: Step3
         </div>
       ) : (
         <div className="flex gap-3">
-          <Button onClick={onReset} variant="outline" className="gap-2 py-5" size="lg">
-            Start Over
-          </Button>
+          {isEnhancorParityMode && goToStep ? (
+            <Button
+              onClick={() => goToStep(2)}
+              variant="outline"
+              className="gap-2 py-5"
+              size="lg"
+            >
+              Back
+            </Button>
+          ) : (
+            <Button onClick={onReset} variant="outline" className="gap-2 py-5" size="lg">
+              Start Over
+            </Button>
+          )}
           <Button
             onClick={handleApproveAndGenerate}
             disabled={
               isGenerating ||
+              visionLoading ||
               (state.mode === "multi_frame"
                 ? editedSegments.length === 0
                 : !editedPrompt.trim())
@@ -391,10 +546,10 @@ export function Step3PromptReviewAndGenerate({ state, setState, onReset }: Step3
             )}
             size="lg"
           >
-            {isGenerating ? (
+            {isGenerating || visionLoading ? (
               <>
                 <Loader2 className="h-4 w-4 animate-spin" />
-                Submitting…
+                {isGenerating ? "Submitting…" : "Generating…"}
               </>
             ) : (
               <>
@@ -486,6 +641,41 @@ function buildDirectorBody(state: SeedanceV4WizardState): DirectorInput {
         sceneDescription: state.t2vSceneDescription,
       };
   }
+}
+
+/**
+ * Build payload for Enhancor-parity UGC mode (Plan 34-04).
+ * Sends influencer-first image arrays + edited prompt + all settings.
+ * Per BLOCKER 1 (D-34-04): NO productSku required — images are sole source of identity.
+ */
+function buildEnhancorBodyV4UGC(
+  state: SeedanceV4WizardState,
+  editedPrompt: string
+): Record<string, unknown> {
+  return {
+    type: "image-to-video",
+    seedanceMode: "ugc",
+    prompt: editedPrompt,
+    duration: state.duration,
+    resolution: state.resolution,
+    aspectRatio: state.aspectRatio,
+    fullAccess: state.fullAccess ?? true,
+    unrestricted: state.unrestricted ?? false,
+    quality: state.quality ?? "standard",
+    // Images: influencer FIRST, then products (per @-mention alignment)
+    influencers: state.ugcInfluencerImageUrl ? [state.ugcInfluencerImageUrl] : [],
+    products: state.ugcProductImageUrls || [],
+    // Script for downstream reference
+    scriptText: state.scriptText,
+    campaignType: state.campaignType,
+    tone: state.tone,
+    fastMode: state.fastMode,
+    // Legacy compat fields (kept for backward compatibility)
+    personImageUrl: state.ugcInfluencerImageUrl,
+    productImageUrl: state.ugcProductImageUrls?.[0],
+    overridePrompt: editedPrompt,
+    // NO productSku per BLOCKER 1 (D-34-04)
+  };
 }
 
 function buildEnhancorBody(

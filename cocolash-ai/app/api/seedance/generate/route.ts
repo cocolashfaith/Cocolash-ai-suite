@@ -417,6 +417,8 @@ export async function POST(request: NextRequest) {
           resolution,
           duration: seedanceDuration,
           full_access: fullAccess,
+          unrestricted: body.unrestricted,
+          quality: body.quality,
           fast_mode: fastMode,
           fixed_lens: fixedLens,
           generate_audio: generateAudio,

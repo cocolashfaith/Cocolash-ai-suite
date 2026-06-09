@@ -4,49 +4,33 @@ import { cn } from "@/lib/utils";
 import type { SeedanceV4WizardState } from "./types";
 
 /**
- * Enhancor settings panel — used in Step 3 (Prompt Review) for EVERY mode.
+ * Enhancor settings recap panel — displays current generation settings.
  *
- * Shows the user the per-generation parameters Enhancor accepts:
- *   - Resolution (480p / 720p / 1080p) — matrix-aware (1080p disables Fast Mode)
- *   - Aspect ratio (9:16, 16:9, 3:4, 4:3) — Enhancor-allowed only, verified by curl
- *   - Fast Mode (auto-disabled at 1080p per Enhancor docs)
- *   - Duration override
+ * Used in Step 3 (Prompt Review) to show the user the Enhancor parameters
+ * that will be applied. Can be used as read-only (recap) or interactive (editing).
  *
- * 1:1 / 21:9 / 4:5 are NOT shown — Enhancor rejects them at every resolution
- * (verified 2026-05-04 via curl probe, see .planning/phases/14-audit/evidence/).
+ * Displays:
+ *   - Model (hardcoded: Seedance 2.0)
+ *   - Mode (hardcoded: UGC)
+ *   - Duration
+ *   - Resolution
+ *   - Aspect Ratio
+ *   - Pass Faces (fullAccess toggle)
+ *   - Unrestricted toggle
+ *   - Quality
  */
-
-const RESOLUTIONS = [
-  { value: "480p" as const, label: "480p", desc: "Fastest" },
-  { value: "720p" as const, label: "720p", desc: "Recommended" },
-  { value: "1080p" as const, label: "1080p", desc: "Highest quality" },
-];
-
-const ASPECT_RATIOS = [
-  { value: "9:16" as const, label: "9:16", desc: "TikTok / Reels" },
-  { value: "16:9" as const, label: "16:9", desc: "Landscape" },
-  { value: "3:4" as const, label: "3:4", desc: "Portrait" },
-  { value: "4:3" as const, label: "4:3", desc: "Classic" },
-];
-
-const DURATIONS = [
-  { value: 5, label: "5s" },
-  { value: 8, label: "8s" },
-  { value: 10, label: "10s" },
-  { value: 15, label: "15s" },
-];
 
 interface EnhancorSettingsPanelProps {
   state: SeedanceV4WizardState;
-  setState: (
+  /** When provided, component is interactive (editing mode) */
+  setState?: (
     update:
       | Partial<SeedanceV4WizardState>
       | ((prev: SeedanceV4WizardState) => Partial<SeedanceV4WizardState>)
   ) => void;
-  /** When true (lip-sync mode), the duration row is hidden — Enhancor derives
-   *  duration from the audio file. */
+  /** When true, hides the duration row (for modes that derive duration differently) */
   hideDuration?: boolean;
-  /** Multi-frame mode hides the top-level duration since segment durations sum. */
+  /** Multi-frame mode hides the top-level duration since segment durations sum */
   hideTopLevelDuration?: boolean;
 }
 
@@ -56,7 +40,96 @@ export function EnhancorSettingsPanel({
   hideDuration,
   hideTopLevelDuration,
 }: EnhancorSettingsPanelProps) {
+  const isReadOnly = !setState;
   const fastModeDisabled = state.resolution === "1080p";
+
+  if (isReadOnly) {
+    // Read-only recap format (Step 3 review)
+    return (
+      <section className="space-y-4 rounded-xl border border-coco-beige-dark bg-white p-4">
+        <h3 className="text-sm font-semibold text-coco-brown">Settings Recap</h3>
+
+        <div className="grid grid-cols-2 gap-4 text-sm">
+          {/* Model (hardcoded) */}
+          <div>
+            <p className="text-xs text-coco-brown-medium/70">Model</p>
+            <p className="font-medium text-coco-brown">Seedance 2.0</p>
+          </div>
+
+          {/* Mode (hardcoded) */}
+          <div>
+            <p className="text-xs text-coco-brown-medium/70">Mode</p>
+            <p className="font-medium text-coco-brown">UGC</p>
+          </div>
+
+          {/* Duration */}
+          {!hideDuration && !hideTopLevelDuration && (
+            <div>
+              <p className="text-xs text-coco-brown-medium/70">Duration</p>
+              <p className="font-medium text-coco-brown">{state.duration}s</p>
+            </div>
+          )}
+
+          {/* Resolution */}
+          <div>
+            <p className="text-xs text-coco-brown-medium/70">Resolution</p>
+            <p className="font-medium text-coco-brown">{state.resolution}</p>
+          </div>
+
+          {/* Aspect Ratio */}
+          <div>
+            <p className="text-xs text-coco-brown-medium/70">Aspect Ratio</p>
+            <p className="font-medium text-coco-brown">{state.aspectRatio}</p>
+          </div>
+
+          {/* Pass Faces */}
+          <div>
+            <p className="text-xs text-coco-brown-medium/70">Pass Faces</p>
+            <p className="font-medium text-coco-brown">
+              {state.fullAccess ? "ON" : "OFF"}
+            </p>
+          </div>
+
+          {/* Unrestricted */}
+          <div>
+            <p className="text-xs text-coco-brown-medium/70">Unrestricted</p>
+            <p className="font-medium text-coco-brown">
+              {state.unrestricted ? "ON" : "OFF"}
+            </p>
+          </div>
+
+          {/* Quality */}
+          <div>
+            <p className="text-xs text-coco-brown-medium/70">Quality</p>
+            <p className="font-medium capitalize text-coco-brown">
+              {state.quality ?? "standard"}
+            </p>
+          </div>
+        </div>
+      </section>
+    );
+  }
+
+  // Interactive editing mode
+  const RESOLUTIONS = [
+    { value: "480p" as const, label: "480p", desc: "Fastest" },
+    { value: "720p" as const, label: "720p", desc: "Recommended" },
+    { value: "1080p" as const, label: "1080p", desc: "Highest quality" },
+  ];
+
+  const ASPECT_RATIOS = [
+    { value: "9:16" as const, label: "9:16", desc: "TikTok / Reels" },
+    { value: "16:9" as const, label: "16:9", desc: "Landscape" },
+    { value: "3:4" as const, label: "3:4", desc: "Portrait" },
+    { value: "4:3" as const, label: "4:3", desc: "Classic" },
+  ];
+
+  const DURATIONS = [
+    { value: 5, label: "5s" },
+    { value: 8, label: "8s" },
+    { value: 10, label: "10s" },
+    { value: 15, label: "15s" },
+  ];
 
   return (
     <section className="space-y-4 rounded-xl border-2 border-coco-beige-dark bg-coco-beige-light/30 p-4">
