@@ -73,6 +73,10 @@ interface SeedanceGenerateBody {
   generationType?: SeedanceGenerationType;
   seedanceMode?: SeedanceMode;
   fullAccess?: boolean;
+  /** "Unrestricted" toggle from Step 1 settings (Plan 34-04) */
+  unrestricted?: boolean;
+  /** Quality setting from Step 1 settings (Plan 34-04) */
+  quality?: string;
   fastMode?: boolean;
   products?: string[];
   influencers?: string[];
@@ -106,6 +110,7 @@ interface SeedanceGenerateBody {
   /**
    * Product SKU selected in Step 1 — threads through to the Director call
    * (Phase 27, D-27-09). Camel case from the v4 client.
+   * Per BLOCKER 1 (D-34-04): Optional for Enhancor-parity UGC mode.
    */
   productSku?: string;
 }
@@ -159,6 +164,8 @@ export async function POST(request: NextRequest) {
       generationType = "image-to-video",
       seedanceMode = "ugc",
       fullAccess = true,
+      unrestricted,
+      quality,
       fastMode = false,
       products,
       influencers,
