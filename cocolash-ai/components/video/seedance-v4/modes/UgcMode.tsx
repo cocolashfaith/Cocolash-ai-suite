@@ -107,10 +107,12 @@ export function UgcMode({ state, setState, onReady }: UgcModeProps) {
   const [productImages, setProductImages] = useState<ProductRef[]>([]);
   const [loadingProducts, setLoadingProducts] = useState(true);
 
-  // Toggle ON: which product gets composed in at gen-time
+  // Toggle ON: which product gets composed in at gen-time (single image)
   const [composeProductUrl, setComposeProductUrl] = useState<string | null>(null);
-  // Toggle OFF: which product goes alongside as a Seedance reference
-  const [seedanceProductUrl, setSeedanceProductUrl] = useState<string | null>(null);
+  // Toggle OFF: which product angle images go alongside the avatar as separate
+  // Seedance references (multi-select, 1–9 — D-34-02/03). The avatar is the
+  // influencer; these become products[] and route through the vision pipeline.
+  const [seedanceProductUrls, setSeedanceProductUrls] = useState<string[]>([]);
 
   // Avatar state
   const [generatedAvatarUrl, setGeneratedAvatarUrl] = useState<string | null>(null);
@@ -276,20 +278,33 @@ export function UgcMode({ state, setState, onReady }: UgcModeProps) {
       setState({
         ugcComposedImageUrl: finalAvatar,
         ugcWasComposed: true,
+        // Clear canonical fields so Step 3 uses the legacy single-image path here.
+        ugcInfluencerImageUrl: undefined,
+        ugcProductImageUrls: undefined,
       });
       onReady();
       return;
     }
 
-    // Toggle OFF path: avatar + product as separate references to Seedance
-    if (!seedanceProductUrl) {
-      toast.error("Pick a product image to send to Seedance.");
+    // Toggle OFF path: avatar (= influencer) + multiple product angle references.
+    // Routes through the Enhancor-parity vision pipeline (Step 3) by populating
+    // the canonical ugcInfluencerImageUrl + ugcProductImageUrls[] fields, so the
+    // vision agent sees the images and the payload sends influencers[]+products[].
+    if (seedanceProductUrls.length === 0) {
+      toast.error("Select at least one product image to send to Seedance.");
+      return;
+    }
+    if (seedanceProductUrls.length > 9) {
+      toast.error("Maximum 9 product images allowed.");
       return;
     }
     setState({
-      ugcComposedImageUrl: finalAvatar,
+      ugcInfluencerImageUrl: finalAvatar,
+      ugcProductImageUrls: seedanceProductUrls,
+      // Clear legacy single-image fields so Step 3 uses the vision pipeline.
+      ugcComposedImageUrl: undefined,
       ugcWasComposed: false,
-      ugcSeparateProductUrl: seedanceProductUrl,
+      ugcSeparateProductUrl: undefined,
     });
     onReady();
   }, [
@@ -298,12 +313,24 @@ export function UgcMode({ state, setState, onReady }: UgcModeProps) {
     generatedAvatarUrl,
     generatedHasProduct,
     showHoldingProduct,
-    seedanceProductUrl,
+    seedanceProductUrls,
     influencerImageUrl,
     productAngleUrls,
     setState,
     onReady,
   ]);
+
+  /** Toggle a library product image in/out of the multi-select set (cap 9). */
+  const toggleSeedanceProduct = useCallback((url: string) => {
+    setSeedanceProductUrls((prev) => {
+      if (prev.includes(url)) return prev.filter((u) => u !== url);
+      if (prev.length >= 9) {
+        toast.error("Maximum 9 product images allowed.");
+        return prev;
+      }
+      return [...prev, url];
+    });
+  }, []);
 
   const showSeedanceProductPicker =
     activeTab === "generate"
@@ -316,7 +343,7 @@ export function UgcMode({ state, setState, onReady }: UgcModeProps) {
       : (activeTab === "gallery" ? selectedGalleryUrl : generatedAvatarUrl) &&
           (showHoldingProduct
             ? generatedHasProduct // toggle-on must have generated WITH product
-            : !!seedanceProductUrl);
+            : seedanceProductUrls.length >= 1);
 
   return (
     <div className="space-y-6">
@@ -395,9 +422,10 @@ export function UgcMode({ state, setState, onReady }: UgcModeProps) {
               <ProductPicker
                 images={productImages}
                 loading={loadingProducts}
-                selectedUrl={composeProductUrl}
-                onSelect={(url) => {
-                  setComposeProductUrl(url);
+                /* Compose path is single-product: keep at most one selected. */
+                selectedUrls={composeProductUrl ? [composeProductUrl] : []}
+                onToggle={(url) => {
+                  setComposeProductUrl((prev) => (prev === url ? null : url));
                   // Invalidate any prior generated avatar so user re-generates
                   setGeneratedAvatarUrl(null);
                   setGeneratedHasProduct(false);
@@ -589,15 +617,21 @@ export function UgcMode({ state, setState, onReady }: UgcModeProps) {
               Product reference for Seedance
             </h3>
             <p className="mt-0.5 text-[11px] text-coco-brown-medium/60">
-              Both the avatar AND this product image will be sent to Seedance
-              as separate references — the model will frame them naturally.
+              Select <strong>one or more angles of the same product</strong> (up to 9 —
+              2–4 different angles works best). The avatar AND every selected product
+              image are sent to Seedance as separate references.
             </p>
+            {seedanceProductUrls.length > 0 && (
+              <p className="mt-0.5 text-[11px] font-medium text-coco-golden">
+                {seedanceProductUrls.length} image{seedanceProductUrls.length !== 1 ? "s" : ""} selected
+              </p>
+            )}
           </div>
           <ProductPicker
             images={productImages}
             loading={loadingProducts}
-            selectedUrl={seedanceProductUrl}
-            onSelect={setSeedanceProductUrl}
+            selectedUrls={seedanceProductUrls}
+            onToggle={toggleSeedanceProduct}
             onProductUploaded={(np) => {
               setProductImages((prev) => [np, ...prev]);
             }}
@@ -672,14 +706,16 @@ export function UgcMode({ state, setState, onReady }: UgcModeProps) {
 function ProductPicker({
   images,
   loading,
-  selectedUrl,
-  onSelect,
+  selectedUrls,
+  onToggle,
   onProductUploaded,
 }: {
   images: ProductRef[];
   loading: boolean;
-  selectedUrl: string | null;
-  onSelect: (url: string) => void;
+  /** Multi-select: every currently-selected product image URL. */
+  selectedUrls: string[];
+  /** Toggle a product image in/out of the selection (parent enforces the 9 cap). */
+  onToggle: (url: string) => void;
   /** Called after a successful upload — append the new product to the picker
    *  list and auto-select it. Caller is expected to update its product list. */
   onProductUploaded?: (newProduct: ProductRef) => void;
@@ -714,7 +750,7 @@ function ProductPicker({
         category_name: data.image.category_name ?? "Custom Uploads",
       };
       onProductUploaded?.(newProduct);
-      onSelect(newProduct.image_url);
+      onToggle(newProduct.image_url);
       if (data.warning) {
         toast.warning(data.warning);
       } else {
@@ -770,12 +806,12 @@ function ProductPicker({
               )}
             </button>
             {images.slice(0, 23).map((img) => {
-              const isSelected = selectedUrl === img.image_url;
+              const isSelected = selectedUrls.includes(img.image_url);
               return (
                 <button
                   key={img.id}
                   type="button"
-                  onClick={() => onSelect(img.image_url)}
+                  onClick={() => onToggle(img.image_url)}
                   className={cn(
                     "group relative aspect-square overflow-hidden rounded-lg border-2 transition-all",
                     isSelected
