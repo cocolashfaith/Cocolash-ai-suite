@@ -55,7 +55,7 @@ describe("Step 3: Prompt Review and Generate (Plan 34-04 Automation)", () => {
   describe("Vision Agent Integration", () => {
     it("should call /api/seedance/director-vision with influencer + product images", () => {
       // Assertion: POST body includes influencerImageUrl + productImageUrls arrays
-      const body = {
+      const body: Record<string, unknown> = {
         influencerImageUrl: "https://example.com/influencer.jpg",
         productImageUrls: [
           "https://example.com/product1.jpg",
@@ -68,15 +68,16 @@ describe("Step 3: Prompt Review and Generate (Plan 34-04 Automation)", () => {
 
       expect(body.influencerImageUrl).toBeDefined();
       expect(Array.isArray(body.productImageUrls)).toBe(true);
-      expect(body.productImageUrls.length).toBeGreaterThanOrEqual(2);
+      const productImageUrls = body.productImageUrls as unknown[];
+      expect(productImageUrls.length).toBeGreaterThanOrEqual(2);
       expect(body.script).toBeDefined();
       expect(body.campaignType).toBeDefined();
-      expect(body.productSku).toBeUndefined(); // Per BLOCKER 1
+      expect("productSku" in body).toBe(false); // Per BLOCKER 1
     });
 
     it("should NOT include productSku in vision agent call (per BLOCKER 1)", () => {
       // Assertion: productSku is absent from the POST body
-      const body = {
+      const body: Record<string, unknown> = {
         influencerImageUrl: "https://example.com/influencer.jpg",
         productImageUrls: ["https://example.com/product1.jpg"],
         script: "Test",
@@ -256,7 +257,7 @@ describe("Step 3: Prompt Review and Generate (Plan 34-04 Automation)", () => {
 
     it("should NOT include productSku in generate payload (per BLOCKER 1)", () => {
       // Assertion: productSku absent from request body
-      const payload = {
+      const payload: Record<string, unknown> = {
         influencers: ["https://example.com/influencer.jpg"],
         products: ["https://example.com/product1.jpg"],
         overridePrompt: "Generated prompt",
@@ -389,7 +390,7 @@ describe("Step 3: Prompt Review and Generate (Plan 34-04 Automation)", () => {
   describe("BLOCKER 1 Compliance (NO productSku)", () => {
     it("should NOT send productSku in vision agent call", () => {
       // Assertion: D-34-04 decision enforced
-      const visionCall = {
+      const visionCall: Record<string, unknown> = {
         influencerImageUrl: "https://example.com/influencer.jpg",
         productImageUrls: ["https://example.com/product1.jpg"],
         script: "Test",
@@ -401,7 +402,7 @@ describe("Step 3: Prompt Review and Generate (Plan 34-04 Automation)", () => {
 
     it("should NOT send productSku in generate call", () => {
       // Assertion: D-34-04 decision enforced
-      const generateCall = {
+      const generateCall: Record<string, unknown> = {
         influencers: ["https://example.com/influencer.jpg"],
         products: ["https://example.com/product1.jpg"],
         overridePrompt: "Prompt",
