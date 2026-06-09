@@ -18,7 +18,7 @@ export type SeedanceAspectRatio =
   | "3:4"
   | "21:9";
 export type SeedanceResolution = "480p" | "720p" | "1080p";
-export type SeedanceDuration = "5" | "8" | "10" | "15";
+export type SeedanceDuration = "4" | "5" | "6" | "7" | "8" | "9" | "10" | "11" | "12" | "13" | "14" | "15";
 export type SeedanceGenerationType = "text-to-video" | "image-to-video";
 export type SeedanceMode =
   | "ugc"
