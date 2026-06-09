@@ -54,6 +54,10 @@ export interface SeedanceInput {
   resolution: SeedanceResolution;
   duration: SeedanceDuration;
   full_access?: boolean;
+  /** "Pass Faces" toggle — VERIFY against live Enhancor API (R-34-05) */
+  unrestricted?: boolean;
+  /** Quality setting (e.g., "standard", "high") — VERIFY allowed values against live Enhancor API (R-34-05) */
+  quality?: string;
   fast_mode?: boolean;
   fixed_lens?: boolean;
   generate_audio?: boolean;
@@ -70,6 +74,10 @@ export interface SeedanceCreateTaskRequest {
   aspect_ratio: SeedanceAspectRatio;
   webhook_url: string;
   full_access?: boolean;
+  /** "Unrestricted" toggle — VERIFY if separate from full_access (R-34-05) */
+  unrestricted?: boolean;
+  /** Quality setting (e.g., "standard", "high") — VERIFY allowed values (R-34-05) */
+  quality?: string;
   fast_mode?: boolean;
   products?: string[];
   influencers?: string[];
