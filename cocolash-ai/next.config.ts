@@ -29,6 +29,14 @@ const nextConfig: NextConfig = {
         // HeyGen uses multiple controlled CDN subdomains, e.g. files.heygen.ai and files2.heygen.ai.
         hostname: "**.heygen.ai",
       },
+      {
+        protocol: "https",
+        // Enhancor (Seedance) serves finished videos + thumbnails from CloudFront
+        // distributions (e.g. d2i9jqncnkplwq.cloudfront.net). When Cloudinary
+        // re-hosting is unavailable, completion falls back to these CloudFront
+        // URLs, so next/image must accept them or the gallery crashes on render.
+        hostname: "**.cloudfront.net",
+      },
     ],
   },
 };

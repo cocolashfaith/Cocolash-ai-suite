@@ -1,10 +1,8 @@
 "use client";
 
-import { useState } from "react";
-import Image from "next/image";
 import { Play, Clock, Film, Loader2, AlertCircle, Sparkles, Clapperboard, GraduationCap } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
-import { ImageLoader } from "@/components/ui/image-loader";
+import { SafeThumbnail } from "@/components/ui/safe-thumbnail";
 import type { GeneratedVideo } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
@@ -44,8 +42,6 @@ const STATUS_CONFIG: Record<string, { label: string; className: string; icon: Re
 };
 
 export function VideoCard({ video, onClick, eager = false }: VideoCardProps) {
-  const [loaded, setLoaded] = useState(false);
-
   const thumbnailUrl = video.thumbnail_url || video.composed_image_url || video.person_image_url;
   const isEducational = EDUCATIONAL_CAMPAIGNS.has(video.background_type ?? "");
   const status = video.heygen_status ?? "pending";
@@ -70,27 +66,17 @@ export function VideoCard({ video, onClick, eager = false }: VideoCardProps) {
       >
         <div className="relative aspect-video overflow-hidden bg-coco-charcoal/90">
           {thumbnailUrl ? (
-            <>
-              {!loaded && (
-                <div className="absolute inset-0 z-[1] flex items-center justify-center">
-                  <ImageLoader />
+            <SafeThumbnail
+              src={thumbnailUrl}
+              alt="Video thumbnail"
+              eager={eager}
+              imageClassName="object-cover transition-all duration-300 group-hover:scale-105"
+              fallback={
+                <div className="flex h-full items-center justify-center">
+                  <Film className="h-8 w-8 text-coco-beige/30" />
                 </div>
-              )}
-              <Image
-                src={thumbnailUrl}
-                alt="Video thumbnail"
-                fill
-                sizes="(max-width: 640px) 100vw, (max-width: 1024px) 50vw, 33vw"
-                preload={eager}
-                loading={eager ? "eager" : "lazy"}
-                fetchPriority={eager ? "high" : "auto"}
-                className={cn(
-                  "object-cover transition-all duration-300 group-hover:scale-105",
-                  loaded ? "opacity-100" : "opacity-0"
-                )}
-                onLoad={() => setLoaded(true)}
-              />
-            </>
+              }
+            />
           ) : (
             <div className="flex h-full items-center justify-center">
               <Film className="h-8 w-8 text-coco-beige/30" />
