@@ -33,7 +33,8 @@ export default async function ChatbotAdminDiscounts() {
         and product-line scope to control when each rule fires.
       </p>
       <p className="text-sm text-coco-brown-medium">
-        To bulk-import the latest Shopify export run{" "}
+        Add or edit codes right here — changes take effect immediately, no
+        deployment needed. To bulk-import a Shopify export instead, run{" "}
         <code className="rounded bg-coco-beige px-1 py-0.5 font-mono">npx tsx scripts/discount-import.ts</code>.
       </p>
       <DiscountsTable rows={rows} />
