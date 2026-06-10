@@ -55,16 +55,22 @@ export function BlotatoApiKeyInput({
     fetchStatus();
   }, []);
 
-  const handleTestConnection = async () => {
-    const useEnvKey = !apiKey.trim() && statusData?.hasEnvKey;
+  // A key is "configured" if it exists in the env OR the database; in either
+  // case Test Connection can verify it via GET (which checks env then DB).
+  const hasConfiguredKey = Boolean(
+    statusData?.hasEnvKey || statusData?.hasDbKey
+  );
 
-    if (!useEnvKey && !apiKey.trim()) return;
+  const handleTestConnection = async () => {
+    const useConfiguredKey = !apiKey.trim() && hasConfiguredKey;
+
+    if (!useConfiguredKey && !apiKey.trim()) return;
 
     setTesting(true);
     setStatus(null);
 
     try {
-      if (useEnvKey) {
+      if (useConfiguredKey) {
         // Test against env var key
         const res = await fetch("/api/settings/blotato/test", {
           method: "GET",
@@ -117,7 +123,13 @@ export function BlotatoApiKeyInput({
   };
 
   const isTestButtonEnabled =
-    (apiKey.trim() || (statusData?.hasEnvKey && !loadingStatus)) && !testing;
+    (apiKey.trim() || (hasConfiguredKey && !loadingStatus)) && !testing;
+
+  // When a key is already configured (env or DB) and the user hasn't typed a
+  // replacement, show a masked placeholder so the field doesn't look empty —
+  // Faith's report that "the API key field appears empty".
+  const showMaskedPlaceholder =
+    !loadingStatus && hasConfiguredKey && !apiKey.trim();
 
   return (
     <div className="space-y-3">
@@ -190,7 +202,11 @@ export function BlotatoApiKeyInput({
               setApiKey(e.target.value);
               setStatus(null);
             }}
-            placeholder="blt_..."
+            placeholder={
+              showMaskedPlaceholder
+                ? "•••••••••••••• — saved key in use (paste a new key to replace)"
+                : "blt_..."
+            }
             className="pr-10 font-mono text-sm"
           />
           <button

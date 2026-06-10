@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { createBlotatoClient } from "@/lib/blotato/client";
+import { createClient } from "@/lib/supabase/server";
 
 interface TestResponse {
   success: boolean;
@@ -12,12 +13,28 @@ interface TestResponse {
 /**
  * GET /api/settings/blotato/test
  *
- * Tests the Blotato API key configured in process.env.BLOTATO_API_KEY.
- * Used by BlotatoApiKeyInput when the form is empty AND an env-var key is
- * known to be present (D-27-17).
+ * Tests the configured Blotato API key when the form is empty. Prefers the
+ * environment key (process.env.BLOTATO_API_KEY); if none is set, falls back to
+ * a key saved in caption_settings so "Test Connection" also works for a
+ * DB-stored key — not just the env var (fixes the greyed-out button when the
+ * key lives in the database).
  */
 export async function GET(): Promise<NextResponse<TestResponse>> {
-  return runTest(process.env.BLOTATO_API_KEY, "env");
+  const envKey = process.env.BLOTATO_API_KEY;
+  if (envKey) return runTest(envKey, "env");
+
+  try {
+    const supabase = await createClient();
+    const { data } = await supabase
+      .from("caption_settings")
+      .select("blotato_api_key")
+      .limit(1);
+    const dbKey = data?.[0]?.blotato_api_key as string | undefined;
+    return runTest(dbKey, "db");
+  } catch (error: unknown) {
+    console.error("[settings/blotato/test] DB key lookup failed:", error);
+    return runTest(undefined, "db");
+  }
 }
 
 /**
@@ -69,14 +86,16 @@ export async function POST(
 
 async function runTest(
   apiKey: string | undefined,
-  source: "env" | "form"
+  source: "env" | "form" | "db"
 ): Promise<NextResponse<TestResponse>> {
   try {
     if (!apiKey) {
       const error =
         source === "env"
           ? "No Blotato API key configured in environment"
-          : "No Blotato API key provided in request body";
+          : source === "db"
+            ? "No Blotato API key configured. Paste your key and try again."
+            : "No Blotato API key provided in request body";
       return NextResponse.json(
         { success: false, connected: false, error },
         { status: 400 }
