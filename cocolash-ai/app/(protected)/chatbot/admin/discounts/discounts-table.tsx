@@ -19,8 +19,11 @@ interface Row {
 const INTENT_OPTIONS = ["product", "tryon", "order", "support", "lead_capture", "other"] as const;
 
 function parseList(raw: string): string[] | null {
-  const trimmed = raw.trim();
-  return trimmed.length === 0 ? null : trimmed.split(/,\s*/);
+  const items = raw
+    .split(",")
+    .map((s) => s.trim())
+    .filter((s) => s.length > 0);
+  return items.length === 0 ? null : items;
 }
 
 export function DiscountsTable({ rows: initial }: { rows: Row[] }) {
@@ -166,6 +169,7 @@ function NewDiscountForm({
       const numericValue = Number(value);
       if (!code.trim()) throw new Error("Code is required");
       if (!Number.isFinite(numericValue)) throw new Error("Value must be a number");
+      if (numericValue === 0) throw new Error("Discount value must not be zero");
       const limit = usageLimit.trim().length > 0 ? Number(usageLimit) : null;
       if (limit !== null && (!Number.isInteger(limit) || limit <= 0)) {
         throw new Error("Usage limit must be a positive whole number");
@@ -356,7 +360,16 @@ function EditForm({
           <input
             type="number"
             value={draft.value}
-            onChange={(e) => setDraft((d) => ({ ...d, value: Number(e.target.value) }))}
+            onChange={(e) => {
+              const raw = e.target.value;
+              const num = Number(raw);
+              // Empty field → 0 (keeps the input editable); non-numeric junk →
+              // keep the previous value. Never store NaN.
+              setDraft((d) => ({
+                ...d,
+                value: raw === "" ? 0 : Number.isNaN(num) ? d.value : num,
+              }));
+            }}
             className={FIELD_CLASS}
           />
         </label>
