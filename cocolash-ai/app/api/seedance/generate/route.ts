@@ -9,7 +9,7 @@ import {
   generateSeedanceDirectorPrompt,
   type SeedanceDirectorPromptParams,
 } from "@/lib/seedance/prompt-planner";
-import { SEEDANCE_COSTS } from "@/lib/seedance/types";
+import { SEEDANCE_COSTS, SeedanceError } from "@/lib/seedance/types";
 import type {
   SeedanceAspectRatio,
   SeedanceDuration,
@@ -483,12 +483,23 @@ export async function POST(request: NextRequest) {
         .update({ heygen_status: "failed" })
         .eq("id", videoId);
 
-      return NextResponse.json(
-        {
-          error: "Seedance video generation failed. Please try again.",
-        },
-        { status: 500 }
-      );
+      // Surface the real, actionable reason (e.g. unsupported image format)
+      // instead of a generic retry message.
+      let userMessage = "Seedance video generation failed. Please try again.";
+      if (submitError instanceof SeedanceError) {
+        let detail = submitError.message;
+        try {
+          if (submitError.apiError) {
+            const parsed = JSON.parse(submitError.apiError);
+            detail = parsed?.error?.message || detail;
+          }
+        } catch {
+          // keep submitError.message
+        }
+        if (detail) userMessage = `Seedance rejected the request: ${detail}`;
+      }
+
+      return NextResponse.json({ error: userMessage }, { status: 500 });
     }
   } catch (error: unknown) {
     console.error("[seedance/generate] Unexpected error:", error);

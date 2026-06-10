@@ -6,6 +6,11 @@ import { v4 as uuidv4 } from "uuid";
  *
  * Centralized functions for uploading, downloading, and managing
  * files in Supabase Storage buckets.
+ *
+ * NOTE: keep this module free of native deps (e.g. `sharp`). It is imported
+ * widely (incl. non-Node bundles), and pulling a native binding in here breaks
+ * the Turbopack build. Image transcoding lives in
+ * `lib/image-processing/enhancor-image.ts`.
  */
 
 // ── Storage Bucket Names ──────────────────────────────────────

@@ -17,9 +17,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/server";
 import { uploadProductImage } from "@/lib/supabase/storage";
+import { toEnhancorCompatibleImage } from "@/lib/image-processing/enhancor-image";
 
-const CUSTOM_CATEGORY_NAME = "Custom Uploads";
-const CUSTOM_CATEGORY_SLUG = "custom-uploads";
+// product_categories columns: id, key, label, description, sort_order
+const CUSTOM_CATEGORY_KEY = "custom-uploads";
+const CUSTOM_CATEGORY_LABEL = "Custom Uploads";
 
 export async function POST(request: NextRequest) {
   try {
@@ -45,54 +47,52 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    // Enhancor (Seedance) only accepts PNG/JPEG — transcode WebP/AVIF/etc. now
+    // so the stored URL is accepted later at generation time.
+    const compatibleFile = await toEnhancorCompatibleImage(file);
+
     const supabase = await createAdminClient();
 
     // Upload to brand-assets/products/...
     const { url: imageUrl, path: storagePath } = await uploadProductImage(
       supabase,
-      file,
+      compatibleFile,
       Date.now()
     );
 
-    // Resolve (or create) the Custom Uploads category
+    // Resolve (or create) the Custom Uploads category.
+    // product_categories uses `key` + `label` (NOT name/slug).
     let categoryId: string | null = null;
-    let categoryName = CUSTOM_CATEGORY_NAME;
+    let categoryName = CUSTOM_CATEGORY_LABEL;
 
     const { data: existingCat } = await supabase
       .from("product_categories")
-      .select("id, name")
-      .eq("slug", CUSTOM_CATEGORY_SLUG)
+      .select("id, label")
+      .eq("key", CUSTOM_CATEGORY_KEY)
       .maybeSingle();
 
     if (existingCat) {
       categoryId = existingCat.id;
-      categoryName = existingCat.name;
+      categoryName = existingCat.label ?? CUSTOM_CATEGORY_LABEL;
     } else {
-      // Auto-create. The schema may not have a slug column on every
-      // deployment; fall back to name-only insert if slug isn't accepted.
       const { data: created, error: createErr } = await supabase
         .from("product_categories")
         .insert({
-          name: CUSTOM_CATEGORY_NAME,
-          slug: CUSTOM_CATEGORY_SLUG,
+          key: CUSTOM_CATEGORY_KEY,
+          label: CUSTOM_CATEGORY_LABEL,
+          description: "User-uploaded product reference images",
           sort_order: 999,
         })
-        .select("id, name")
+        .select("id, label")
         .single();
       if (createErr) {
-        // Older schemas: try without slug
-        const { data: created2 } = await supabase
-          .from("product_categories")
-          .insert({ name: CUSTOM_CATEGORY_NAME, sort_order: 999 })
-          .select("id, name")
-          .single();
-        if (created2) {
-          categoryId = created2.id;
-          categoryName = created2.name;
-        }
+        console.error(
+          "[products/upload] Failed to create Custom Uploads category:",
+          createErr.message
+        );
       } else if (created) {
         categoryId = created.id;
-        categoryName = created.name;
+        categoryName = created.label ?? CUSTOM_CATEGORY_LABEL;
       }
     }
 

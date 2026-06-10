@@ -50,6 +50,9 @@ export async function GET() {
     // Attach images to each category
     const enrichedCategories = (categories || []).map((cat) => ({
       ...cat,
+      // Expose `name` (mapped from the `label` column) so consumers reading
+      // category.name get the human-readable label.
+      name: cat.label ?? cat.name ?? null,
       images: imagesByCategory[cat.id] || [],
       imageCount: (imagesByCategory[cat.id] || []).length,
     }));
