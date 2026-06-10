@@ -3,29 +3,12 @@ import { createClient } from "@/lib/supabase/server";
 import { DEFAULT_TONE_KEYWORDS, BRAND_COLORS, COLOR_RULE } from "@/lib/constants/brand";
 import { MASTER_BRAND_DNA } from "@/lib/prompts/brand-dna";
 import { DEFAULT_NEGATIVE_PROMPT } from "@/lib/prompts/negative";
+import { scrubColorRuleFraming } from "@/lib/brand/color-rule";
 
-/**
- * Reframe the misleading "60-30-10" color framing in a stored brand DNA prompt
- * while PRESERVING the actual brand colors. Faith's DAT-01 feedback was that the
- * rigid "60% Primary / 30% Secondary / 10% Accents" 60-30-10 rule "doesn't add up";
- * this relabels it as dominant/supporting/accent guidelines without dropping the
- * hex colors that follow each label. Idempotent; safe on null/undefined.
- */
-export function scrubColorRuleFraming(
-  text: string | null | undefined
-): string | null | undefined {
-  if (!text) return text;
-  return text
-    .replace(
-      /\(60-?30-?10[^)]*\)/gi,
-      "(dominant / supporting / accent — guidelines, not hard ratios)"
-    )
-    .replace(/-\s*60%\s*Primary\b\s*:?/gi, "- Dominant (~60%):")
-    .replace(/-\s*30%\s*Secondary\b\s*:?/gi, "- Supporting (~30%):")
-    .replace(/-\s*10%\s*Accents?\b\s*:?/gi, "- Accents (~10%):")
-    .replace(/60-?30-?10\s*Rule/gi, "dominant/supporting/accent guideline")
-    .replace(/60-?30-?10/g, "dominant/supporting/accent");
-}
+// Re-exported for the brand-route test suite and any existing importers; the
+// implementation now lives in lib/brand/color-rule.ts so the image-generation
+// path (getBrandDNA) can share it.
+export { scrubColorRuleFraming };
 
 /**
  * GET /api/brand — Fetch the brand profile.
@@ -154,7 +137,12 @@ export async function PUT(request: NextRequest) {
     const updates: Record<string, unknown> = {};
     for (const field of allowedFields) {
       if (body[field] !== undefined) {
-        updates[field] = body[field];
+        // Sanitise the legacy "60-30-10" framing on write so each Save also
+        // heals the stored row (code-side scrub still covers reads in between).
+        updates[field] =
+          field === "brand_dna_prompt"
+            ? scrubColorRuleFraming(body[field])
+            : body[field];
       }
     }
 

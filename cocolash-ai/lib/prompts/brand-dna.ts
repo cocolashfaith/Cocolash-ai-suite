@@ -35,10 +35,21 @@ CRITICAL VISUAL RULES:
 5. CAMERA: 85mm f/1.2 prime lens simulation. Shallow depth of field, creamy bokeh.
 6. LASHES: Distinct, fluffy, meticulously applied. Individual fibers visible.`;
 
+import { scrubColorRuleFraming } from "@/lib/brand/color-rule";
+
 /**
  * Returns the Brand DNA block, optionally overridden with a custom one
  * from the database (if the user has edited it in Settings).
+ *
+ * A custom DNA string from the stored `brand_profiles` row may still contain
+ * the legacy "60-30-10" color framing (the row predates the Phase 31 fix and
+ * code changes alone never rewrite production data). We sanitise it here so a
+ * stale DB row never injects the misleading rigid ratio into an image prompt —
+ * Faith's exact complaint that it was "injected into every image-generation
+ * prompt as a 60-30-10 rule that doesn't add up".
  */
 export function getBrandDNA(customDNA?: string | null): string {
-  return customDNA?.trim() || MASTER_BRAND_DNA;
+  const dna = customDNA?.trim();
+  if (!dna) return MASTER_BRAND_DNA;
+  return scrubColorRuleFraming(dna) ?? MASTER_BRAND_DNA;
 }

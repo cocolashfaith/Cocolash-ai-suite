@@ -23,14 +23,19 @@ export const BRAND_COLORS = {
 
 /**
  * Flat array of all brand colors for palette display.
+ *
+ * Roles are dominant / supporting / accent — intentionally NOT labelled with
+ * rigid "60% / 30% / 10%" percentages. Faith's feedback (2026-05) was that the
+ * hard 60-30-10 framing "doesn't add up"; the percentages are loose guidelines,
+ * not a math rule, so the UI shows the role only.
  */
 export const BRAND_PALETTE = [
-  { hex: "#ead1c1", label: "Soft Pink", category: "Primary (60%)" },
-  { hex: "#ede5d6", label: "Creamy Beige", category: "Primary (60%)" },
-  { hex: "#28150e", label: "Warm Dark Brown", category: "Secondary (30%)" },
-  { hex: "#ce9765", label: "Golden Brown", category: "Secondary (30%)" },
-  { hex: "#242424", label: "Charcoal", category: "Accent (10%)" },
-  { hex: "#ffffff", label: "Clean White", category: "Accent (10%)" },
+  { hex: "#ead1c1", label: "Soft Pink", category: "Dominant" },
+  { hex: "#ede5d6", label: "Creamy Beige", category: "Dominant" },
+  { hex: "#28150e", label: "Warm Dark Brown", category: "Supporting" },
+  { hex: "#ce9765", label: "Golden Brown", category: "Supporting" },
+  { hex: "#242424", label: "Charcoal", category: "Accent" },
+  { hex: "#ffffff", label: "Clean White", category: "Accent" },
 ] as const;
 
 // ── Brand Keywords ────────────────────────────────────────────
