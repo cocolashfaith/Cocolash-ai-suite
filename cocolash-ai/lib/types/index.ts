@@ -486,6 +486,8 @@ export interface CaptionVariation {
 export interface CaptionPlatformResult {
   platform: Platform;
   captions: CaptionVariation[];
+  /** Persisted caption row IDs, aligned 1:1 with `captions` (insertion order). */
+  captionIds?: string[];
 }
 
 export interface CaptionGenerateResponse {

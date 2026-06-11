@@ -137,9 +137,32 @@ export async function POST(request: NextRequest) {
           is_selected: false,
         }));
 
-        await supabase.from("captions").insert(inserts);
+        // Return the persisted row IDs so the client can pass a REAL caption id
+        // to /api/publish. Without this the UI fabricated synthetic ids like
+        // "instagram-0", which publish couldn't find → "Caption not found".
+        //
+        // PostgreSQL `INSERT ... RETURNING` (which PostgREST issues for a
+        // multi-row insert) returns rows in the order of the inserted VALUES, so
+        // insertedRows[i] corresponds to captionsWithHashtags[i]. We assert the
+        // lengths match to catch a partial insert before the client pairs
+        // id ↔ caption by index.
+        const { data: insertedRows, error: insertError } = await supabase
+          .from("captions")
+          .insert(inserts)
+          .select("id");
 
-        return { platform, captions: captionsWithHashtags };
+        if (insertError) {
+          throw new Error(`Failed to save captions: ${insertError.message}`);
+        }
+
+        const captionIds = (insertedRows ?? []).map((r) => r.id as string);
+        if (captionIds.length !== captionsWithHashtags.length) {
+          throw new Error(
+            `Caption persistence mismatch for ${platform}: saved ${captionIds.length} of ${captionsWithHashtags.length}`
+          );
+        }
+
+        return { platform, captions: captionsWithHashtags, captionIds };
       })
     );
 

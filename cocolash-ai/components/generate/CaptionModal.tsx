@@ -8,7 +8,6 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
 import { CaptionStyleSelector } from "./CaptionStyleSelector";
 import { PlatformSelector } from "./PlatformSelector";
 import { CaptionVariationCard } from "./CaptionVariationCard";
@@ -92,13 +91,25 @@ export function CaptionModal({
 
       setResults(data.results);
 
+      // Use the REAL persisted caption ids returned by the API (aligned 1:1
+      // with each platform's captions). Falling back to synthetic ids like
+      // "instagram-0" caused /api/publish to fail with "Caption not found".
       const ids: Record<string, string[]> = {};
-      for (const r of data.results) {
-        ids[r.platform] = r.captions.map(
-          (_: CaptionVariation, i: number) => `${r.platform}-${i}`
-        );
+      let idsComplete = true;
+      for (const r of data.results as CaptionPlatformResult[]) {
+        ids[r.platform] = r.captionIds ?? [];
+        if (!r.captionIds || r.captionIds.length !== r.captions.length) {
+          idsComplete = false;
+        }
       }
       setCaptionIds(ids);
+      if (!idsComplete) {
+        // Surface early rather than only at publish time. Captions still show
+        // so nothing is lost, but the user is told to regenerate before posting.
+        setError(
+          "Captions were generated but not fully saved for publishing. Please regenerate before posting."
+        );
+      }
 
       const defaults: Record<Platform, number> = {} as Record<Platform, number>;
       for (const r of data.results) {
@@ -146,6 +157,13 @@ export function CaptionModal({
 
     const variation = result.captions[selectedIdx];
     const cId = captionIds[platform]?.[selectedIdx] || "";
+
+    if (!cId) {
+      setError(
+        "This caption wasn't saved correctly. Please regenerate captions and try again."
+      );
+      return;
+    }
 
     setPublishTarget({ captionId: cId, variation, platform });
   };
