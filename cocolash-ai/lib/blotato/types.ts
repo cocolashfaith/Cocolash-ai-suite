@@ -47,8 +47,18 @@ export interface BlotatoPostPayload {
 }
 
 export interface BlotatoPublishResult {
-  postId: string;
-  status: string;
+  /** Blotato returns a submission id; the live URL is fetched later via getPost. */
+  postSubmissionId: string;
+  status?: string;
+}
+
+/** Result of GET /v2/posts/{postSubmissionId}. */
+export interface BlotatoPostStatusResult {
+  status: "in-progress" | "published" | "failed";
+  /** Present once status === "published" — the live post permalink. */
+  publicUrl?: string;
+  /** Present once status === "failed". */
+  errorMessage?: string;
 }
 
 export interface BlotatoMediaUploadResult {

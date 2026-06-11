@@ -129,7 +129,7 @@ export async function POST(request: NextRequest) {
       image_id: imageId,
       caption_id: captionId,
       platform,
-      blotato_post_id: result.postId,
+      blotato_post_id: result.postSubmissionId,
       blotato_account_id: accountId,
       status,
       scheduled_time: scheduledTime || null,
@@ -138,7 +138,9 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json({
       success: true,
-      postId: result.postId,
+      // Blotato publishes asynchronously: this is the submission id. The live
+      // post URL is fetched via GET /api/publish/status once it's "published".
+      postSubmissionId: result.postSubmissionId,
       status,
     });
   } catch (error: unknown) {

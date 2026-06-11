@@ -17,7 +17,7 @@ import { BlotatoError } from "@/lib/blotato/types";
  * - Media is uploaded before publishing
  * - publishPost is called for immediate publish, schedulePost for future scheduling
  * - Audit row is inserted into scheduled_posts
- * - Response includes { success, postId, status }
+ * - Response includes { success, postSubmissionId, status }
  * - BlotatoError is caught and re-thrown with status code
  * - Request validation for required fields and platform
  */
@@ -39,10 +39,10 @@ describe("POST /api/publish (SOC-02)", () => {
         .mockResolvedValue({ url: "https://cdn.blotato.com/test.jpg" }),
       publishPost: vi
         .fn()
-        .mockResolvedValue({ postId: "post_123", status: "published" }),
+        .mockResolvedValue({ postSubmissionId: "post_123", status: "published" }),
       schedulePost: vi
         .fn()
-        .mockResolvedValue({ postId: "post_456", status: "scheduled" }),
+        .mockResolvedValue({ postSubmissionId: "post_456", status: "scheduled" }),
     };
     vi.mocked(blotatoClientModule.createBlotatoClient).mockReturnValue(
       mockClient as never
@@ -152,7 +152,7 @@ describe("POST /api/publish (SOC-02)", () => {
     // Assert
     expect(response.status).toBe(200);
     expect(data.success).toBe(true);
-    expect(data.postId).toBeDefined();
+    expect(data.postSubmissionId).toBeDefined();
 
     delete process.env.BLOTATO_API_KEY;
   });
@@ -304,8 +304,8 @@ describe("POST /api/publish (SOC-02)", () => {
     // Assert: uploadMedia was called first, then publishPost
     expect(mockClient).toBeDefined();
     const mockClientTyped = mockClient as Record<string, unknown>;
-    const uploadFn = mockClientTyped.uploadMedia as any;
-    const publishFn = mockClientTyped.publishPost as any;
+    const uploadFn = mockClientTyped.uploadMedia as ReturnType<typeof vi.fn>;
+    const publishFn = mockClientTyped.publishPost as ReturnType<typeof vi.fn>;
 
     expect(uploadFn).toHaveBeenCalledWith("s3://image.jpg");
     expect(publishFn).toHaveBeenCalled();
@@ -467,7 +467,7 @@ describe("POST /api/publish (SOC-02)", () => {
       }),
     });
     await publishModule.POST(request);
-    const mockClientTyped = mockClient as Record<string, any>;
+    const mockClientTyped = mockClient as Record<string, ReturnType<typeof vi.fn>>;
     expect(mockClientTyped.publishPost).toHaveBeenCalled();
 
     mockClientTyped.publishPost.mockClear();
@@ -493,7 +493,7 @@ describe("POST /api/publish (SOC-02)", () => {
     delete process.env.BLOTATO_API_KEY;
   });
 
-  it("Returns { success: true, postId, status } on successful publish", async () => {
+  it("Returns { success: true, postSubmissionId, status } on successful publish", async () => {
     // Arrange
     mockSupabase = {
       from: vi.fn((table: string) => {
@@ -561,7 +561,7 @@ describe("POST /api/publish (SOC-02)", () => {
     // Assert
     expect(response.status).toBe(200);
     expect(data.success).toBe(true);
-    expect(data.postId).toBe("post_123");
+    expect(data.postSubmissionId).toBe("post_123");
     expect(data.status).toBe("published");
 
     delete process.env.BLOTATO_API_KEY;

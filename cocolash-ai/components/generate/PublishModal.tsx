@@ -33,6 +33,7 @@ import {
   Instagram,
   ArrowLeft,
   X,
+  ExternalLink,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { capHashtagsForPlatform } from "@/lib/constants/posting-times";
@@ -52,8 +53,16 @@ interface PublishModalProps {
 type PublishState =
   | { step: "confirm" }
   | { step: "publishing" }
-  | { step: "success"; postId: string }
+  | { step: "success"; submissionId: string; scheduled: boolean }
   | { step: "error"; message: string };
+
+// State of fetching the live post permalink (Blotato publishes asynchronously).
+type LinkState =
+  | { kind: "idle" }
+  | { kind: "polling" }
+  | { kind: "ready"; url: string }
+  | { kind: "failed"; message: string }
+  | { kind: "timeout" };
 
 const PLATFORM_COLORS: Record<string, string> = {
   instagram: "from-purple-600 via-pink-500 to-orange-400",
@@ -276,11 +285,13 @@ export function PublishModal({
   const [selectedAccountId, setSelectedAccountId] = useState<string>("");
   const [scheduledTime, setScheduledTime] = useState<Date | null>(null);
   const [state, setState] = useState<PublishState>({ step: "confirm" });
+  const [linkState, setLinkState] = useState<LinkState>({ kind: "idle" });
   const [loadingAccounts, setLoadingAccounts] = useState(false);
 
   useEffect(() => {
     if (!open) return;
     setState({ step: "confirm" });
+    setLinkState({ kind: "idle" });
     setScheduledTime(null);
 
     const fetchAccounts = async () => {
@@ -335,11 +346,67 @@ export function PublishModal({
         return;
       }
 
-      setState({ step: "success", postId: data.postId });
+      setState({
+        step: "success",
+        submissionId: data.postSubmissionId ?? "",
+        scheduled: !!scheduledTime,
+      });
     } catch {
       setState({ step: "error", message: "Network error. Please try again." });
     }
   };
+
+  // After an immediate publish, poll for the live post URL (Blotato publishes
+  // asynchronously — the permalink only appears once it's "published").
+  useEffect(() => {
+    if (state.step !== "success" || state.scheduled || !state.submissionId) {
+      return;
+    }
+    const submissionId = state.submissionId;
+    let cancelled = false;
+    let timer: ReturnType<typeof setTimeout>;
+    let attempts = 0;
+    const MAX_ATTEMPTS = 12;
+
+    setLinkState({ kind: "polling" });
+
+    const poll = async () => {
+      attempts += 1;
+      try {
+        const res = await fetch(
+          `/api/publish/status?submissionId=${encodeURIComponent(submissionId)}`
+        );
+        const data = await res.json();
+        if (cancelled) return;
+        if (data.status === "published" && data.publicUrl) {
+          setLinkState({ kind: "ready", url: data.publicUrl });
+          return;
+        }
+        if (data.status === "failed") {
+          setLinkState({
+            kind: "failed",
+            message: data.errorMessage || "The post failed to publish.",
+          });
+          return;
+        }
+      } catch {
+        // transient — fall through and retry
+      }
+      if (cancelled) return;
+      if (attempts >= MAX_ATTEMPTS) {
+        setLinkState({ kind: "timeout" });
+        return;
+      }
+      timer = setTimeout(poll, 3000);
+    };
+
+    timer = setTimeout(poll, 1500);
+
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
+  }, [state]);
 
   const selectedAccount = accounts.find(
     (a) => a.blotato_account_id === selectedAccountId
@@ -388,14 +455,49 @@ export function PublishModal({
               <CheckCircle className="h-8 w-8 text-emerald-500" />
             </div>
             <p className="mt-4 text-base font-semibold text-coco-brown">
-              {scheduledTime ? "Post scheduled successfully!" : "Post published successfully!"}
+              {state.scheduled
+                ? "Post scheduled successfully!"
+                : "Post published successfully!"}
             </p>
-            <p className="mt-1 text-xs text-coco-brown-medium">
-              Post ID: {state.postId}
-            </p>
+
+            {state.scheduled ? (
+              <p className="mt-1 text-xs text-coco-brown-medium">
+                It will go live automatically at your scheduled time.
+              </p>
+            ) : (
+              <div className="mt-4 flex min-h-[2.5rem] flex-col items-center gap-2">
+                {linkState.kind === "ready" ? (
+                  <a
+                    href={linkState.url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center gap-1.5 rounded-lg bg-coco-golden px-5 py-2.5 text-sm font-medium text-white transition-colors hover:bg-coco-golden-dark"
+                  >
+                    <ExternalLink className="h-4 w-4" />
+                    View post on {platformLabel}
+                  </a>
+                ) : linkState.kind === "failed" ? (
+                  <p className="max-w-xs text-xs text-red-600">
+                    {linkState.message}
+                  </p>
+                ) : linkState.kind === "timeout" ? (
+                  <p className="max-w-xs text-xs text-coco-brown-medium">
+                    Your post was submitted. The link isn&rsquo;t ready yet — it
+                    should appear on your {platformLabel} profile shortly.
+                  </p>
+                ) : (
+                  <p className="flex items-center gap-2 text-xs text-coco-brown-medium">
+                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                    Fetching your post link…
+                  </p>
+                )}
+              </div>
+            )}
+
             <Button
               onClick={onCloseAll}
-              className="mt-6 bg-coco-golden px-8 text-white hover:bg-coco-golden-dark"
+              variant="outline"
+              className="mt-6 px-8"
             >
               Done
             </Button>

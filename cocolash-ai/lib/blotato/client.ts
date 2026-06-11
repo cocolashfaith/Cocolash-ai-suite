@@ -3,6 +3,7 @@ import {
   type BlotatoAccount,
   type BlotatoSubAccount,
   type BlotatoPublishResult,
+  type BlotatoPostStatusResult,
   type BlotatoMediaUploadResult,
   type BlotatoPlatform,
   type PublishParams,
@@ -128,6 +129,17 @@ export class BlotatoClient {
         scheduledTime: params.scheduledTime.toISOString(),
       }),
     });
+  }
+
+  /**
+   * Fetch the status of a previously submitted post. Publishing is async, so the
+   * live `publicUrl` only becomes available once `status` is "published".
+   * GET /v2/posts/{postSubmissionId}
+   */
+  async getPost(postSubmissionId: string): Promise<BlotatoPostStatusResult> {
+    return this.request<BlotatoPostStatusResult>(
+      `/posts/${encodeURIComponent(postSubmissionId)}`
+    );
   }
 
   async testConnection(): Promise<boolean> {
