@@ -35,6 +35,7 @@ import {
   X,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { capHashtagsForPlatform } from "@/lib/constants/posting-times";
 import type { Platform, SocialAccount, CaptionVariation } from "@/lib/types";
 
 interface PublishModalProps {
@@ -346,7 +347,10 @@ export function PublishModal({
   const accountName = selectedAccount?.account_name || "CocoLash";
   const accountHandle = selectedAccount?.account_handle || "";
 
-  const hashtags = caption.hashtags.map((h) => `#${h}`).join(" ");
+  // Show exactly what will be published — capped to the platform's hashtag
+  // limit (e.g. Instagram max 5), matching the server-side cap in /api/publish.
+  const previewHashtags = capHashtagsForPlatform(caption.hashtags, platform);
+  const hashtags = previewHashtags.map((h) => `#${h}`).join(" ");
   const fullText = hashtags ? `${caption.text}\n\n${hashtags}` : caption.text;
 
   const gradientClass = PLATFORM_COLORS[platform] || PLATFORM_COLORS.instagram;
@@ -433,7 +437,7 @@ export function PublishModal({
                     platform={platform}
                     imageUrl={imageUrl}
                     captionText={caption.text}
-                    hashtags={caption.hashtags}
+                    hashtags={previewHashtags}
                     accountName={accountName}
                     accountHandle={accountHandle.startsWith("@") ? accountHandle.slice(1) : accountHandle}
                   />

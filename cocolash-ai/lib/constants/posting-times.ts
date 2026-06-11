@@ -30,12 +30,28 @@ export const PLATFORM_LIMITS: Record<
   Platform,
   { caption: number; hashtags: number }
 > = {
-  instagram: { caption: 2200, hashtags: 25 },
+  // hashtags = the MAX our publisher (Blotato) accepts per post, not the raw
+  // platform max. Blotato rejects Instagram posts with more than 5 hashtags
+  // ("Instagram allows a maximum of 5 hashtags per post"), so we cap at 5.
+  instagram: { caption: 2200, hashtags: 5 },
   tiktok: { caption: 4000, hashtags: 5 },
   twitter: { caption: 280, hashtags: 3 },
   facebook: { caption: 63206, hashtags: 15 },
   linkedin: { caption: 3000, hashtags: 5 },
 };
+
+/**
+ * Cap a list of hashtags to the platform's allowed maximum (see PLATFORM_LIMITS).
+ * Enforced at publish time so a caption saved before the limit changed — or one
+ * a user hand-edited — can never exceed what the publisher accepts.
+ */
+export function capHashtagsForPlatform(
+  hashtags: string[],
+  platform: Platform
+): string[] {
+  const max = PLATFORM_LIMITS[platform]?.hashtags ?? hashtags.length;
+  return hashtags.slice(0, max);
+}
 
 export function getNextOptimalTime(platform: Platform, now: Date = new Date()): Date {
   const isWeekend = [0, 6].includes(now.getDay());

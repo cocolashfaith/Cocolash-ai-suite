@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { createBlotatoClient } from "@/lib/blotato/client";
 import { BlotatoError, type BlotatoPlatform } from "@/lib/blotato/types";
+import { capHashtagsForPlatform } from "@/lib/constants/posting-times";
 import type { Platform } from "@/lib/types";
 
 const VALID_PLATFORMS: Platform[] = [
@@ -79,9 +80,13 @@ export async function POST(request: NextRequest) {
     const image = imageResult.data;
     const client = createBlotatoClient(blotatoKey);
 
-    const hashtags = Array.isArray(caption.hashtags)
-      ? caption.hashtags.map((h: string) => `#${h}`).join(" ")
-      : "";
+    // Cap hashtags to what the publisher accepts for this platform (e.g.
+    // Instagram rejects > 5). Applies even to captions saved before the limit
+    // changed or hand-edited by the user.
+    const cappedHashtags = Array.isArray(caption.hashtags)
+      ? capHashtagsForPlatform(caption.hashtags as string[], platform)
+      : [];
+    const hashtags = cappedHashtags.map((h: string) => `#${h}`).join(" ");
     const fullText = hashtags
       ? `${caption.caption_text}\n\n${hashtags}`
       : caption.caption_text;
