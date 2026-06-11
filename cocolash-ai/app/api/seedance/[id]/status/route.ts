@@ -3,7 +3,10 @@ import { createAdminClient } from "@/lib/supabase/server";
 import { querySeedanceTask } from "@/lib/seedance/client";
 import { completeSeedanceVideo } from "@/lib/seedance/completion";
 import { SeedanceError } from "@/lib/seedance/types";
+import { burnAndUploadCaptions } from "@/lib/video/burn-captions";
 import type { GeneratedVideo, VideoStatusResponse } from "@/lib/types";
+
+type SupabaseAdmin = Awaited<ReturnType<typeof createAdminClient>>;
 
 /**
  * GET /api/seedance/[id]/status
@@ -48,10 +51,18 @@ export async function GET(
 
     const typedVideo = video as GeneratedVideo;
 
-    if (
-      typedVideo.heygen_status === "completed" ||
-      typedVideo.heygen_status === "failed"
-    ) {
+    if (typedVideo.heygen_status === "completed") {
+      // Edge case: video done but captions missing (Shotstack failed earlier).
+      // Try once to repair — guarded by an atomic claim so only one poll wins.
+      // Mirrors HeyGen's tryRepairCaptions.
+      if (!typedVideo.has_captions && typedVideo.caption_srt) {
+        const repaired = await tryRepairSeedanceCaptions(supabase, id, typedVideo);
+        return NextResponse.json(buildStatusResponse(repaired));
+      }
+      return NextResponse.json(buildStatusResponse(typedVideo));
+    }
+
+    if (typedVideo.heygen_status === "failed") {
       return NextResponse.json(buildStatusResponse(typedVideo));
     }
 
@@ -145,6 +156,86 @@ export async function GET(
     const message =
       error instanceof Error ? error.message : "Failed to check video status";
     return NextResponse.json({ error: message }, { status: 500 });
+  }
+}
+
+// ── Repair path for videos stuck at completed without captions ──
+// Mirrors tryRepairCaptions in app/api/videos/[id]/status/route.ts (HeyGen).
+
+async function tryRepairSeedanceCaptions(
+  supabase: SupabaseAdmin,
+  id: string,
+  video: GeneratedVideo
+): Promise<GeneratedVideo> {
+  const captionSrt = video.caption_srt;
+  const videoUrl = video.final_video_url ?? video.raw_video_url;
+
+  if (!captionSrt || !videoUrl || !process.env.SHOTSTACK_API_KEY) {
+    return video;
+  }
+
+  // Atomic claim: flip completed → captioning only if no-one else has, and only
+  // while still uncaptioned.
+  const { data: claimed } = await supabase
+    .from("generated_videos")
+    .update({ heygen_status: "captioning" })
+    .eq("id", id)
+    .eq("heygen_status", "completed")
+    .eq("has_captions", false)
+    .select();
+
+  if (!claimed || claimed.length === 0) {
+    const { data: fresh } = await supabase
+      .from("generated_videos")
+      .select("*")
+      .eq("id", id)
+      .single();
+    return (fresh ?? video) as GeneratedVideo;
+  }
+
+  try {
+    const captionedUrl = await burnAndUploadCaptions({
+      videoUrl,
+      srtContent: captionSrt,
+      durationSeconds: video.duration_seconds ?? 15,
+      videoPublicId: `seedance-${id}`,
+      aspectRatio: (video.aspect_ratio as "9:16" | "16:9" | "1:1") ?? "9:16",
+    });
+
+    const { error: updateError } = await supabase
+      .from("generated_videos")
+      .update({
+        heygen_status: "completed",
+        final_video_url: captionedUrl,
+        has_captions: true,
+      })
+      .eq("id", id);
+
+    if (updateError) {
+      throw new Error(`Repair DB update failed: ${updateError.message}`);
+    }
+
+    return {
+      ...video,
+      heygen_status: "completed",
+      final_video_url: captionedUrl,
+      has_captions: true,
+    };
+  } catch (err) {
+    console.error("[seedance/status] Caption repair failed:", err);
+    // Stop re-submitting a paid Shotstack render on every poll if the caption
+    // source/payload is persistently failing.
+    const { error: clearError } = await supabase
+      .from("generated_videos")
+      .update({ heygen_status: "completed", caption_srt: null })
+      .eq("id", id);
+    if (clearError) {
+      console.error(
+        "[seedance/status] Failed to clear failed caption repair:",
+        clearError
+      );
+    }
+    return { ...video, heygen_status: "completed", caption_srt: null };
   }
 }
 
