@@ -119,6 +119,32 @@ export interface VideoGenResult {
   video_id: string;
 }
 
+// ── HeyGen v3 (Avatar IV/V, resolution tiers) ─────────────────
+
+export type HeyGenResolution = "720p" | "1080p" | "4k";
+
+/**
+ * Params for the v3 `POST /v3/videos` photo-avatar path. Exactly one voice
+ * source is used: `audioAssetId` (our ElevenLabs audio — keeps lip-sync in
+ * sync with our burned captions) OR `voiceId` + `script`.
+ *
+ * NOTE: we intentionally do NOT send a `caption` field — captions are burned
+ * by our own Shotstack pipeline downstream, unchanged.
+ */
+export interface V3VideoGenParams {
+  avatarId: string;
+  audioAssetId?: string;
+  voiceId?: string;
+  script?: string;
+  resolution: HeyGenResolution;
+  aspectRatio: "9:16" | "1:1" | "16:9";
+  /** Photo-avatar expressiveness (Avatar IV). */
+  expressiveness?: "high" | "medium" | "low";
+  /** Natural-language body-motion / gesture prompt (photo avatars). */
+  motionPrompt?: string;
+  title?: string;
+}
+
 // ── Video Status ──────────────────────────────────────────────
 
 export type HeyGenVideoStatusValue =

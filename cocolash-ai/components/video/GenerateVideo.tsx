@@ -19,6 +19,7 @@ import type {
   ScriptResult,
   CompositionPose,
   VideoAspectRatio,
+  VideoResolution,
   HeyGenVideoStatus,
   CaptionMethod,
 } from "@/lib/types";
@@ -105,6 +106,7 @@ export function GenerateVideo(props: GenerateVideoProps) {
     onReset,
   } = props;
 
+  const [resolution, setResolution] = useState<VideoResolution>("1080p");
   const [isGenerating, setIsGenerating] = useState(false);
   const [videoId, setVideoId] = useState<string | null>(null);
   const [status, setStatus] = useState<HeyGenVideoStatus | null>(null);
@@ -196,6 +198,7 @@ export function GenerateVideo(props: GenerateVideoProps) {
           ...(pose ? { pose } : {}),
           voiceId,
           aspectRatio,
+          resolution,
           ...(usePrecomposedImage && composedImageUrl
             ? { composedImageUrl }
             : {}),
@@ -256,12 +259,37 @@ export function GenerateVideo(props: GenerateVideoProps) {
               <SummaryRow label="Duration" value={`${duration}s`} />
               {hasComposition && pose && <SummaryRow label="Pose" value={pose} />}
               <SummaryRow label="Aspect Ratio" value={aspectRatio} />
+              <SummaryRow
+                label="Quality"
+                value={resolution === "4k" ? "4K · Ultra HD" : "1080p · Full HD"}
+              />
               {!hasComposition && (
                 <SummaryRow label="Composition" value="Direct presenter (no product)" />
               )}
               <SummaryRow
                 label="Captions"
                 value={captionMethod === "shotstack" ? "Styled (Shotstack)" : "Standard overlay"}
+              />
+            </div>
+          </div>
+
+          {/* Video Quality selector */}
+          <div className="space-y-2">
+            <label className="text-sm font-semibold text-coco-brown">
+              Video Quality
+            </label>
+            <div className="grid grid-cols-2 gap-2">
+              <ResolutionOption
+                active={resolution === "1080p"}
+                title="1080p"
+                subtitle="Full HD · recommended"
+                onClick={() => setResolution("1080p")}
+              />
+              <ResolutionOption
+                active={resolution === "4k"}
+                title="4K"
+                subtitle="Ultra HD · sharper, slower & pricier"
+                onClick={() => setResolution("4k")}
               />
             </div>
           </div>
@@ -422,6 +450,34 @@ export function GenerateVideo(props: GenerateVideoProps) {
         </div>
       )}
     </div>
+  );
+}
+
+function ResolutionOption({
+  active,
+  title,
+  subtitle,
+  onClick,
+}: {
+  active: boolean;
+  title: string;
+  subtitle: string;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      aria-pressed={active}
+      className={`flex flex-col items-start rounded-xl border-2 px-4 py-3 text-left transition-all ${
+        active
+          ? "border-coco-golden bg-coco-golden/10 ring-2 ring-coco-golden/30"
+          : "border-coco-beige-dark bg-white hover:border-coco-golden/40"
+      }`}
+    >
+      <span className="text-sm font-bold text-coco-brown">{title}</span>
+      <span className="text-[11px] text-coco-brown-medium/60">{subtitle}</span>
+    </button>
   );
 }
 

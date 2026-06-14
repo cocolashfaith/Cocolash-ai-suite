@@ -2,8 +2,14 @@ import { NextRequest, NextResponse } from "next/server";
 import { createAdminClient, createClient, getCurrentUserId } from "@/lib/supabase/server";
 import { generateVideoScript } from "@/lib/openrouter/captions";
 import { composePersonWithProduct } from "@/lib/gemini/composition";
-import { createPhotoAvatar, generateVideo, uploadAudioAsset } from "@/lib/heygen/client";
-import { VIDEO_DIMENSIONS } from "@/lib/heygen/types";
+import {
+  createPhotoAvatar,
+  generateVideo,
+  generateVideoV3,
+  uploadAudioAsset,
+  HEYGEN_API_VERSION,
+} from "@/lib/heygen/client";
+import { VIDEO_DIMENSIONS, type VideoGenResult } from "@/lib/heygen/types";
 import { synthesizeToAudio, alignmentToSRT } from "@/lib/elevenlabs/client";
 import {
   buildMinimalSelectionsForVideoAsset,
@@ -17,6 +23,7 @@ import type {
   ScriptTone,
   VideoDuration,
   VideoAspectRatio,
+  VideoResolution,
   VideoGenerateRequest,
   VideoGenerateResponse,
 } from "@/lib/types";
@@ -32,6 +39,7 @@ const VALID_TONES: ScriptTone[] = ["casual", "energetic", "calm", "professional"
 const VALID_DURATIONS: VideoDuration[] = [15, 30, 60, 90];
 const VALID_ASPECT_RATIOS: VideoAspectRatio[] = ["9:16", "1:1", "16:9"];
 const VALID_POSES: CompositionPose[] = ["holding", "applying", "selfie", "testimonial"];
+const VALID_RESOLUTIONS: VideoResolution[] = ["720p", "1080p", "4k"];
 
 /**
  * POST /api/videos/generate
@@ -73,8 +81,16 @@ export async function POST(request: NextRequest) {
       pose,
       voiceId,
       aspectRatio,
+      resolution: requestedResolution,
       composedImageUrl: precomposedUrl,
     } = body as VideoGenerateRequest;
+
+    // Output quality tier (HeyGen v3). Default 1080p; validated against the
+    // allowed set so a bad value can never reach the API.
+    const resolution: VideoResolution =
+      requestedResolution && VALID_RESOLUTIONS.includes(requestedResolution)
+        ? requestedResolution
+        : "1080p";
 
     const clientScriptText = typeof (body as Record<string, unknown>).scriptText === "string"
       ? ((body as Record<string, unknown>).scriptText as string).trim()
@@ -267,40 +283,66 @@ export async function POST(request: NextRequest) {
     try {
       const dimension = VIDEO_DIMENSIONS[aspectRatio!] ?? VIDEO_DIMENSIONS["9:16"];
 
-      let voiceConfig: import("@/lib/heygen/types").VideoGenVoice;
+      // Voice: prefer ElevenLabs TTS (uploaded as a HeyGen audio asset) so the
+      // spoken audio stays in sync with the captions we burn ourselves. The
+      // caption SRT is derived from the SAME ElevenLabs alignment — UNCHANGED
+      // by the v3 upgrade.
+      let audioAssetId: string | null = null;
       let captionSrt: string | null = null;
 
       if (process.env.ELEVENLABS_API_KEY) {
         const ttsResult = await synthesizeToAudio(voiceId!, scriptText);
-        const audioAssetId = await uploadAudioAsset(ttsResult.audioBuffer);
-        voiceConfig = { type: "audio", audio_asset_id: audioAssetId };
+        audioAssetId = await uploadAudioAsset(ttsResult.audioBuffer);
 
         if (ttsResult.alignment) {
           captionSrt = alignmentToSRT(ttsResult.alignment);
           console.log(`[videos/generate] Generated SRT from ElevenLabs alignment (${captionSrt.length} chars)`);
         }
-      } else {
-        voiceConfig = { type: "text", voice_id: voiceId!, input_text: scriptText };
       }
 
-      const heygenResult = await generateVideo({
-        video_inputs: [
-          {
-            character: {
-              type: "talking_photo",
-              talking_photo_id: talkingPhotoId,
-              talking_style: "expressive",
-              expression: "happy",
-              matting: false,
-              use_avatar_iv_model: true,
+      const title = `CocoLash — ${campaignType} — ${duration}s`;
+      let heygenResult: VideoGenResult;
+
+      if (HEYGEN_API_VERSION === "v3") {
+        // v3: photo avatar at the selected resolution, expressive + gestures.
+        // No `caption` field → HeyGen does not add captions; ours stay.
+        heygenResult = await generateVideoV3({
+          avatarId: talkingPhotoId,
+          ...(audioAssetId
+            ? { audioAssetId }
+            : { voiceId: voiceId!, script: scriptText }),
+          resolution,
+          aspectRatio: aspectRatio!,
+          expressiveness: "high",
+          motionPrompt:
+            "natural, friendly hand gestures while speaking directly to camera",
+          title,
+        });
+      } else {
+        const voiceConfig: import("@/lib/heygen/types").VideoGenVoice =
+          audioAssetId
+            ? { type: "audio", audio_asset_id: audioAssetId }
+            : { type: "text", voice_id: voiceId!, input_text: scriptText };
+
+        heygenResult = await generateVideo({
+          video_inputs: [
+            {
+              character: {
+                type: "talking_photo",
+                talking_photo_id: talkingPhotoId,
+                talking_style: "expressive",
+                expression: "happy",
+                matting: false,
+                use_avatar_iv_model: true,
+              },
+              voice: voiceConfig,
             },
-            voice: voiceConfig,
-          },
-        ],
-        dimension,
-        caption: false,
-        title: `CocoLash — ${campaignType} — ${duration}s`,
-      });
+          ],
+          dimension,
+          caption: false,
+          title,
+        });
+      }
 
       await supabase
         .from("generated_videos")

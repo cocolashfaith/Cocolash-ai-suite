@@ -533,6 +533,9 @@ export type VideoDuration = 15 | 30 | 60 | 90;
 // ── Video Aspect Ratio ────────────────────────────────────────
 export type VideoAspectRatio = "9:16" | "1:1" | "16:9";
 
+/** HeyGen v3 output resolution tiers (UI-selectable quality). */
+export type VideoResolution = "720p" | "1080p" | "4k";
+
 // ── Composition Pose (person + product) ───────────────────────
 export type CompositionPose = "holding" | "applying" | "selfie" | "testimonial";
 
@@ -641,6 +644,8 @@ export interface VideoGenerateRequest {
   pose?: CompositionPose;
   voiceId: string;
   aspectRatio: VideoAspectRatio;
+  /** Output quality tier (HeyGen v3). Defaults to 1080p when omitted. */
+  resolution?: VideoResolution;
   /** When set, skip Gemini compose and use this image for HeyGen photo avatar */
   composedImageUrl?: string;
 }

@@ -18,12 +18,22 @@ import {
   type VideoGenParams,
   type VideoGenResult,
   type VideoStatusResult,
+  type HeyGenVideoStatusValue,
+  type V3VideoGenParams,
   type HeyGenVoice,
   type VoiceListResult,
 } from "./types";
 
 const API_BASE = "https://api.heygen.com";
 const UPLOAD_BASE = "https://upload.heygen.com";
+
+/**
+ * Which HeyGen API generation to use. v3 is the current generation (Avatar IV/V,
+ * resolution tiers, expressiveness, motion). Set HEYGEN_API_VERSION=v2 to fall
+ * back to the legacy talking-photo flow. Defaults to v3.
+ */
+export const HEYGEN_API_VERSION: "v2" | "v3" =
+  process.env.HEYGEN_API_VERSION === "v2" ? "v2" : "v3";
 
 function getApiKey(): string {
   const key = process.env.HEYGEN_API_KEY;
@@ -366,6 +376,63 @@ export async function createPhotoAvatar(
   imageUrl: string,
   avatarName: string = "CocoLash Avatar"
 ): Promise<{ talking_photo_id: string; avatar_url: string; group_id: string }> {
+  if (HEYGEN_API_VERSION === "v3") {
+    return createPhotoAvatarV3(imageUrl, avatarName);
+  }
+  return createPhotoAvatarV2(imageUrl, avatarName);
+}
+
+/**
+ * v3 photo-avatar creation: a single `POST /v3/avatars` call turns the image
+ * into a photo avatar and returns the look id (used as `avatar_id` for
+ * `POST /v3/videos`). Replaces the v2 three-step asset→group→poll flow.
+ *
+ * Return shape matches createPhotoAvatarV2 so callers are version-agnostic
+ * (`talking_photo_id` carries the v3 `avatar_id`).
+ */
+export async function createPhotoAvatarV3(
+  imageUrl: string,
+  avatarName: string = "CocoLash Avatar"
+): Promise<{ talking_photo_id: string; avatar_url: string; group_id: string }> {
+  return withRetry(async () => {
+    const result = await heygenFetch<{
+      data?: {
+        avatar_item?: {
+          id?: string;
+          group_id?: string;
+          preview_image_url?: string;
+        };
+      };
+    }>(`${API_BASE}/v3/avatars`, {
+      method: "POST",
+      body: JSON.stringify({
+        type: "photo",
+        name: avatarName,
+        file: { type: "url", url: imageUrl },
+      }),
+    });
+
+    const item = result.data?.avatar_item;
+    if (!item?.id) {
+      throw new HeyGenError(
+        "v3 photo avatar creation returned no avatar id",
+        500,
+        "missing_avatar_id"
+      );
+    }
+
+    return {
+      talking_photo_id: item.id,
+      avatar_url: item.preview_image_url ?? imageUrl,
+      group_id: item.group_id ?? "",
+    };
+  });
+}
+
+async function createPhotoAvatarV2(
+  imageUrl: string,
+  avatarName: string = "CocoLash Avatar"
+): Promise<{ talking_photo_id: string; avatar_url: string; group_id: string }> {
   const asset = await uploadAsset(imageUrl);
 
   if (!asset.image_key) {
@@ -428,16 +495,115 @@ export async function generateVideo(
   });
 }
 
+/**
+ * v3 video generation from a photo avatar (`POST /v3/videos`). Adds the modern
+ * quality controls: resolution tier (1080p/4K), expressiveness, and motion.
+ *
+ * Captions are deliberately NOT requested here — our Shotstack pipeline burns
+ * them downstream. When `audioAssetId` is provided (our ElevenLabs TTS), the
+ * spoken audio stays perfectly aligned with our caption SRT.
+ */
+export async function generateVideoV3(
+  params: V3VideoGenParams
+): Promise<VideoGenResult> {
+  return withRetry(async () => {
+    const body: Record<string, unknown> = {
+      type: "avatar",
+      avatar_id: params.avatarId,
+      resolution: params.resolution,
+      aspect_ratio: params.aspectRatio,
+    };
+
+    if (params.audioAssetId) {
+      body.audio_asset_id = params.audioAssetId;
+    } else if (params.voiceId && params.script) {
+      body.voice_id = params.voiceId;
+      body.script = params.script;
+    }
+
+    // Photo-avatar quality knobs (Avatar IV). expressiveness is Avatar-IV-only.
+    if (params.expressiveness) body.expressiveness = params.expressiveness;
+    if (params.motionPrompt) body.motion_prompt = params.motionPrompt;
+    if (params.title) body.title = params.title;
+
+    const result = await heygenFetch<{ data?: VideoGenResult }>(
+      `${API_BASE}/v3/videos`,
+      { method: "POST", body: JSON.stringify(body) }
+    );
+
+    if (!result.data?.video_id) {
+      throw new HeyGenError(
+        "v3 video generation returned no video_id",
+        500,
+        "missing_video_id"
+      );
+    }
+
+    return result.data;
+  });
+}
+
 // ── Video Status Polling ──────────────────────────────────────
 
+function mapV3Status(status: string): HeyGenVideoStatusValue {
+  if (
+    status === "pending" ||
+    status === "processing" ||
+    status === "completed" ||
+    status === "failed"
+  ) {
+    return status;
+  }
+  if (status === "waiting") return "waiting";
+  return "processing";
+}
+
 /**
- * Check the current status of a video generation request.
- * Returns status, video URL (when completed), thumbnail, duration, etc.
+ * Check the current status of a video generation request. Delegates to the v3
+ * status endpoint when on v3, returning the SAME VideoStatusResult shape so the
+ * status route + post-processing (Cloudinary + Shotstack caption burn) are
+ * unchanged.
  *
- * Note: Uses v1 endpoint as per HeyGen documentation.
- * URLs expire after 7 days — re-call to get fresh URLs.
+ * URLs expire after a few days — re-call to get fresh URLs.
  */
 export async function getVideoStatus(
+  videoId: string
+): Promise<VideoStatusResult> {
+  if (HEYGEN_API_VERSION === "v3") {
+    return getVideoStatusV3(videoId);
+  }
+  return getVideoStatusV2(videoId);
+}
+
+/** v3: GET /v3/videos/{id} → mapped to VideoStatusResult. */
+export async function getVideoStatusV3(
+  videoId: string
+): Promise<VideoStatusResult> {
+  const result = await heygenFetch<{
+    data?: {
+      id?: string;
+      video_id?: string;
+      status?: string;
+      video_url?: string;
+      thumbnail_url?: string;
+      duration?: number;
+      failure_message?: string;
+      error?: string;
+    };
+  }>(`${API_BASE}/v3/videos/${encodeURIComponent(videoId)}`);
+
+  const d = result.data ?? {};
+  return {
+    video_id: d.video_id ?? d.id ?? videoId,
+    status: mapV3Status(d.status ?? "processing"),
+    video_url: d.video_url,
+    thumbnail_url: d.thumbnail_url,
+    duration: d.duration,
+    error: d.failure_message ?? d.error,
+  };
+}
+
+async function getVideoStatusV2(
   videoId: string
 ): Promise<VideoStatusResult> {
   const result = await heygenFetch<HeyGenResponse<VideoStatusResult>>(
