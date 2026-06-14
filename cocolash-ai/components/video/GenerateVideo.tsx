@@ -379,7 +379,43 @@ export function GenerateVideo(props: GenerateVideoProps) {
             <p className="mt-1 text-center text-xs text-coco-brown-medium/60">
               {error}
             </p>
+            {/credit/i.test(error) && (
+              <p className="mt-3 text-center text-xs text-coco-brown-medium">
+                Your HeyGen API balance is out of credit. Top it up at{" "}
+                <a
+                  href="https://app.heygen.com/developers"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="font-medium text-coco-golden underline hover:text-coco-golden-dark"
+                >
+                  app.heygen.com/developers
+                </a>
+                , then Try Again. A shorter clip or 1080p (below) costs less.
+              </p>
+            )}
           </div>
+
+          {/* Let the user switch quality before retrying (e.g. drop to 1080p). */}
+          <div className="space-y-2">
+            <label className="text-sm font-semibold text-coco-brown">
+              Video Quality
+            </label>
+            <div className="grid grid-cols-2 gap-2">
+              <ResolutionOption
+                active={resolution === "1080p"}
+                title="1080p"
+                subtitle="Full HD · recommended"
+                onClick={() => setResolution("1080p")}
+              />
+              <ResolutionOption
+                active={resolution === "4k"}
+                title="4K"
+                subtitle="Ultra HD · sharper, slower & pricier"
+                onClick={() => setResolution("4k")}
+              />
+            </div>
+          </div>
+
           <div className="flex gap-3">
             <Button
               onClick={handleGenerate}
