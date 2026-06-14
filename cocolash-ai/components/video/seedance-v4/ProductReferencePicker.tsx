@@ -94,42 +94,95 @@ export function ProductReferencePicker({
   }
 
   async function handleUpload(e: React.ChangeEvent<HTMLInputElement>) {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    if (!file.type.startsWith("image/")) {
-      toast.error("Please select an image file");
+    const picked = Array.from(e.target.files ?? []);
+    const resetInput = () => {
+      if (fileRef.current) fileRef.current.value = "";
+    };
+    if (picked.length === 0) return;
+
+    // Validate each file; skip (don't abort the batch) on bad ones.
+    const valid: File[] = [];
+    for (const file of picked) {
+      if (!file.type.startsWith("image/")) {
+        toast.error(`"${file.name}" is not an image — skipped.`);
+        continue;
+      }
+      if (file.size > 10 * 1024 * 1024) {
+        toast.error(`"${file.name}" is over 10 MB — skipped.`);
+        continue;
+      }
+      valid.push(file);
+    }
+    if (valid.length === 0) {
+      resetInput();
       return;
     }
-    if (file.size > 10 * 1024 * 1024) {
-      toast.error("Image must be under 10 MB");
+
+    // Respect the remaining product slots (max MAX_PRODUCTS total).
+    const remaining = MAX_PRODUCTS - selected.length;
+    if (remaining <= 0) {
+      toast.error(`Maximum ${MAX_PRODUCTS} product images already selected.`);
+      resetInput();
       return;
     }
+    const toUpload = valid.slice(0, remaining);
+    if (valid.length > remaining) {
+      toast.warning(
+        `Only ${remaining} more image${remaining === 1 ? "" : "s"} can be added (max ${MAX_PRODUCTS}).`
+      );
+    }
+
     setUploading(true);
+    const newlySelected: string[] = [];
+    let failures = 0;
     try {
-      const fd = new FormData();
-      fd.append("file", file);
-      const res = await fetch("/api/products/upload", { method: "POST", body: fd });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || "Upload failed");
-      const newProduct: ProductRef = {
-        id: data.image.id,
-        image_url: data.image.image_url,
-        category_name: data.image.category_name ?? "Custom Uploads",
-      };
-      setImages((prev) => [newProduct, ...prev]);
-      if (selected.length < MAX_PRODUCTS) {
+      // Sequential on purpose: the first upload creates the "Custom Uploads"
+      // category, so subsequent uploads reuse it (avoids a concurrent
+      // category-create race in /api/products/upload).
+      for (const file of toUpload) {
+        try {
+          const fd = new FormData();
+          fd.append("file", file);
+          const res = await fetch("/api/products/upload", {
+            method: "POST",
+            body: fd,
+          });
+          const data = await res.json();
+          if (!res.ok) throw new Error(data.error || "Upload failed");
+          const newProduct: ProductRef = {
+            id: data.image.id,
+            image_url: data.image.image_url,
+            category_name: data.image.category_name ?? "Custom Uploads",
+          };
+          setImages((prev) => [newProduct, ...prev]);
+          newlySelected.push(newProduct.image_url);
+          if (data.warning) toast.warning(data.warning);
+        } catch (err) {
+          failures += 1;
+          toast.error(
+            `${file.name}: ${err instanceof Error ? err.message : "Upload failed"}`
+          );
+        }
+      }
+
+      if (newlySelected.length > 0) {
         setState({
-          ugcProductImageUrls: [...selected, newProduct.image_url],
+          ugcProductImageUrls: [...selected, ...newlySelected].slice(
+            0,
+            MAX_PRODUCTS
+          ),
           productFacts: undefined,
         });
+        if (failures === 0) {
+          const n = newlySelected.length;
+          toast.success(
+            `${n} product image${n === 1 ? "" : "s"} added — saved for next time.`
+          );
+        }
       }
-      if (data.warning) toast.warning(data.warning);
-      else toast.success("Product image added — saved for next time.");
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Upload failed");
     } finally {
       setUploading(false);
-      if (fileRef.current) fileRef.current.value = "";
+      resetInput();
     }
   }
 
@@ -155,6 +208,7 @@ export function ProductReferencePicker({
         ref={fileRef}
         type="file"
         accept="image/*"
+        multiple
         onChange={handleUpload}
         className="hidden"
       />
@@ -178,7 +232,7 @@ export function ProductReferencePicker({
                 "flex aspect-square flex-col items-center justify-center gap-1 rounded-lg border-2 border-dashed border-coco-beige-dark bg-white text-coco-brown-medium/60 transition-all hover:border-coco-golden/40 hover:bg-coco-golden/5",
                 uploading && "opacity-50"
               )}
-              title="Upload a new product image"
+              title="Upload one or more product images"
             >
               {uploading ? (
                 <Loader2 className="h-5 w-5 animate-spin text-coco-golden" />
@@ -225,7 +279,7 @@ export function ProductReferencePicker({
             <div className="rounded-lg border border-dashed border-coco-beige-dark bg-coco-beige-light/40 p-3 text-center">
               <Package className="mx-auto h-5 w-5 text-coco-brown-medium/40" />
               <p className="mt-1 text-[11px] text-coco-brown-medium/60">
-                No saved products yet. Upload one above —{" "}
+                No saved products yet. Upload one or more above —{" "}
                 <Link
                   href="/settings"
                   className="font-medium text-coco-golden hover:text-coco-golden-dark"
