@@ -2,7 +2,6 @@ import { createAdminClient } from "@/lib/supabase/server";
 import { recordActualCost } from "@/lib/costs/tracker";
 import { SEEDANCE_COSTS } from "@/lib/seedance/types";
 import { processVideo } from "@/lib/video/processor";
-import { generateSRTFromScript } from "@/lib/video/captions";
 import { burnAndUploadCaptions } from "@/lib/video/burn-captions";
 import type { GeneratedVideo } from "@/lib/types";
 
@@ -78,36 +77,24 @@ export async function completeSeedanceVideo({
 
   // Mirrors the HeyGen post-processing pattern (runPostProcessing in
   // app/api/videos/[id]/status/route.ts): upload to Cloudinary, then burn
-  // styled captions via Shotstack. The SRT is persisted so the status route's
-  // repair path can retry if the burn fails.
+  // styled captions via Shotstack.
+  //
+  // Caption *intent* is decided at generation time and persisted as the
+  // presence of `caption_srt` on the row (see buildGenerationCaptionSrt in
+  // app/api/seedance/generate/route.ts). We do NOT re-derive it here — that
+  // keeps the user's "Stylized captions" toggle authoritative (OFF => null =>
+  // no captions) and removes the old dependency on a persisted `script_id`
+  // (the v4 wizard never sends one, which is why videos came out uncaptioned).
   let hasCaptions = false;
 
   try {
-    // 1. Resolve script text + build the SRT FIRST, so caption_srt persists
-    //    even if Cloudinary/Shotstack fail (enables the repair path).
-    let scriptText: string | undefined;
-    if (video.script_id) {
-      const { data: script } = await supabase
-        .from("video_scripts")
-        .select("script_text")
-        .eq("id", video.script_id)
-        .single();
-      scriptText = script?.script_text ?? undefined;
-    }
+    const captionSrt = video.caption_srt;
 
-    const duration = video.duration_seconds ?? 15;
-    const captionSrt = scriptText
-      ? generateSRTFromScript(scriptText, duration)
-      : null;
-    if (captionSrt) {
-      updateData.caption_srt = captionSrt;
-    }
-
-    // 2. Upload the raw video to Cloudinary (durable URL + thumbnail + publicId).
+    // Upload the raw video to Cloudinary (durable URL + thumbnail + publicId).
     const processed = await processVideo({
       rawVideoUrl,
       title: "CocoLash Seedance Video",
-      scriptText,
+      scriptText: video.script_text_cache ?? undefined,
       durationSeconds: video.duration_seconds ?? undefined,
       addWatermark: false,
       addCaptions: false,
@@ -116,13 +103,16 @@ export async function completeSeedanceVideo({
     updateData.final_video_url = processed.videoUrl;
     updateData.thumbnail_url = processed.thumbnailUrl ?? providerThumbnailUrl ?? null;
 
-    // 3. Burn styled captions via Shotstack (same step HeyGen uses).
+    // Burn styled captions via Shotstack (same step HeyGen uses) only when the
+    // user kept captions ON (caption_srt present) and Shotstack is configured.
+    // On failure the video is still ready (uncaptioned) and the status-route
+    // repair path retries on the next poll using the persisted caption_srt.
     if (captionSrt && process.env.SHOTSTACK_API_KEY) {
       try {
         const captionedUrl = await burnAndUploadCaptions({
           videoUrl: processed.videoUrl,
           srtContent: captionSrt,
-          durationSeconds: duration,
+          durationSeconds: video.duration_seconds ?? 15,
           videoPublicId: processed.cloudinaryPublicId,
           aspectRatio:
             (video.aspect_ratio as "9:16" | "16:9" | "1:1") ?? "9:16",
@@ -130,8 +120,6 @@ export async function completeSeedanceVideo({
         updateData.final_video_url = captionedUrl;
         hasCaptions = true;
       } catch (captionError) {
-        // Non-fatal: video is ready without captions; the status-route repair
-        // path will retry on the next poll using the persisted caption_srt.
         console.error(
           "[seedance/complete] Caption burn failed (will retry on poll):",
           captionError
@@ -169,7 +157,7 @@ export async function completeSeedanceVideo({
     heygen_status: "completed",
     final_video_url: (updateData.final_video_url as string) ?? rawVideoUrl,
     thumbnail_url: (updateData.thumbnail_url as string | null) ?? null,
-    caption_srt: (updateData.caption_srt as string | undefined) ?? video.caption_srt ?? null,
+    caption_srt: video.caption_srt ?? null,
     has_captions: hasCaptions,
     completed_at: updateData.completed_at as string,
   };

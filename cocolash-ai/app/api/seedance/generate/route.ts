@@ -4,6 +4,7 @@ import { generateVideoScript } from "@/lib/openrouter/captions";
 import { createSeedanceTask } from "@/lib/seedance/client";
 import { resolveSkuReferences } from "@/lib/seedance/reference-resolver";
 import { validateScriptAgainstProductTruth } from "@/lib/brand/product-truth";
+import { generateSRTFromScript } from "@/lib/video/captions";
 import {
   buildSeedanceDirectorPromptFallback,
   generateSeedanceDirectorPrompt,
@@ -41,6 +42,37 @@ export function pickRefs(
   return [];
 }
 
+/**
+ * Build the caption SRT at generation time.
+ *
+ * Seedance captions are burned asynchronously (Enhancor webhook / status poll)
+ * long after this request returns, so the *intent* to caption must be persisted
+ * NOW. We encode it as the presence of `caption_srt` on the row: when the user
+ * leaves the "Stylized captions" toggle ON, we generate the SRT from the script
+ * here and store it; `completeSeedanceVideo` (and the status-route repair path)
+ * burn the styled captions iff it's present.
+ *
+ * This also fixes the root cause of "Seedance videos have no captions": the v4
+ * wizard sends `scriptText` but never a persisted `scriptId`, so the completion
+ * path (which used to look up the script via `script_id`) found nothing and
+ * silently produced an uncaptioned video. Building the SRT here removes that
+ * dependency entirely.
+ */
+export function buildGenerationCaptionSrt(
+  scriptText: string | undefined,
+  captionsEnabled: boolean,
+  durationSeconds: number
+): string | null {
+  if (!captionsEnabled) return null;
+  const text = scriptText?.trim();
+  if (!text) return null;
+  const srt = generateSRTFromScript(
+    text,
+    durationSeconds > 0 ? durationSeconds : 15
+  );
+  return srt.length > 0 ? srt : null;
+}
+
 const VALID_CAMPAIGN_TYPES: CampaignType[] = [
   "product-showcase", "testimonial", "promo",
   "educational", "unboxing", "before-after",
@@ -71,6 +103,12 @@ interface SeedanceGenerateBody {
   aspectRatio: SeedanceAspectRatio;
   seedanceDuration?: SeedanceDuration;
   resolution?: SeedanceResolution;
+  /**
+   * "Stylized captions" toggle from the v4 wizard's Step 3. When true (default),
+   * an SRT is built from the script and persisted so the completion path burns
+   * styled captions onto the finished video. When false, no captions are added.
+   */
+  captionsEnabled?: boolean;
   generationType?: SeedanceGenerationType;
   seedanceMode?: SeedanceMode;
   fullAccess?: boolean;
@@ -257,6 +295,17 @@ export async function POST(request: NextRequest) {
       requestedSeedanceDuration ??
       (String(duration <= 5 ? 5 : duration <= 8 ? 8 : duration <= 10 ? 10 : 15) as SeedanceDuration);
 
+    // Captions default ON ("I need captions in my videos") — only the explicit
+    // toggle-off (captionsEnabled === false) suppresses them. The SRT is built
+    // from the resolved script and timed to the actual clip length so the burn
+    // matches what's spoken.
+    const captionsEnabled = body.captionsEnabled !== false;
+    const captionSrt = buildGenerationCaptionSrt(
+      scriptText,
+      captionsEnabled,
+      parseInt(seedanceDuration, 10)
+    );
+
     // ── Step 1.5: Validate script against product truth ──────
     // Per D-34-04 (BLOCKER 1): productSku is optional; brand-wide CocoLash truth applies.
     // If no SKU: validation checks only brand-wide rules (e.g., no magnetic closures).
@@ -348,6 +397,11 @@ export async function POST(request: NextRequest) {
         seedance_prompt: seedancePrompt,
         audio_mode: effectiveAudioMode,
         audio_url: audioUrl ?? null,
+        // Persist the script + caption SRT up-front so the async completion path
+        // can burn styled captions without re-deriving the script (the v4 wizard
+        // never sends a persisted script_id). caption_srt null = captions off.
+        script_text_cache: scriptText || null,
+        caption_srt: captionSrt,
       })
       .select("id")
       .single();

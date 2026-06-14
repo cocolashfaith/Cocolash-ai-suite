@@ -509,6 +509,46 @@ export function Step3PromptReviewAndGenerate({ state, setState, onReset, goToSte
         </div>
       )}
 
+      {/* Stylized captions toggle — always interactive (the settings panel is
+          read-only in Enhancor-parity UGC mode, so this lives here so it shows
+          for every mode). ON burns the same Shotstack styled captions the
+          HeyGen pipeline uses; OFF ships the video with no captions. */}
+      <div className="flex items-center justify-between gap-3 rounded-xl border-2 border-coco-beige-dark bg-white p-4">
+        <div>
+          <p className="text-sm font-semibold text-coco-brown">
+            Stylized captions
+          </p>
+          <p className="mt-0.5 text-[11px] text-coco-brown-medium/60">
+            {(state.captionsEnabled ?? true)
+              ? "Animated word-by-word captions are burned onto the finished video (same style as the avatar videos)."
+              : "No captions will be added to this video."}
+          </p>
+        </div>
+        <button
+          type="button"
+          onClick={() =>
+            setState({ captionsEnabled: !(state.captionsEnabled ?? true) })
+          }
+          className={cn(
+            "flex h-5 w-9 shrink-0 items-center rounded-full transition-colors",
+            (state.captionsEnabled ?? true)
+              ? "bg-coco-golden"
+              : "bg-coco-beige-dark"
+          )}
+          aria-pressed={state.captionsEnabled ?? true}
+          aria-label="Toggle stylized captions"
+        >
+          <div
+            className={cn(
+              "h-4 w-4 rounded-full bg-white shadow transition-transform",
+              (state.captionsEnabled ?? true)
+                ? "translate-x-4"
+                : "translate-x-0.5"
+            )}
+          />
+        </button>
+      </div>
+
       {/* Approve & generate */}
       {generationStarted && !isGenerating ? (
         <div className="flex items-center gap-3 rounded-xl border-2 border-green-300 bg-green-50 p-4">
@@ -668,6 +708,8 @@ function buildEnhancorBodyV4UGC(
     fullAccess: state.fullAccess ?? true,
     unrestricted: state.unrestricted ?? false,
     quality: state.quality ?? "standard",
+    // Stylized captions toggle (default ON) — drives the Shotstack burn downstream.
+    captionsEnabled: state.captionsEnabled ?? true,
     // Images: influencer FIRST, then products (per @-mention alignment)
     influencers: state.ugcInfluencerImageUrl ? [state.ugcInfluencerImageUrl] : [],
     products: state.ugcProductImageUrls || [],
@@ -703,6 +745,8 @@ function buildEnhancorBody(
     // product references reach generation.
     productSku: state.productSku || undefined,
     fullAccess: true,
+    // Stylized captions toggle (default ON) — drives the Shotstack burn downstream.
+    captionsEnabled: state.captionsEnabled ?? true,
     // Carry the script for downstream (some current API code expects it)
     scriptText: state.scriptText,
     // Pass the AI-approved prompt as the AUTHORITATIVE prompt — the existing

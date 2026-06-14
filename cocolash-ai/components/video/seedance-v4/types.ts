@@ -37,6 +37,10 @@ export interface SeedanceV4WizardState {
   unrestricted?: boolean; // "Unrestricted" toggle
   quality?: string; // Quality dropdown (default "standard")
 
+  /** "Stylized captions" toggle (default ON). When on, the finished video gets
+   *  the same Shotstack-burned styled captions as the HeyGen pipeline. */
+  captionsEnabled?: boolean;
+
   // Step 2 — mode-specific inputs (only the ones for the chosen mode are populated)
   /** UGC composed image (avatar already holding product, single image)
    *  OR the avatar-only image when toggle is off. */
@@ -125,6 +129,7 @@ export const DEFAULT_V4_STATE: SeedanceV4WizardState = {
   fullAccess: true,
   unrestricted: false,
   quality: "standard",
+  captionsEnabled: true,
   // UGC Enhancor-parity inputs
   ugcProductImageUrls: [],
   aspectRatio: "9:16",
