@@ -24,6 +24,9 @@ interface Step3Props {
   ) => void;
   onReset: () => void;
   goToStep?: (step: number) => void;
+  /** Jump back to Step 1 for a new clip while KEEPING all uploaded images and
+   *  settings (so the user doesn't re-upload product images each time). */
+  onStartAnother?: () => void;
 }
 
 /**
@@ -41,7 +44,7 @@ interface Step3Props {
  *   2. Display prompt in editable textarea
  *   3. User clicks [Approve & Generate]
  */
-export function Step3PromptReviewAndGenerate({ state, setState, onReset, goToStep }: Step3Props) {
+export function Step3PromptReviewAndGenerate({ state, setState, onReset, goToStep, onStartAnother }: Step3Props) {
   const [isWriting, setIsWriting] = useState(false);
   const [writeError, setWriteError] = useState<string | null>(null);
   const [editedPrompt, setEditedPrompt] = useState<string>(state.directorPrompt ?? "");
@@ -551,16 +554,32 @@ export function Step3PromptReviewAndGenerate({ state, setState, onReset, goToSte
 
       {/* Approve & generate */}
       {generationStarted && !isGenerating ? (
-        <div className="flex items-center gap-3 rounded-xl border-2 border-green-300 bg-green-50 p-4">
-          <Check className="h-5 w-5 text-green-600" />
-          <div>
-            <p className="text-sm font-semibold text-green-900">
-              Submitted to Seedance.
-            </p>
-            <p className="text-xs text-green-800">
-              Open <code>/video/gallery</code> to watch progress.
-            </p>
+        <div className="space-y-3 rounded-xl border-2 border-green-300 bg-green-50 p-4">
+          <div className="flex items-center gap-3">
+            <Check className="h-5 w-5 shrink-0 text-green-600" />
+            <div>
+              <p className="text-sm font-semibold text-green-900">
+                Submitted to Seedance.
+              </p>
+              <p className="text-xs text-green-800">
+                Open <code>/video/gallery</code> to watch progress.
+              </p>
+            </div>
           </div>
+          {onStartAnother && (
+            <Button
+              onClick={() => {
+                setGenerationStarted(false);
+                onStartAnother();
+              }}
+              variant="outline"
+              size="sm"
+              className="gap-1.5"
+            >
+              <Sparkles className="h-3 w-3" />
+              Create another video (keeps your images)
+            </Button>
+          )}
         </div>
       ) : (
         <div className="flex gap-3">

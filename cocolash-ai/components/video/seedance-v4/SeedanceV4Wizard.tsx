@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Step1ScriptAndMode } from "./Step1ScriptAndMode";
 import { Step2DynamicInputs } from "./Step2DynamicInputs";
 import { Step3PromptReviewAndGenerate } from "./Step3PromptReviewAndGenerate";
@@ -14,6 +14,15 @@ const STEPS = [
   { label: "Inputs" },
   { label: "Prompt Review" },
 ];
+
+/**
+ * Wizard inputs are persisted to localStorage so uploaded product/influencer
+ * images (and the rest of the setup) survive a page refresh, navigating away
+ * and back, or making a second video — without re-uploading. Cleared only by
+ * "Start Over". (Uploads themselves live in Supabase storage; we persist just
+ * their URLs + the rest of the lightweight, JSON-serializable wizard state.)
+ */
+const WIZARD_STORAGE_KEY = "cocolash:seedance-v4-wizard";
 
 interface SeedanceV4WizardProps {
   initialPersonImageUrl?: string;
@@ -31,6 +40,40 @@ export function SeedanceV4Wizard({ initialPersonImageUrl: _ }: SeedanceV4WizardP
   const [step, setStep] = useState<0 | 1 | 2>(0);
   const [maxStep, setMaxStep] = useState<0 | 1 | 2>(0);
   const [state, setStateRaw] = useState<SeedanceV4WizardState>(DEFAULT_V4_STATE);
+
+  // Rehydrate persisted inputs once on mount. Done in an effect (not the
+  // useState initializer) so the server and first client render both start
+  // from DEFAULT_V4_STATE — avoids a Next.js hydration mismatch.
+  const hydratedRef = useRef(false);
+  useEffect(() => {
+    if (hydratedRef.current) return;
+    hydratedRef.current = true;
+    try {
+      const raw = window.localStorage.getItem(WIZARD_STORAGE_KEY);
+      if (raw) {
+        const parsed = JSON.parse(raw) as Partial<SeedanceV4WizardState>;
+        // Merge over defaults so newly-added fields still get their defaults.
+        // One-time localStorage rehydration is the documented escape hatch for
+        // setting state in an effect (kept out of the useState initializer to
+        // avoid an SSR/client hydration mismatch).
+        // eslint-disable-next-line react-hooks/set-state-in-effect
+        setStateRaw((prev) => ({ ...prev, ...parsed }));
+      }
+    } catch {
+      // Corrupt/unavailable storage is non-fatal — start fresh.
+    }
+  }, []);
+
+  // Persist on every change (only after hydration, so we don't clobber stored
+  // state with the initial defaults before rehydration runs).
+  useEffect(() => {
+    if (!hydratedRef.current) return;
+    try {
+      window.localStorage.setItem(WIZARD_STORAGE_KEY, JSON.stringify(state));
+    } catch {
+      // Quota / serialization issues are non-fatal.
+    }
+  }, [state]);
 
   /**
    * Step-3-only state fields — patches that ONLY touch these don't bump
@@ -79,6 +122,18 @@ export function SeedanceV4Wizard({ initialPersonImageUrl: _ }: SeedanceV4WizardP
     setStateRaw(DEFAULT_V4_STATE);
     setStep(0);
     setMaxStep(0);
+    try {
+      window.localStorage.removeItem(WIZARD_STORAGE_KEY);
+    } catch {
+      // non-fatal
+    }
+  };
+
+  // "Create another video" after a successful submit: keep all uploaded images
+  // and settings, just jump back to Step 1 so the user can tweak the script for
+  // the next clip without re-uploading anything.
+  const handleStartAnother = () => {
+    setStep(0);
   };
 
   /** Live cost estimate that reflects the current wizard state. Refreshes
@@ -199,6 +254,7 @@ export function SeedanceV4Wizard({ initialPersonImageUrl: _ }: SeedanceV4WizardP
               state={state}
               setState={setState}
               onReset={handleReset}
+              onStartAnother={handleStartAnother}
             />
           </div>
         )}
