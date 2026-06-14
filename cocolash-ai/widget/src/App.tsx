@@ -8,6 +8,7 @@ import { TryOnDialog } from "./components/TryOnDialog";
 import { Lightbox } from "./components/Lightbox";
 import { Peek } from "./components/Peek";
 import { useChat } from "./lib/useChat";
+import { playChime, isSoundMuted, setSoundMuted } from "./lib/chime";
 
 const QUICK_REPLY_CHIPS: ReadonlyArray<string> = [
   "What's most natural?",
@@ -43,6 +44,22 @@ export function App(props: AppProps) {
   const [tryOnTarget, setTryOnTarget] = useState<{ handle: string; title: string } | null>(null);
   const [zoomedImage, setZoomedImage] = useState<string | null>(null);
   const [peekVisible, setPeekVisible] = useState(false);
+  // Widget is client-only (no SSR), so reading the pref in the initializer is safe.
+  const [muted, setMuted] = useState(() => isSoundMuted());
+
+  // Play a soft chime when the proactive Peek appears, to draw attention to it.
+  // playChime() internally respects the mute pref + browser autoplay policy.
+  useEffect(() => {
+    if (peekVisible) playChime();
+  }, [peekVisible]);
+
+  const toggleMute = () => {
+    setMuted((prev) => {
+      const next = !prev;
+      setSoundMuted(next);
+      return next;
+    });
+  };
 
   const chat = useChat({
     apiBaseUrl: props.apiBaseUrl,
@@ -138,6 +155,8 @@ export function App(props: AppProps) {
             chips={QUICK_REPLY_CHIPS}
             onChip={onChipClick}
             onDismiss={dismissPeek}
+            muted={muted}
+            onToggleMute={toggleMute}
           />
         ) : null}
         <Fab

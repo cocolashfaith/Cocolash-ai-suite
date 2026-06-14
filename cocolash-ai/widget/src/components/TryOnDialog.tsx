@@ -1,5 +1,6 @@
 import { useCallback, useRef, useState } from "preact/hooks";
 import { uploadSelfie, runTryOn, type TryOnConfig } from "../lib/tryon";
+import { TryOnProgress } from "./TryOnProgress";
 
 type Status = "consent" | "selecting" | "uploading" | "composing" | "done" | "error";
 
@@ -65,17 +66,17 @@ export function TryOnDialog({ cfg, productHandle, productTitle, onClose, onResul
             </div>
           </>
         ) : null}
-        {status === "selecting" || status === "uploading" || status === "composing" ? (
+        {status === "selecting" ? (
           <>
             <h3 class="tryon-title">Putting {productTitle} on you…</h3>
-            <p class="tryon-body">
-              {status === "selecting"
-                ? "Pick a photo or capture a selfie."
-                : status === "uploading"
-                  ? "Sending your photo securely…"
-                  : "Coco's working her magic. This can take 10 to 30 seconds."}
-            </p>
+            <p class="tryon-body">Pick a photo or capture a selfie.</p>
             <div class="tryon-spinner" aria-hidden="true" />
+          </>
+        ) : null}
+        {status === "uploading" || status === "composing" ? (
+          <>
+            <h3 class="tryon-title">Putting {productTitle} on you…</h3>
+            <TryOnProgress phase={status} productTitle={productTitle} />
           </>
         ) : null}
         {status === "error" ? (
@@ -91,7 +92,8 @@ export function TryOnDialog({ cfg, productHandle, productTitle, onClose, onResul
         ) : null}
         {status === "done" ? (
           <>
-            <h3 class="tryon-title">Done!</h3>
+            <div class="tryon-check" aria-hidden="true">✓</div>
+            <h3 class="tryon-title">Your look is ready!</h3>
             <p class="tryon-body">Your preview is in the chat. Looking good!</p>
             <div class="tryon-buttons">
               <button type="button" class="tryon-btn tryon-btn--primary" onClick={onClose}>Close</button>

@@ -706,3 +706,113 @@ button {
 .consent__btn--accept:hover { background: #1c0f08; }
 .consent__btn--decline { background: transparent; color: var(--coco-brown); }
 .consent__btn--decline:hover { background: rgba(0, 0, 0, 0.05); }
+
+/* ── Peek controls (mute + close) ───────────────────────────── */
+.peek__controls {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  display: flex;
+  gap: 2px;
+}
+.peek__controls .peek__close { position: static; top: auto; right: auto; }
+.peek .peek__greeting { margin-right: 54px; }
+.peek__mute {
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  font-size: 13px;
+  line-height: 1;
+  background: transparent;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 160ms ease;
+}
+.peek__mute:hover { background: rgba(40, 21, 14, 0.08); }
+
+/* ── Try-on progress (psychology-informed wait experience) ──── */
+.tryon-progress { margin-top: 10px; text-align: left; }
+.tryon-progress__head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  font-size: 12px;
+  color: var(--coco-brown-medium);
+  margin-bottom: 6px;
+}
+.tryon-progress__step { font-weight: 600; }
+.tryon-progress__pct { font-variant-numeric: tabular-nums; }
+.tryon-progress__track {
+  height: 8px;
+  border-radius: 999px;
+  background: var(--coco-pink-soft);
+  overflow: hidden;
+}
+.tryon-progress__fill {
+  height: 100%;
+  border-radius: 999px;
+  background: linear-gradient(90deg, var(--coco-pink), var(--coco-brown));
+}
+.tryon-progress__fill--anim { transition: width 600ms cubic-bezier(0.22, 1, 0.36, 1); }
+.tryon-progress__label {
+  margin: 10px 0 0;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--coco-brown);
+}
+.tryon-progress__skeleton {
+  margin: 12px 0;
+  height: 84px;
+  border-radius: 12px;
+  background: var(--coco-pink-soft);
+}
+.tryon-progress__skeleton--shimmer {
+  background: linear-gradient(
+    100deg,
+    var(--coco-pink-soft) 30%,
+    var(--coco-cream) 50%,
+    var(--coco-pink-soft) 70%
+  );
+  background-size: 200% 100%;
+  animation: tryon-shimmer 1.4s ease-in-out infinite;
+}
+@keyframes tryon-shimmer {
+  from { background-position: 200% 0; }
+  to { background-position: -200% 0; }
+}
+.tryon-progress__reassure {
+  margin: 0 0 6px;
+  font-size: 12px;
+  color: var(--coco-brown-medium);
+  line-height: 1.4;
+}
+.tryon-progress__tip {
+  margin: 0;
+  font-size: 12px;
+  color: var(--coco-brown-medium);
+  font-style: italic;
+  min-height: 2.4em;
+}
+.tryon-check {
+  width: 48px;
+  height: 48px;
+  margin: 4px auto 8px;
+  border-radius: 50%;
+  background: var(--coco-brown);
+  color: var(--coco-cream);
+  font-size: 26px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  animation: tryon-pop 320ms cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+@keyframes tryon-pop {
+  from { transform: scale(0.4); opacity: 0; }
+  to { transform: scale(1); opacity: 1; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .tryon-progress__fill--anim { transition: none; }
+  .tryon-check { animation: none; }
+}

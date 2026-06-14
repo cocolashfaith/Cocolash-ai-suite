@@ -24,7 +24,7 @@ declare global {
 
 // Bumped on every build that ships a behavior change. Logged on boot so a
 // QA tester can confirm the cached bundle is the latest one.
-const WIDGET_VERSION = "v3.0.10-tryon-render";
+const WIDGET_VERSION = "v3.1.0-wait-ux-sound";
 
 function bootstrap(): void {
   const cfg = window.COCOLASH_CHAT_CONFIG;

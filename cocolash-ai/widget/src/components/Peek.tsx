@@ -12,22 +12,42 @@ interface PeekProps {
   chips: ReadonlyArray<string>;
   onChip: (text: string) => void;
   onDismiss: () => void;
+  /** Current sound preference + toggle (the Peek plays a soft chime on arrival). */
+  muted?: boolean;
+  onToggleMute?: () => void;
 }
 
-export function Peek({ greeting, chips, onChip, onDismiss }: PeekProps) {
+export function Peek({ greeting, chips, onChip, onDismiss, muted, onToggleMute }: PeekProps) {
   return (
     <div class="peek" role="dialog" aria-label="Quick reply suggestions">
-      <button
-        type="button"
-        class="peek__close"
-        aria-label="Dismiss"
-        onClick={(e) => {
-          e.stopPropagation();
-          onDismiss();
-        }}
-      >
-        ×
-      </button>
+      <div class="peek__controls">
+        {onToggleMute ? (
+          <button
+            type="button"
+            class="peek__mute"
+            aria-label={muted ? "Unmute chat sound" : "Mute chat sound"}
+            aria-pressed={muted ? "true" : "false"}
+            title={muted ? "Sound off" : "Sound on"}
+            onClick={(e) => {
+              e.stopPropagation();
+              onToggleMute();
+            }}
+          >
+            {muted ? "🔇" : "🔔"}
+          </button>
+        ) : null}
+        <button
+          type="button"
+          class="peek__close"
+          aria-label="Dismiss"
+          onClick={(e) => {
+            e.stopPropagation();
+            onDismiss();
+          }}
+        >
+          ×
+        </button>
+      </div>
       <p class="peek__greeting">{greeting}</p>
       <div class="peek__chips">
         {chips.map((c) => (
