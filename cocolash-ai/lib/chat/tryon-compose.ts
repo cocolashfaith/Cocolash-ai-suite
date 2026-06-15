@@ -33,52 +33,54 @@ export interface ComposeTryOnResult {
   storagePath: string;
 }
 
-// Framed as a plain cosmetic photo edit ("add lashes to this photo, change
-// nothing else") rather than "preserve this real person's identity". The latter
-// wording tripped Gemini's likeness/real-person RAI filter (blockReason=OTHER).
-// The functional "do not change the face/skin/hair/background" instructions are
-// kept so the model still won't invent a new face.
-const TRYON_PROMPT = `You are applying a virtual false-lash try-on to a photo.
+const TRYON_PROMPT = `You are performing a virtual false-lash try-on.
 
 INPUT:
-  IMAGE 1 — the photo to edit.
+  IMAGE 1 — a real person's selfie. This is the customer.
   IMAGE 2 — a close-up product photo of a single false-lash strip.
 
 YOUR TASK:
-Return IMAGE 1 with EXACTLY ONE change: add the false-lash strip from
-IMAGE 2 realistically to BOTH upper eyelids, as if they were just put on.
-Make no other changes.
+Return IMAGE 1, identical in every way, with EXACTLY ONE change: apply
+the false-lash strip from IMAGE 2 realistically to BOTH of the customer's
+upper eyelids, as if she has just put them on.
 
-KEEP UNCHANGED, EXACTLY AS IN IMAGE 1 (in priority order):
-1. The face and all facial features, proportions, bone structure, jaw,
-   nose, and mouth. Do not alter the face.
-2. The skin tone, skin texture, freckles, blemishes, makeup, and
-   undereye area. Do NOT smooth, lighten, darken, or "beautify" the skin.
-3. The hair (style, color, length, parting, flyaways). Do NOT restyle.
-4. The clothing, jewellery, and accessories.
-5. The background, lighting direction, color cast, shadows, and camera
-   angle. Do NOT change the environment.
-6. The expression, head tilt, and pose.
+NON-NEGOTIABLE PRESERVATION RULES (in priority order):
+1. The person's face, facial features, bone structure, jaw, nose, and
+   mouth must be IDENTICAL to IMAGE 1. This is the same person — same
+   identity. Do NOT generate a new person.
+2. The person's skin tone, skin texture, freckles, blemishes, makeup,
+   and undereye area must be IDENTICAL to IMAGE 1. Do NOT smooth,
+   lighten, darken, or "beautify" the skin.
+3. The person's hair (style, color, length, parting, flyaways) must
+   be IDENTICAL to IMAGE 1. Do NOT restyle.
+4. The person's clothing, jewellery, and accessories must be
+   IDENTICAL to IMAGE 1.
+5. The background, lighting direction, color cast, shadows, and
+   camera angle must be IDENTICAL to IMAGE 1. Do NOT change the
+   environment.
+6. The person's expression, head tilt, and pose must be IDENTICAL
+   to IMAGE 1.
 
 THE ONE CHANGE YOU ARE MAKING:
-Add the lash strip from IMAGE 2 to the upper eyelids. Match the length,
-curl, density, and color of the lashes from IMAGE 2 exactly. Both eyes
-must receive the same lashes, mirrored. The lashes should sit naturally
-along the lash line, blending with any existing lashes, casting subtle
-shadows consistent with the original lighting.
+Apply the lash strip from IMAGE 2 to her upper eyelids. Match the
+length, curl, density, and color of the lashes from IMAGE 2 exactly.
+Both eyes must receive the same lashes, mirrored. The lashes should
+sit naturally along the lash line, blending with any existing lashes,
+casting subtle shadows consistent with the original lighting.
 
 DO NOT include the lash packaging, box, applicator, or hands holding
-the product. The lashes are simply ON the eyes now.
+the product. The lashes are simply ON her eyes now.
 
 CRITICAL: if you are unsure whether to change something, leave it
 EXACTLY as it was in IMAGE 1.`;
 
-const TRYON_NEGATIVE = `NEGATIVE: do not change the face or facial features, do not change
-skin tone, do not smooth or beautify skin, do not change hair, do
-not change clothing, do not change the background, do not add the
-product packaging, do not add hands or applicator tools, do not add
-text, watermarks, or logos, do not use a studio background, do not
-change camera angle, do not stylize as a 3d render or illustration.`;
+const TRYON_NEGATIVE = `NEGATIVE: do not generate a new person, do not invent a different
+face, do not change skin tone, do not smooth or beautify skin, do
+not change hair, do not change clothing, do not change the
+background, do not add the product packaging, do not add hands or
+applicator tools, do not add text, watermarks, or logos, do not use
+a studio background, do not change camera angle, do not stylize as
+a 3d render or illustration.`;
 
 export async function composeTryOn(
   params: ComposeTryOnParams
@@ -97,7 +99,7 @@ export async function composeTryOn(
     `${TRYON_PROMPT}\n\n${TRYON_NEGATIVE}`,
     "4:5",
     referenceImages,
-    "[VIRTUAL LASH TRY-ON — keep the photo the same, only add the lashes]",
+    "[VIRTUAL LASH TRY-ON — preserve customer identity exactly]",
     "1K",
     // Edit a real selfie with the GA image-editing model (nano-banana); the
     // pro preview model over-blocks real-person edits. See client.ts.
