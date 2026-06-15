@@ -12,9 +12,25 @@ interface TryOnDialogProps {
   onResult: (composedUrl: string) => void;
 }
 
+/**
+ * Translate a raw thrown error into something a shopper can act on. A bare
+ * "Failed to fetch" (the browser's TypeError when a request never completes —
+ * a dropped connection, a timeout, or a momentary rate-limit between rapid
+ * try-ons) is meaningless to a customer, so we map network-class failures to a
+ * calm "try again" message and only surface specific server messages otherwise.
+ */
+function friendlyTryOnError(err: unknown): string {
+  const raw = err instanceof Error ? err.message : String(err ?? "");
+  if (/failed to fetch|networkerror|load failed|aborted|timeout/i.test(raw)) {
+    return "The connection dropped for a second — your photo's fine. Tap Try again.";
+  }
+  return raw || "That try-on didn't go through. Tap Try again.";
+}
+
 export function TryOnDialog({ cfg, productHandle, productTitle, onClose, onResult }: TryOnDialogProps) {
   const [status, setStatus] = useState<Status>("consent");
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [composedUrl, setComposedUrl] = useState<string | null>(null);
   const fileInput = useRef<HTMLInputElement>(null);
 
   const onFile = useCallback(
@@ -27,11 +43,12 @@ export function TryOnDialog({ cfg, productHandle, productTitle, onClose, onResul
       try {
         const { url } = await uploadSelfie(cfg, file);
         setStatus("composing");
-        const { composedUrl } = await runTryOn(cfg, productHandle, url);
-        onResult(composedUrl);
+        const { composedUrl: result } = await runTryOn(cfg, productHandle, url);
+        setComposedUrl(result);
+        onResult(result);
         setStatus("done");
       } catch (err) {
-        setErrorMessage(err instanceof Error ? err.message : "Try-on failed.");
+        setErrorMessage(friendlyTryOnError(err));
         setStatus("error");
       }
     },
@@ -92,9 +109,13 @@ export function TryOnDialog({ cfg, productHandle, productTitle, onClose, onResul
         ) : null}
         {status === "done" ? (
           <>
-            <div class="tryon-check" aria-hidden="true">✓</div>
-            <h3 class="tryon-title">Your look is ready!</h3>
-            <p class="tryon-body">Your preview is in the chat. Looking good!</p>
+            <h3 class="tryon-title">Here's {productTitle} on you 💛</h3>
+            {composedUrl ? (
+              <div class="tryon-result">
+                <img src={composedUrl} alt={`${productTitle} virtual try-on preview`} />
+              </div>
+            ) : null}
+            <p class="tryon-body">Looking good! We've saved this to your chat too.</p>
             <div class="tryon-buttons">
               <button type="button" class="tryon-btn tryon-btn--primary" onClick={onClose}>Close</button>
             </div>
