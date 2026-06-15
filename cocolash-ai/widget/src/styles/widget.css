@@ -767,6 +767,15 @@ button {
   height: 84px;
   border-radius: 12px;
   background: var(--coco-pink-soft);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.tryon-progress__skeleton-label {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--coco-brown-medium);
+  opacity: 0.75;
 }
 .tryon-progress__skeleton--shimmer {
   background: linear-gradient(

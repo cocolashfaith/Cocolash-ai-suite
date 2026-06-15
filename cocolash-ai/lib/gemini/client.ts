@@ -39,15 +39,18 @@ export const GEMINI_IMAGE_MODEL =
 
 /**
  * Model used for the chatbot virtual try-on, which EDITS a real customer's
- * uploaded selfie. `gemini-3-pro-image-preview` (the marketing default) applies
- * stricter responsible-AI filters to real-person photo edits and was returning
- * zero candidates. We use `gemini-3.1-flash-image` here — a fast gemini-3.x
- * image-editing model that handles selfie edits. Overridable via env (e.g. set
- * GEMINI_TRYON_IMAGE_MODEL=gemini-2.5-flash-image to fall back to nano-banana)
- * without a redeploy.
+ * uploaded selfie.
+ *
+ * IMPORTANT: the gemini-3 image models (gemini-3-pro-image-preview AND
+ * gemini-3.1-flash-image) refuse to edit a real person's face — the request is
+ * blocked with promptFeedback.blockReason="OTHER" (a non-configurable
+ * responsible-AI policy; relaxed safetySettings do NOT override it). Verified
+ * live 2026-06-15. `gemini-2.5-flash-image` (nano-banana) is the GA
+ * image-EDITING model the try-on originally shipped on and is the one that
+ * actually permits real-selfie edits. Overridable via env without a redeploy.
  */
 export const GEMINI_TRYON_IMAGE_MODEL =
-  process.env.GEMINI_TRYON_IMAGE_MODEL || "gemini-3.1-flash-image";
+  process.env.GEMINI_TRYON_IMAGE_MODEL || "gemini-2.5-flash-image";
 
 /**
  * Supported aspect ratios for the image generation model.

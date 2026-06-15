@@ -136,7 +136,11 @@ export function TryOnProgress({ phase, productTitle }: TryOnProgressProps) {
       <div
         class={`tryon-progress__skeleton${reduced ? "" : " tryon-progress__skeleton--shimmer"}`}
         aria-hidden="true"
-      />
+      >
+        <span class="tryon-progress__skeleton-label">
+          Your try-on preview will appear here ✨
+        </span>
+      </div>
 
       <p class="tryon-progress__reassure">
         {overrun
