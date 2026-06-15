@@ -33,8 +33,20 @@ export function getGeminiClient(): GoogleGenAI {
 }
 
 // ── Model Constants ──────────────────────────────────────────
-/** Default image generation model */
-export const GEMINI_IMAGE_MODEL = "gemini-3-pro-image-preview";
+/** Default image generation model (marketing / UGC / video pipeline). */
+export const GEMINI_IMAGE_MODEL =
+  process.env.GEMINI_IMAGE_MODEL || "gemini-3-pro-image-preview";
+
+/**
+ * Model used for the chatbot virtual try-on, which EDITS a real customer's
+ * uploaded selfie. The newer `gemini-3-pro-image-preview` applies stricter
+ * responsible-AI filters to real-person photo edits and was returning zero
+ * candidates ("no candidates in the response"). `gemini-2.5-flash-image`
+ * (nano-banana) is the GA image-editing model the original try-on shipped on
+ * and reliably handles this. Overridable via env without a redeploy.
+ */
+export const GEMINI_TRYON_IMAGE_MODEL =
+  process.env.GEMINI_TRYON_IMAGE_MODEL || "gemini-2.5-flash-image";
 
 /**
  * Supported aspect ratios for the image generation model.

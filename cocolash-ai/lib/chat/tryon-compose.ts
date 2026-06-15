@@ -14,6 +14,7 @@
  */
 
 import { generateImage, type ReferenceImage } from "../gemini/generate";
+import { GEMINI_TRYON_IMAGE_MODEL } from "../gemini/client";
 import { createAdminClient } from "../supabase/server";
 import { uploadGeneratedImage } from "../supabase/storage";
 import { readTryOnRefFromDisk } from "./tryon-refs";
@@ -99,7 +100,10 @@ export async function composeTryOn(
     "4:5",
     referenceImages,
     "[VIRTUAL LASH TRY-ON — preserve customer identity exactly]",
-    "1K"
+    "1K",
+    // Edit a real selfie with the GA image-editing model (nano-banana); the
+    // pro preview model over-blocks real-person edits. See client.ts.
+    GEMINI_TRYON_IMAGE_MODEL
   );
 
   const supabase = await createAdminClient();

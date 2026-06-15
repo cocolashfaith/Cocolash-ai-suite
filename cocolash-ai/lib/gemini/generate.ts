@@ -4,9 +4,27 @@
  * Core function that calls the Gemini API to generate images.
  * Returns the raw image buffer and MIME type.
  */
+import { HarmBlockThreshold, HarmCategory, type SafetySetting } from "@google/genai";
 import type { AspectRatio, ImageResolution } from "@/lib/types";
 import { getGeminiClient, GEMINI_IMAGE_MODEL, GEMINI_ASPECT_RATIOS } from "./client";
 import { GeminiError, classifyGeminiError } from "./safety";
+
+/**
+ * Relax the configurable harm filters to their least-restrictive setting. The
+ * try-on edits a real selfie and a beauty close-up should never trip these,
+ * but the defaults were over-blocking. (Note: Google's non-configurable
+ * real-person RAI filter is separate; if it blocks, the response carries a
+ * promptFeedback.blockReason which we now surface in the error.)
+ */
+const RELAXED_SAFETY_SETTINGS: SafetySetting[] = [
+  HarmCategory.HARM_CATEGORY_HARASSMENT,
+  HarmCategory.HARM_CATEGORY_HATE_SPEECH,
+  HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT,
+  HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT,
+].map((category) => ({
+  category,
+  threshold: HarmBlockThreshold.BLOCK_ONLY_HIGH,
+}));
 
 // ── Result Type ──────────────────────────────────────────────
 export interface GenerateImageResult {
@@ -47,10 +65,12 @@ export async function generateImage(
   aspectRatio: AspectRatio = "4:5",
   referenceImages?: ReferenceImage[],
   referenceInstruction?: string,
-  resolution: ImageResolution = "1K"
+  resolution: ImageResolution = "1K",
+  /** Override the model (e.g. the try-on uses an image-editing model). */
+  modelOverride?: string
 ): Promise<GenerateImageResult> {
   const client = getGeminiClient();
-  const model = GEMINI_IMAGE_MODEL;
+  const model = modelOverride || GEMINI_IMAGE_MODEL;
 
   // Retry config: higher resolutions are more prone to transient fetch failures
   const maxRetries = resolution === "4K" ? 3 : resolution === "2K" ? 2 : 1;
@@ -134,20 +154,48 @@ async function _callGemini(
       contents,
       config: {
         responseModalities: ["image", "text"],
-        ...(GEMINI_ASPECT_RATIOS[aspectRatio] && {
-          imageConfig: {
-            aspectRatio: GEMINI_ASPECT_RATIOS[aspectRatio],
-            imageSize: resolution,
-          },
-        }),
+        safetySettings: RELAXED_SAFETY_SETTINGS,
+        // `imageConfig` (esp. `imageSize`) is a gemini-3 image feature. The
+        // try-on edits a selfie with gemini-2.5-flash-image, which doesn't
+        // accept it — only send it for gemini-3 models, and let editing models
+        // preserve the input's native aspect/size.
+        ...(GEMINI_ASPECT_RATIOS[aspectRatio] &&
+          /gemini-3/.test(model) && {
+            imageConfig: {
+              aspectRatio: GEMINI_ASPECT_RATIOS[aspectRatio],
+              imageSize: resolution,
+            },
+          }),
       },
     });
 
-    // Validate response structure
+    // Validate response structure. Zero candidates means the request was
+    // blocked at the prompt level — surface the real reason (e.g. a real-person
+    // RAI block) instead of an opaque "no candidates".
     if (!response.candidates || response.candidates.length === 0) {
+      const fb = (
+        response as {
+          promptFeedback?: {
+            blockReason?: string;
+            blockReasonMessage?: string;
+            safetyRatings?: Array<{ category?: string; probability?: string }>;
+          };
+        }
+      ).promptFeedback;
+      const ratings = fb?.safetyRatings
+        ?.filter((r) => r.probability && r.probability !== "NEGLIGIBLE")
+        .map((r) => `${r.category}=${r.probability}`)
+        .join(", ");
+      const detail = [
+        fb?.blockReason ? `blockReason=${fb.blockReason}` : null,
+        fb?.blockReasonMessage || null,
+        ratings ? `ratings: ${ratings}` : null,
+      ]
+        .filter(Boolean)
+        .join("; ");
       throw new GeminiError(
-        "Gemini returned no candidates in the response.",
-        "EMPTY_RESPONSE"
+        `Gemini returned no candidates${detail ? ` (${detail})` : ""}.`,
+        fb?.blockReason ? "SAFETY_BLOCK" : "EMPTY_RESPONSE"
       );
     }
 
