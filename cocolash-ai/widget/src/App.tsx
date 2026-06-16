@@ -19,6 +19,10 @@ const QUICK_REPLY_CHIPS: ReadonlyArray<string> = [
 const PEEK_DELAY_MS = 1500;
 const PEEK_DISMISS_KEY = "cocolash:peek:dismissed";
 
+// CocoLash's live AR (camera) try-on page — surfaced as a persistent footer CTA
+// in addition to the in-chat "See it on you" per-product button.
+const AR_TRYON_URL = "https://cocolash.com/pages/ar-try-on";
+
 export interface AppProps {
   apiBaseUrl: string;
   shopDomain?: string;
@@ -206,6 +210,14 @@ export function App(props: AppProps) {
           }
           onSend={chat.send}
         />
+        <a
+          class="panel__ar-cta"
+          href={AR_TRYON_URL}
+          target="_blank"
+          rel="noopener noreferrer"
+        >
+          ✨ Try lashes live with AR try-on
+        </a>
       </div>
       <Fab
         showBadge={false}

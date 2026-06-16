@@ -17,6 +17,13 @@
 import type { KnowledgeChunk, VoiceFragments } from "./types";
 import { VOICE_RULES, VOICE_RULES_VERSION } from "./voice-rules";
 
+/**
+ * CocoLash's live AR (camera) try-on experience — a separate, richer try-on
+ * than the in-chat "See it on you" selfie compositor. Surfaced in the prompt so
+ * Coco recommends it when a visitor wants to see lashes on themselves.
+ */
+export const AR_TRYON_URL = "https://cocolash.com/pages/ar-try-on";
+
 // ── Defaults seeded by the migration ──────────────────────────
 // Identical to the values inserted into chat_settings.voice_fragments by
 // supabase/migrations/20260502_chatbot_foundation.sql. Used as a fallback
@@ -79,6 +86,7 @@ function renderFragments(
     `When you cannot help and need to hand off: "${escalationLine}"`,
     `When offering a lead-capture discount: "${fragments.lead_capture}"`,
     `When proactively offering virtual try-on: "${fragments.tryon_offer}" — replace {product} with the actual product name.`,
+    `We also offer a live AR try-on (uses the visitor's camera) at ${AR_TRYON_URL}. When a visitor wants to see lashes on themselves, is torn between styles, or asks about trying them on, recommend it alongside the in-chat "See it on you" button — share it as a clickable Markdown link, e.g. "[try them on live in AR](${AR_TRYON_URL})". Only mention it for lash styles, not for accessories or tools.`,
     `When you don't know an answer: "${fragments.dont_know}"`,
   ].join("\n");
 }

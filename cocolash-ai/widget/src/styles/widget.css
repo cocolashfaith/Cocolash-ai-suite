@@ -679,6 +679,21 @@ button {
 .input__send:disabled { opacity: 0.4; cursor: not-allowed; }
 .input__send svg { width: 18px; height: 18px; }
 
+/* ── AR try-on footer CTA ────────────────────────────── */
+.panel__ar-cta {
+  display: block;
+  padding: 9px 14px;
+  text-align: center;
+  background: var(--coco-cream);
+  border-top: 1px solid var(--coco-pink-soft);
+  color: var(--coco-brown-medium);
+  font-size: 12px;
+  font-weight: 600;
+  text-decoration: none;
+  transition: color 120ms ease, background 120ms ease;
+}
+.panel__ar-cta:hover { color: var(--coco-brown); background: var(--coco-pink-soft); }
+
 /* ── Consent ─────────────────────────────────────────── */
 
 .consent {
