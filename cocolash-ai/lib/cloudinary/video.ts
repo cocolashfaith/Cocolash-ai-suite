@@ -62,7 +62,19 @@ export interface TransformationOptions {
 
 /**
  * Upload a video to Cloudinary from a URL.
- * Uses eager transformations to pre-generate mp4 + webm versions.
+ *
+ * The URL is handed straight to Cloudinary, which fetches the file SERVER-SIDE —
+ * the bytes never pass through our request, so the 100 MB "synchronous upload"
+ * per-request ceiling does NOT apply here. The only ceiling is the account's max
+ * video file size (2 GB on the paid PAYG plan; the old 100 MB "File size too
+ * large" 400 was the Free-plan account cap, resolved by the plan upgrade).
+ * Eager mp4/webm renders run async so they don't block and aren't bound by the
+ * synchronous transform cap.
+ *
+ * NOTE: if a very large remote file ever fails the server-side fetch on the paid
+ * plan, the fix is to download it and use `upload_chunked_stream` (the real
+ * chunked-stream method — `upload_large_stream` from the typings does NOT exist
+ * at runtime). Not needed for current 1080p output.
  */
 export async function uploadVideoFromUrl(
   videoUrl: string,
