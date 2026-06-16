@@ -15,11 +15,13 @@ import {
   type HeyGenLegacyResponse,
   type UploadAssetResult,
   type PhotoAvatarGroup,
+  type PhotoAvatarResult,
   type VideoGenParams,
   type VideoGenResult,
   type VideoStatusResult,
   type HeyGenVideoStatusValue,
   type V3VideoGenParams,
+  type HeyGenEngine,
   type HeyGenVoice,
   type VoiceListResult,
 } from "./types";
@@ -34,6 +36,44 @@ const UPLOAD_BASE = "https://upload.heygen.com";
  */
 export const HEYGEN_API_VERSION: "v2" | "v3" =
   process.env.HEYGEN_API_VERSION === "v2" ? "v2" : "v3";
+
+/**
+ * Engine-selection policy for the v3 `POST /v3/videos` path.
+ * - `auto` (default) — use Avatar V when the avatar look advertises it via
+ *   `supported_api_engines`, otherwise Avatar IV.
+ * - `avatar_v` — always request Avatar V (still falls back to IV on a 400).
+ * - `avatar_iv` — force today's Avatar IV behavior (instant rollback switch,
+ *   no code change needed).
+ * Override with HEYGEN_AVATAR_ENGINE.
+ */
+export const HEYGEN_AVATAR_ENGINE: "auto" | "avatar_v" | "avatar_iv" =
+  process.env.HEYGEN_AVATAR_ENGINE === "avatar_v"
+    ? "avatar_v"
+    : process.env.HEYGEN_AVATAR_ENGINE === "avatar_iv"
+      ? "avatar_iv"
+      : "auto";
+
+/**
+ * Whether a look's `supported_api_engines` advertises Avatar V. Tolerant to
+ * HeyGen's inconsistent engine tokens — matches any value containing "avatar_v"
+ * (never matches "avatar_iv", which has no "avatar_v" substring).
+ */
+export function supportsAvatarV(supportedEngines: readonly string[]): boolean {
+  return supportedEngines.some((e) => e.toLowerCase().includes("avatar_v"));
+}
+
+/**
+ * Resolve the engine for a render from the policy + the avatar's eligibility.
+ * In `auto` we only pick Avatar V when the look supports it; the forced modes
+ * still rely on `generateVideoV3`'s 400 fallback as a safety net.
+ */
+export function resolveAvatarEngine(
+  supportedEngines: readonly string[]
+): HeyGenEngine {
+  if (HEYGEN_AVATAR_ENGINE === "avatar_iv") return "avatar_iv";
+  if (HEYGEN_AVATAR_ENGINE === "avatar_v") return "avatar_v";
+  return supportsAvatarV(supportedEngines) ? "avatar_v" : "avatar_iv";
+}
 
 function getApiKey(): string {
   const key = process.env.HEYGEN_API_KEY;
@@ -64,6 +104,24 @@ function isTransientNetworkError(err: unknown): boolean {
     code === "ECONNREFUSED" ||
     code === "EAI_AGAIN" ||
     /fetch failed|terminated|socket hang up/i.test(msg)
+  );
+}
+
+/**
+ * A 400 that means "this avatar look can't use Avatar V" — so we should retry on
+ * Avatar IV instead of surfacing an error. Matched heuristically on the engine /
+ * eligibility wording since HeyGen doesn't expose a dedicated error code for it.
+ * Unrelated 400s (bad script, etc.) are NOT swallowed.
+ */
+function isAvatarVIneligibleError(err: unknown): boolean {
+  if (!(err instanceof HeyGenError) || err.statusCode !== 400) return false;
+  const text = `${err.apiError ?? ""} ${err.message}`.toLowerCase();
+  return (
+    text.includes("avatar_v") ||
+    text.includes("engine") ||
+    text.includes("eligib") ||
+    text.includes("not support") ||
+    text.includes("unsupported")
   );
 }
 
@@ -375,7 +433,7 @@ async function waitForAvatarInGroup(
 export async function createPhotoAvatar(
   imageUrl: string,
   avatarName: string = "CocoLash Avatar"
-): Promise<{ talking_photo_id: string; avatar_url: string; group_id: string }> {
+): Promise<PhotoAvatarResult> {
   if (HEYGEN_API_VERSION === "v3") {
     return createPhotoAvatarV3(imageUrl, avatarName);
   }
@@ -393,7 +451,7 @@ export async function createPhotoAvatar(
 export async function createPhotoAvatarV3(
   imageUrl: string,
   avatarName: string = "CocoLash Avatar"
-): Promise<{ talking_photo_id: string; avatar_url: string; group_id: string }> {
+): Promise<PhotoAvatarResult> {
   return withRetry(async () => {
     const result = await heygenFetch<{
       data?: {
@@ -401,6 +459,7 @@ export async function createPhotoAvatarV3(
           id?: string;
           group_id?: string;
           preview_image_url?: string;
+          supported_api_engines?: string[];
         };
       };
     }>(`${API_BASE}/v3/avatars`, {
@@ -425,6 +484,8 @@ export async function createPhotoAvatarV3(
       talking_photo_id: item.id,
       avatar_url: item.preview_image_url ?? imageUrl,
       group_id: item.group_id ?? "",
+      // Drives Avatar V eligibility downstream. Empty/absent → Avatar IV under `auto`.
+      supportedEngines: item.supported_api_engines ?? [],
     };
   });
 }
@@ -432,7 +493,7 @@ export async function createPhotoAvatarV3(
 async function createPhotoAvatarV2(
   imageUrl: string,
   avatarName: string = "CocoLash Avatar"
-): Promise<{ talking_photo_id: string; avatar_url: string; group_id: string }> {
+): Promise<PhotoAvatarResult> {
   const asset = await uploadAsset(imageUrl);
 
   if (!asset.image_key) {
@@ -451,6 +512,8 @@ async function createPhotoAvatarV2(
     talking_photo_id: avatar.id,
     avatar_url: avatar.image_url ?? asset.url,
     group_id: group.id,
+    // v2 has no engine metadata; Avatar V is v3-only.
+    supportedEngines: [],
   };
 }
 
@@ -506,7 +569,8 @@ export async function generateVideo(
 export async function generateVideoV3(
   params: V3VideoGenParams
 ): Promise<VideoGenResult> {
-  return withRetry(async () => {
+  /** Build the request body for a specific engine. */
+  const buildBody = (engine: HeyGenEngine): Record<string, unknown> => {
     const body: Record<string, unknown> = {
       type: "avatar",
       avatar_id: params.avatarId,
@@ -521,26 +585,65 @@ export async function generateVideoV3(
       body.script = params.script;
     }
 
-    // Photo-avatar quality knobs (Avatar IV). expressiveness is Avatar-IV-only.
-    if (params.expressiveness) body.expressiveness = params.expressiveness;
+    if (engine === "avatar_v") {
+      // Avatar V: HeyGen's cross-reference engine. expressiveness is REJECTED
+      // here, so we deliberately do NOT send it.
+      body.engine = { type: "avatar_v" };
+    } else if (params.expressiveness) {
+      // Avatar IV only.
+      body.expressiveness = params.expressiveness;
+    }
+
+    // motion_prompt is supported on BOTH engines for photo avatars.
     if (params.motionPrompt) body.motion_prompt = params.motionPrompt;
     if (params.title) body.title = params.title;
 
-    const result = await heygenFetch<{ data?: VideoGenResult }>(
-      `${API_BASE}/v3/videos`,
-      { method: "POST", body: JSON.stringify(body) }
-    );
+    return body;
+  };
 
-    if (!result.data?.video_id) {
-      throw new HeyGenError(
-        "v3 video generation returned no video_id",
-        500,
-        "missing_video_id"
+  /** Submit one engine attempt (with the network/5xx retry wrapper). */
+  const submit = (engine: HeyGenEngine): Promise<VideoGenResult> =>
+    withRetry(async () => {
+      const headers: Record<string, string> = {};
+      if (params.idempotencyKey) {
+        // Namespace per engine so a failed Avatar V attempt is never replayed
+        // onto the Avatar IV fallback (and vice-versa).
+        headers["Idempotency-Key"] = `${params.idempotencyKey}-${engine}`;
+      }
+
+      const result = await heygenFetch<{ data?: VideoGenResult }>(
+        `${API_BASE}/v3/videos`,
+        { method: "POST", body: JSON.stringify(buildBody(engine)), headers }
       );
-    }
 
-    return result.data;
-  });
+      if (!result.data?.video_id) {
+        throw new HeyGenError(
+          "v3 video generation returned no video_id",
+          500,
+          "missing_video_id"
+        );
+      }
+
+      return result.data;
+    });
+
+  // Avatar IV (default) — single attempt.
+  if (params.engine !== "avatar_v") {
+    return submit("avatar_iv");
+  }
+
+  // Avatar V requested — fall back to Avatar IV if the look turns out ineligible.
+  try {
+    return await submit("avatar_v");
+  } catch (err) {
+    if (isAvatarVIneligibleError(err)) {
+      console.warn(
+        "[HeyGen] Avatar V rejected for this look — falling back to Avatar IV."
+      );
+      return submit("avatar_iv");
+    }
+    throw err;
+  }
 }
 
 // ── Video Status Polling ──────────────────────────────────────

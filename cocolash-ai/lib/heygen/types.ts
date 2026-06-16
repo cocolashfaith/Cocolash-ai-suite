@@ -38,6 +38,19 @@ export interface PhotoAvatarGroup {
   status?: string;
 }
 
+/**
+ * Result of creating a photo avatar (version-agnostic across v2/v3).
+ * `talking_photo_id` carries the v3 `avatar_id` (the look id). `supportedEngines`
+ * mirrors the look's `supported_api_engines` so the caller can decide whether
+ * Avatar V is allowed for this look — empty on v2 (Avatar V is v3-only).
+ */
+export interface PhotoAvatarResult {
+  talking_photo_id: string;
+  avatar_url: string;
+  group_id: string;
+  supportedEngines: string[];
+}
+
 export interface PhotoAvatarLook {
   id: string;
   image_url: string;
@@ -124,6 +137,17 @@ export interface VideoGenResult {
 export type HeyGenResolution = "720p" | "1080p" | "4k";
 
 /**
+ * Which v3 rendering engine to request on `POST /v3/videos`.
+ * - `avatar_iv` — the v3 default (omit the `engine` field). Supports
+ *   `expressiveness` + `motion_prompt` on photo avatars.
+ * - `avatar_v` — HeyGen's latest engine (cross-reference animation, better
+ *   motion + lip-sync). Sent as `engine:{type:"avatar_v"}`. REJECTS
+ *   `expressiveness` (Avatar IV-only) and is eligibility-gated per look via
+ *   `supported_api_engines`.
+ */
+export type HeyGenEngine = "avatar_iv" | "avatar_v";
+
+/**
  * Params for the v3 `POST /v3/videos` photo-avatar path. Exactly one voice
  * source is used: `audioAssetId` (our ElevenLabs audio — keeps lip-sync in
  * sync with our burned captions) OR `voiceId` + `script`.
@@ -138,11 +162,24 @@ export interface V3VideoGenParams {
   script?: string;
   resolution: HeyGenResolution;
   aspectRatio: "9:16" | "1:1" | "16:9";
-  /** Photo-avatar expressiveness (Avatar IV). */
+  /**
+   * v3 rendering engine. `avatar_v` → `engine:{type:"avatar_v"}` and the client
+   * DROPS `expressiveness` (rejected by the API on Avatar V). Omitted/`avatar_iv`
+   * keeps today's Avatar IV behavior. When `avatar_v` is requested but the look
+   * is ineligible (400), the client transparently retries on Avatar IV.
+   */
+  engine?: HeyGenEngine;
+  /** Photo-avatar expressiveness (Avatar IV only — ignored when engine is avatar_v). */
   expressiveness?: "high" | "medium" | "low";
-  /** Natural-language body-motion / gesture prompt (photo avatars). */
+  /** Natural-language body-motion / gesture prompt (photo avatars, both engines). */
   motionPrompt?: string;
   title?: string;
+  /**
+   * Idempotency key (e.g. a UUID) so a `withRetry` replay never submits a second
+   * paid render. The client namespaces it per engine to avoid a failed Avatar V
+   * attempt being replayed on the Avatar IV fallback.
+   */
+  idempotencyKey?: string;
 }
 
 // ── Video Status ──────────────────────────────────────────────

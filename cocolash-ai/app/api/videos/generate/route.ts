@@ -7,8 +7,10 @@ import {
   generateVideo,
   generateVideoV3,
   uploadAudioAsset,
+  resolveAvatarEngine,
   HEYGEN_API_VERSION,
 } from "@/lib/heygen/client";
+import { randomUUID } from "node:crypto";
 import { VIDEO_DIMENSIONS, type VideoGenResult } from "@/lib/heygen/types";
 import { synthesizeToAudio, alignmentToSRT } from "@/lib/elevenlabs/client";
 import {
@@ -255,12 +257,15 @@ export async function POST(request: NextRequest) {
 
     // ── Step 5: Create photo avatar via HeyGen ──────────────
     let talkingPhotoId: string;
+    // `supported_api_engines` from the new look — drives Avatar V eligibility.
+    let avatarSupportedEngines: string[] = [];
     try {
       const photoAvatar = await createPhotoAvatar(
         composedImageUrl,
         `CocoLash — ${campaignType} — ${new Date().toISOString().slice(0, 10)}`
       );
       talkingPhotoId = photoAvatar.talking_photo_id;
+      avatarSupportedEngines = photoAvatar.supportedEngines;
 
       await supabase
         .from("generated_videos")
@@ -306,6 +311,16 @@ export async function POST(request: NextRequest) {
       if (HEYGEN_API_VERSION === "v3") {
         // v3: photo avatar at the selected resolution, expressive + gestures.
         // No `caption` field → HeyGen does not add captions; ours stay.
+        //
+        // Engine: Avatar V when the look is eligible (the quality lever), else
+        // Avatar IV. The client drops `expressiveness` for Avatar V and falls
+        // back to IV if a V request is rejected — so this never 400s the user.
+        const engine = resolveAvatarEngine(avatarSupportedEngines);
+        console.log(
+          `[videos/generate] HeyGen engine=${engine} (supported=${
+            avatarSupportedEngines.join(",") || "unknown"
+          })`
+        );
         heygenResult = await generateVideoV3({
           avatarId: talkingPhotoId,
           ...(audioAssetId
@@ -313,9 +328,12 @@ export async function POST(request: NextRequest) {
             : { voiceId: voiceId!, script: scriptText }),
           resolution,
           aspectRatio: aspectRatio!,
+          engine,
+          // Honored only on Avatar IV; the client ignores it for Avatar V.
           expressiveness: "high",
           motionPrompt:
             "natural, friendly hand gestures while speaking directly to camera",
+          idempotencyKey: randomUUID(),
           title,
         });
       } else {
