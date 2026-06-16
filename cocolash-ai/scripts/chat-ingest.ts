@@ -30,6 +30,10 @@ import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 
 import { embedMany, contentHash, EMBEDDING_MODEL } from "../lib/chat/embeddings";
 import {
+  KB_SKIP_PRODUCT_HANDLES,
+  isExcludedFromKb,
+} from "../lib/shopify/kb-exclusions";
+import {
   upsertChunk,
   deleteChunkBySource,
   listChunkSources,
@@ -45,12 +49,22 @@ import type {
 const KB_PATH = "public/brand/CocoLash-System3-Knowledge-Base-for-Harry.md";
 const PRODUCTS_CSV_PATH = "public/brand/products_export_1 (1).csv";
 
-/** Skip Shopify product handles that are pure tools/accessories with no KB. */
-const SKIP_PRODUCT_HANDLES = new Set<string>([
-  "bag",
-  "fan",
-  "lash-wand",
-]);
+// Which products to keep OUT of the KB (hidden / existing-customers-only /
+// tools / the Bond + Sealant refill) lives in lib/shopify/kb-exclusions.ts so
+// this bulk ingest and the live products-webhook can't drift apart.
+
+/** Strip any retail-price lines from a product markdown body. Prices are
+ *  intentionally kept OUT of the knowledge base: Coco quotes price ONLY from
+ *  the live Shopify product card for the turn, so a price change in Shopify is
+ *  reflected instantly and the bot can never recite a stale number. */
+function stripPriceLines(body: string): string {
+  return body
+    .split("\n")
+    .filter((l) => !/^\s*\*\*\s*Retail\b/i.test(l.trim()))
+    .join("\n")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+}
 
 const MAX_BATCH = 64; // OpenAI accepts 2048; keep batches small for safety/visibility.
 
@@ -221,7 +235,7 @@ function parseProductMd(md: string): DraftChunk[] {
         bodyLines.push(next);
         j += 1;
       }
-      const body = bodyLines.join("\n").trim();
+      const body = stripPriceLines(bodyLines.join("\n").trim());
 
       if (body.length === 0) {
         i = j;
@@ -307,8 +321,8 @@ function extractProductSpecs(body: string): Record<string, unknown> {
       if (k && v) specs[k.toLowerCase()] = v;
     }
   }
-  const priceMatch = body.match(/\*\*Retail:\s*([^*]+)\*\*/);
-  if (priceMatch) specs.retail = priceMatch[1].trim();
+  // Price is intentionally NOT captured: Coco quotes price only from the live
+  // Shopify card for the turn, never from the (potentially stale) KB.
   const includesMatch = body.match(/Includes:\s*([^|\n]+)/);
   if (includesMatch) specs.includes = includesMatch[1].trim();
   return specs;
@@ -405,7 +419,6 @@ interface CsvProductBuilder {
   tags: string;
   vendor: string;
   type: string;
-  prices: Set<string>;
   metafields: Record<string, string>;
 }
 
@@ -425,7 +438,8 @@ function parseProductsCsv(csvText: string): DraftChunk[] {
   const TAGS = idx("Tags");
   const VENDOR = idx("Vendor");
   const TYPE = idx("Type");
-  const VARIANT_PRICE = idx("Variant Price");
+  // Variant Price is intentionally not read: prices are kept out of the KB so
+  // Coco only ever quotes the live Shopify card price for the turn.
 
   if (HANDLE < 0 || TITLE < 0) {
     throw new Error("Products CSV missing Handle or Title column");
@@ -454,7 +468,7 @@ function parseProductsCsv(csvText: string): DraftChunk[] {
     if (row.length === 0) continue;
     const handle = row[HANDLE]?.trim();
     if (!handle) continue;
-    if (SKIP_PRODUCT_HANDLES.has(handle)) continue;
+    if (KB_SKIP_PRODUCT_HANDLES.has(handle)) continue;
 
     let b = builders.get(handle);
     if (!b) {
@@ -465,7 +479,6 @@ function parseProductsCsv(csvText: string): DraftChunk[] {
         tags: row[TAGS]?.trim() ?? "",
         vendor: row[VENDOR]?.trim() ?? "",
         type: row[TYPE]?.trim() ?? "",
-        prices: new Set<string>(),
         metafields: {},
       };
       // Capture metafields from the first row only (Shopify pattern).
@@ -475,21 +488,22 @@ function parseProductsCsv(csvText: string): DraftChunk[] {
       }
       builders.set(handle, b);
     }
-
-    const price = VARIANT_PRICE >= 0 ? row[VARIANT_PRICE]?.trim() : undefined;
-    if (price && /^\d/.test(price)) b.prices.add(price);
   }
 
   const chunks: DraftChunk[] = [];
   for (const b of builders.values()) {
-    // Build content
-    const priceList = [...b.prices].sort((a, z) => Number(a) - Number(z));
+    // Exclude products the store hides from public sale (e.g. the
+    // existing-customers-only Bond + Sealant refill). Keeps Coco in sync with
+    // Shopify visibility without a code change.
+    if (isExcludedFromKb({ handle: b.handle, tags: b.tags })) continue;
+
+    // Build content. Prices are intentionally omitted — Coco quotes price ONLY
+    // from the live Shopify card for the turn, never from this (cacheable) KB.
     const contentParts = [
       b.title,
       b.type ? `Type: ${b.type}` : "",
       b.vendor ? `Vendor: ${b.vendor}` : "",
       b.tags ? `Tags: ${b.tags}` : "",
-      priceList.length > 0 ? `Variant prices (USD): ${priceList.join(", ")}` : "",
       Object.keys(b.metafields).length > 0
         ? Object.entries(b.metafields)
             .map(([k, v]) => `${k}: ${v}`)
@@ -510,7 +524,6 @@ function parseProductsCsv(csvText: string): DraftChunk[] {
       metadata: {
         handle: b.handle,
         type: b.type,
-        prices: priceList,
         ...b.metafields,
       },
     });

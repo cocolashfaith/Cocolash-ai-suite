@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import {
   selectDiscountForTurn,
+  isSafeAutoOffer,
   isWithinWindow,
   isOverLimit,
   intentMatches,
@@ -180,5 +181,61 @@ describe("selectDiscountForTurn", () => {
     const pct = { ...baseRule, code: "PCT", value: -10, value_type: "percentage" as const };
     const fix = { ...baseRule, id: "x", code: "FIX", value: -10, value_type: "fixed_amount" as const };
     expect(selectDiscountForTurn([pct, fix], ctx)?.code).toBe("PCT");
+  });
+
+  it("never offers a customer-locked code (AQ-100 regression)", () => {
+    // AQ-100 is a 100%-off, prerequisite/customer-locked code. The old
+    // 'highest value wins' sort picked it; it must now be filtered out and a
+    // safe public code offered instead.
+    const aq100 = {
+      ...baseRule,
+      id: "aq",
+      code: "AQ-100",
+      value: -100,
+      customer_selection: "prerequisite",
+    };
+    const welcome = { ...baseRule, id: "w", code: "TEXT15", value: -15 };
+    const offered = selectDiscountForTurn([aq100, welcome], ctx);
+    expect(offered?.code).toBe("TEXT15");
+  });
+
+  it("never offers an oversized 100%-off code even when customer_selection is all", () => {
+    const free = { ...baseRule, id: "free", code: "ICONUGC", value: -100 };
+    expect(selectDiscountForTurn([free], ctx)).toBeNull();
+  });
+});
+
+describe("isSafeAutoOffer", () => {
+  it("accepts a normal public percentage code", () => {
+    expect(isSafeAutoOffer(baseRule)).toBe(true);
+  });
+  it("rejects customer-locked codes", () => {
+    expect(isSafeAutoOffer({ ...baseRule, customer_selection: "prerequisite" })).toBe(false);
+    expect(isSafeAutoOffer({ ...baseRule, customer_selection: "customer" })).toBe(false);
+  });
+  it("rejects oversized percentage codes (e.g. 100% off)", () => {
+    expect(isSafeAutoOffer({ ...baseRule, value: -100 })).toBe(false);
+    expect(isSafeAutoOffer({ ...baseRule, value: -31 })).toBe(false);
+  });
+  it("accepts a percentage at the ceiling", () => {
+    expect(isSafeAutoOffer({ ...baseRule, value: -30 })).toBe(true);
+  });
+  it("rejects oversized fixed-amount codes", () => {
+    expect(
+      isSafeAutoOffer({ ...baseRule, value: -50, value_type: "fixed_amount" })
+    ).toBe(false);
+  });
+  it("rejects zero-value codes", () => {
+    expect(isSafeAutoOffer({ ...baseRule, value: 0 })).toBe(false);
+  });
+  it("allows free-shipping codes regardless of their 100% value", () => {
+    expect(
+      isSafeAutoOffer({
+        ...baseRule,
+        value: -100,
+        value_type: "percentage",
+        discount_class: "shipping",
+      })
+    ).toBe(true);
   });
 });

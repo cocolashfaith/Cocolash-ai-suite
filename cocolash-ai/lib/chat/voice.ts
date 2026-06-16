@@ -59,6 +59,12 @@ export interface ComposeSystemPromptInput {
   isBusinessHours: boolean;
   /** Whether the visitor is recognised as a logged-in Shopify customer (Phase 8). */
   customerContext?: { firstName?: string; lastOrderSummary?: string } | null;
+  /**
+   * If the visitor's message this turn contained an email address, it's passed
+   * here. The route has already saved it to the team's leads inbox, so Coco
+   * must acknowledge it once and NOT ask for it again (fixes the email loop).
+   */
+  customerProvidedEmail?: string | null;
 }
 
 const PERSONA_HEADER = (personaName: string): string => `
@@ -93,7 +99,12 @@ function renderFragments(
 
 function renderChunks(chunks: ReadonlyArray<KnowledgeChunk>): string {
   if (chunks.length === 0) {
-    return "No retrieval context for this turn. Be honest if you don't know — escalate per the rules above.";
+    return (
+      "No retrieval context for this turn. This is NORMAL and does not mean you can't help. " +
+      "Answer from the CocoLash facts and the live product context above — they cover wear time, " +
+      "reusability, application, shipping, returns, ingredients, and each style's look. Only hand off " +
+      "to the team for things genuinely outside those (personal order details, custom requests, complaints)."
+    );
   }
   return chunks
     .map((c, i) => {
@@ -124,6 +135,16 @@ function renderDiscount(
   return `Discount available this turn: code "${discount.code}" — ${discount.description}. Use it only when contextually appropriate (do not push).`;
 }
 
+function renderEmailAck(email: string | null | undefined): string | null {
+  if (!email) return null;
+  return (
+    `The visitor just shared their email (${email}) in their message, and the system has ALREADY ` +
+    `saved it to the team's leads inbox. Acknowledge it warmly in one short line (e.g. "Got it, ` +
+    `I've passed your email to the team — they'll be in touch soon, watch your inbox") and do NOT ` +
+    `ask for their email again this turn. Then continue helping if they asked something else.`
+  );
+}
+
 /**
  * Compose the final system prompt. This is the single source of truth for
  * the prompt structure used in app/api/chat/route.ts (Phase 2).
@@ -140,6 +161,12 @@ export function composeSystemPrompt(input: ComposeSystemPromptInput): string {
     "## Discount context",
     renderDiscount(input.discountCode ?? null),
   ];
+
+  const emailAck = renderEmailAck(input.customerProvidedEmail ?? null);
+  if (emailAck) {
+    sections.push("## Visitor just shared their email");
+    sections.push(emailAck);
+  }
 
   if (input.productContext && input.productContext.trim().length > 0) {
     sections.push("## Live product context (this turn)");

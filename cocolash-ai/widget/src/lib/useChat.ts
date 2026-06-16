@@ -10,7 +10,7 @@
  *   6. Persists session id + final transcript to localStorage
  */
 
-import { useCallback, useState } from "preact/hooks";
+import { useCallback, useRef, useState } from "preact/hooks";
 import { postSse } from "./sse";
 import { usePersistedState, uuid, type Message, type ProductCard } from "./state";
 
@@ -41,8 +41,12 @@ export function useChat(opts: UseChatOptions): UseChatResult {
 
   const [status, setStatus] = useState<ChatStatus>("idle");
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  // A message staged before consent was given (e.g. a quick-reply chip tapped
+  // on the zero-state). Flushed once the visitor accepts the consent strip, so
+  // the consent step always happens BEFORE the conversation starts.
+  const pendingRef = useRef<string | null>(null);
 
-  const send = useCallback(
+  const doSend = useCallback(
     async (message: string): Promise<void> => {
       const trimmed = message.trim();
       if (trimmed.length === 0) return;
@@ -130,8 +134,34 @@ export function useChat(opts: UseChatOptions): UseChatResult {
     [opts.apiBaseUrl, opts.shopDomain, opts.customerId, state.sessionId, status, appendMessage, setSessionId, updateLastAssistant, attachProductsToLast]
   );
 
-  const acceptConsent = useCallback(() => setConsent("accepted"), [setConsent]);
-  const declineConsent = useCallback(() => setConsent("declined"), [setConsent]);
+  // Public send: gate on consent. If the visitor hasn't accepted yet, stage the
+  // message and surface the consent strip first (App renders it). Nothing is
+  // sent and no bubble appears until they accept — consent comes before chat.
+  const send = useCallback(
+    async (message: string): Promise<void> => {
+      const trimmed = message.trim();
+      if (trimmed.length === 0) return;
+      if (state.consent !== "accepted") {
+        pendingRef.current = trimmed;
+        return;
+      }
+      await doSend(trimmed);
+    },
+    [state.consent, doSend]
+  );
+
+  const acceptConsent = useCallback(() => {
+    setConsent("accepted");
+    const pending = pendingRef.current;
+    pendingRef.current = null;
+    // doSend doesn't depend on consent, so flushing immediately is safe even
+    // though the consent state update hasn't re-rendered yet.
+    if (pending) void doSend(pending);
+  }, [setConsent, doSend]);
+  const declineConsent = useCallback(() => {
+    pendingRef.current = null;
+    setConsent("declined");
+  }, [setConsent]);
 
   return {
     messages: state.messages,

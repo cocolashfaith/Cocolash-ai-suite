@@ -24,6 +24,7 @@ import { contentHash } from "@/lib/chat/embeddings";
 import { embed } from "@/lib/chat/embeddings";
 import { upsertChunk, deleteChunkBySource } from "@/lib/chat/db";
 import { EMBEDDING_MODEL } from "@/lib/chat/embeddings";
+import { isExcludedFromKb } from "@/lib/shopify/kb-exclusions";
 
 export const runtime = "nodejs";
 export const maxDuration = 30;
@@ -65,12 +66,6 @@ function stripHtml(s: string): string {
     .trim();
 }
 
-function variantPrices(variants: ShopifyProductPayload["variants"]): string[] {
-  return [...new Set((variants ?? []).map((v) => v.price).filter(Boolean))].sort(
-    (a, z) => Number(a) - Number(z)
-  );
-}
-
 export async function POST(req: NextRequest): Promise<Response> {
   const rawBody = await req.text();
   const verify = verifyShopifyHmac({
@@ -107,16 +102,28 @@ export async function POST(req: NextRequest): Promise<Response> {
     });
   }
 
-  // create / update
+  // Products the store hides / restricts (hidden, existing-customers-only, the
+  // Bond + Sealant refill) or that aren't `active` must never enter the KB. If
+  // such a product is created/updated, remove any chunk it previously had and
+  // stop — this is what keeps Coco in sync when a product is hidden in Shopify.
+  if (isExcludedFromKb({ handle: payload.handle, tags: payload.tags, status: payload.status })) {
+    await deleteChunkBySource(supabase, "storefront_api", sourceId).catch(() => undefined);
+    return new Response(JSON.stringify({ received: true, action: "excluded" }), {
+      status: 200,
+      headers: { "content-type": "application/json" },
+    });
+  }
+
+  // create / update. Prices are intentionally NOT stored — Coco quotes price
+  // ONLY from the live Shopify product card for the turn, so a price change is
+  // reflected instantly and the bot can never recite a stale number.
   const description = stripHtml(payload.body_html ?? "");
-  const prices = variantPrices(payload.variants);
   const tagList = (payload.tags ?? "").split(",").map((s) => s.trim()).filter(Boolean);
   const content = [
     payload.title,
     payload.product_type ? `Type: ${payload.product_type}` : "",
     payload.vendor ? `Vendor: ${payload.vendor}` : "",
     tagList.length > 0 ? `Tags: ${tagList.join(", ")}` : "",
-    prices.length > 0 ? `Variant prices (USD): ${prices.join(", ")}` : "",
     description ? `Description: ${description}` : "",
     `Product page: cocolash.com/products/${payload.handle}`,
   ]
@@ -147,7 +154,6 @@ export async function POST(req: NextRequest): Promise<Response> {
       handle: payload.handle,
       type: payload.product_type ?? null,
       tags: tagList,
-      prices,
       status: payload.status ?? "active",
     },
     content_hash: hash,

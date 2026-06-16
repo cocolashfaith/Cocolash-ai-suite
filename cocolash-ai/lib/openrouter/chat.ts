@@ -28,7 +28,12 @@ export interface StreamChatOptions {
   model?: string;
   /** Hard cap on output tokens. Default 1024 (≈ 700 words). */
   maxTokens?: number;
-  /** 0..1; default 0.7 — tuned for Coco's warmth without rigidity. */
+  /**
+   * 0..1; default 0.5 — warm but consistent. Lowered from 0.7 in the
+   * trust-recovery pass: at 0.7 the same question could get a great answer one
+   * try and a punt the next. 0.5 keeps Coco's voice while making answers
+   * reproducible turn to turn.
+   */
   temperature?: number;
 }
 
@@ -66,7 +71,7 @@ export function streamChat(opts: StreamChatOptions): StreamChatResult {
   const client = getOpenRouterClient();
   const model = opts.model ?? CHAT_MODEL;
   const maxTokens = opts.maxTokens ?? 1024;
-  const temperature = opts.temperature ?? 0.7;
+  const temperature = opts.temperature ?? 0.5;
 
   const messages: OpenAI.Chat.Completions.ChatCompletionMessageParam[] = [
     { role: "system", content: opts.systemPrompt },
@@ -142,7 +147,7 @@ export async function completeChatOnce(opts: StreamChatOptions): Promise<{
   const client = getOpenRouterClient();
   const model = opts.model ?? CHAT_MODEL;
   const maxTokens = opts.maxTokens ?? 1024;
-  const temperature = opts.temperature ?? 0.7;
+  const temperature = opts.temperature ?? 0.5;
 
   const messages: OpenAI.Chat.Completions.ChatCompletionMessageParam[] = [
     { role: "system", content: opts.systemPrompt },

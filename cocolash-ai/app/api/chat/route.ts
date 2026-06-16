@@ -224,11 +224,13 @@ export async function POST(req: NextRequest): Promise<Response> {
     }
     return "";
   })();
-  // Don't-know guardrail (RAG-05): force lead_capture when no chunk passes threshold.
-  // (Computed up-front so the discount selector sees the post-guardrail intent.)
-  const intentForOffer = retrieveResult.noConfidentMatch
-    ? ("lead_capture" as const)
-    : intentResult.intent;
+  // Use the real classified intent. We deliberately do NOT force lead_capture
+  // when retrieval is low-confidence: that old "don't-know guardrail" made Coco
+  // punt (and ask for an email) on perfectly answerable questions whose typed
+  // phrasing happened to embed poorly. Coco now answers from the always-on
+  // brand facts + live product context instead, and only hands off for things
+  // genuinely outside them (handled in the prompt). See trust-recovery fixes.
+  const intentForOffer = intentResult.intent;
 
   // Phase 5: pick a discount code (Stage 1: one per turn). Best-effort.
   // We pick the discount BEFORE building product cards so the Add-to-cart
@@ -241,11 +243,16 @@ export async function POST(req: NextRequest): Promise<Response> {
     productHandles: [],
   });
 
+  // NOTE: we pass `null` (not the offered code) so the Add-to-cart permalink
+  // never carries a `?discount=CODE`. Baking a code into customer links is
+  // brittle (it surfaced a 100%-off internal code in testing) and stops people
+  // building a multi-item cart. The discount, when offered, is communicated in
+  // the reply text instead, for the customer to enter at checkout.
   const productContext = await buildProductContext(
     body.message,
     retrieveResult.chunks,
     lastAssistantText,
-    offered?.code ?? null
+    null
   ).catch(() => ({ cards: [], promptText: "" }));
 
   const finalIntent: IntentLabel = intentForOffer;
@@ -256,10 +263,15 @@ export async function POST(req: NextRequest): Promise<Response> {
 
   const systemPrompt = composeSystemPrompt({
     fragments,
-    retrievedChunks: retrieveResult.noConfidentMatch ? [] : retrieveResult.chunks,
+    // Always pass the top-ranked chunks. The old code stripped ALL context on a
+    // low-confidence retrieval, which is what made Coco lose facts it actually
+    // had and punt inconsistently. Low-relevance chunks are harmless alongside
+    // the always-on brand facts in the locked rules.
+    retrievedChunks: retrieveResult.chunks,
     isBusinessHours: isBusinessHours(),
     productContext: productContext.promptText,
     discountCode: offered ? { code: offered.code, description: offered.description } : null,
+    customerProvidedEmail: emailMatch ? emailMatch[0].toLowerCase() : null,
   });
 
   // Convert the persisted history (which already includes the user turn we
@@ -314,7 +326,7 @@ export async function POST(req: NextRequest): Promise<Response> {
           body.message,
           retrieveResult.chunks,
           assistantText,
-          offered?.code ?? null
+          null // no discount baked into Add-to-cart links (see note above)
         ).catch(() => ({ cards: [], promptText: "" }));
         const merged = new Map<string, (typeof productContext.cards)[number]>();
         for (const c of productContext.cards) merged.set(c.handle, c);

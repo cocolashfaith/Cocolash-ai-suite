@@ -105,17 +105,10 @@ export function App(props: AppProps) {
     setPeekVisible(false);
     setOpen(true);
     setShowBadge(false);
-    // Send the chip text as the visitor's first message. Consent gate
-    // still applies — if the visitor hasn't accepted yet, the consent
-    // strip blocks the send and the chip text is dropped (acceptable).
-    if (chat.consent === "accepted") {
-      void chat.send(text);
-    } else {
-      // Stage the message: open the panel so consent strip is visible,
-      // and the visitor can re-tap once they accept. We don't auto-fill
-      // the input to avoid surprising them.
-      void chat.send(text);
-    }
+    // chat.send gates on consent: if the visitor hasn't accepted yet it stages
+    // the message and the consent strip shows first, then the staged message
+    // sends automatically on accept. So consent always precedes the chat.
+    void chat.send(text);
   };
 
   // Fetch live config (greeting + bot_enabled). Falls back to defaults.

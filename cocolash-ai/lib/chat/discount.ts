@@ -45,6 +45,38 @@ export interface OfferedDiscount {
 }
 
 /**
+ * Safety ceilings for codes Coco may auto-offer. The Shopify export contains
+ * internal/influencer/test codes — including 100%-off ("free everything") codes
+ * and codes locked to a specific customer (e.g. AQ-100). Those must NEVER be
+ * surfaced to an anonymous shopper. We only auto-offer public ("all" customers)
+ * codes within a sane discount range.
+ */
+export const MAX_AUTO_DISCOUNT_PERCENT = 30;
+export const MAX_AUTO_DISCOUNT_FIXED_USD = 25;
+
+/**
+ * Whether a rule is safe for Coco to offer on its own to any visitor.
+ * Exported for tests + the route. A code that fails this is silently ignored.
+ */
+export function isSafeAutoOffer(
+  rule: Pick<
+    DiscountRule,
+    "customer_selection" | "value" | "value_type" | "discount_class"
+  >
+): boolean {
+  // Never auto-offer a code tied to a specific customer or a prerequisite.
+  if (rule.customer_selection !== "all") return false;
+  const magnitude = Math.abs(rule.value);
+  if (magnitude <= 0) return false; // 0%/$0 codes are pointless
+  // Free-shipping offers are fine regardless of their "100% off shipping" value.
+  if (rule.discount_class === "shipping") return true;
+  if (rule.value_type === "percentage") {
+    return magnitude <= MAX_AUTO_DISCOUNT_PERCENT;
+  }
+  return magnitude <= MAX_AUTO_DISCOUNT_FIXED_USD;
+}
+
+/**
  * Pure helper used by the route + tests. Filters the candidate rules
  * against the offer context and returns the best match.
  */
@@ -55,6 +87,7 @@ export function selectDiscountForTurn(
   const now = ctx.now ?? new Date();
   const applicable = rules
     .filter((r) => r.status === "active")
+    .filter((r) => isSafeAutoOffer(r)) // exclude customer-locked / oversized (e.g. 100%-off AQ-100)
     .filter((r) => isWithinWindow(r.campaign_window, now))
     .filter((r) => !isOverLimit(r))
     .filter((r) => intentMatches(r.intent_triggers, ctx.intent))

@@ -1,3 +1,5 @@
+import { useState } from "preact/hooks";
+
 interface ProductCard {
   handle: string;
   title: string;
@@ -23,23 +25,35 @@ function priceLabel(p: ProductCard): string {
   return `$${p.priceFrom}–$${p.priceTo}`;
 }
 
+/**
+ * Product image with a graceful fallback. If the image is missing OR fails to
+ * load (404, slow/blocked CDN), render the styled placeholder instead of a
+ * broken/blank <img>. Fixes the "product image sometimes loads blank" report.
+ */
+function ProductImage({ image, title }: { image: ProductCard["image"]; title: string }) {
+  const [failed, setFailed] = useState(false);
+  if (!image || failed) {
+    return <div class="product-card__img product-card__img--placeholder" aria-hidden="true" />;
+  }
+  return (
+    <img
+      class="product-card__img"
+      src={image.url}
+      alt={image.alt || title}
+      loading="lazy"
+      decoding="async"
+      onError={() => setFailed(true)}
+    />
+  );
+}
+
 export function ProductCards({ products, onTryOn }: ProductCardsProps) {
   if (products.length === 0) return null;
   return (
     <div class="products" role="list">
       {products.map((p) => (
         <article key={p.handle} class="product-card" role="listitem">
-          {p.image ? (
-            <img
-              class="product-card__img"
-              src={p.image.url}
-              alt={p.image.alt}
-              loading="lazy"
-              decoding="async"
-            />
-          ) : (
-            <div class="product-card__img product-card__img--placeholder" aria-hidden="true" />
-          )}
+          <ProductImage image={p.image} title={p.title} />
           <div class="product-card__body">
             <h3 class="product-card__title">{p.title}</h3>
             <p class="product-card__price">

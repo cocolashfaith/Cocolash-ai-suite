@@ -537,18 +537,11 @@ export const PRODUCT_TRUTH: ReadonlyArray<ProductTruthEntry> = [
 
   // ========== ACTIVE TOOLS & ACCESSORIES ==========
 
-  {
-    sku: "bond-sealant-duo",
-    displayName: "Bond + Sealant Duo",
-    productHandle: "cocolash-bond-sealant-duo",
-    lashType: "tools",
-    bandMaterial: "none",
-    magneticClosure: false,
-    packagingType: "dual-bottle set",
-    kitContents: ["Bond adhesive (latex-free)", "Bond sealant"],
-    bestFor: "Dual-ended application bottles for 7-day lash wear hold",
-    retired: false,
-  },
+  // NOTE: the standalone "Bond + Sealant Duo" SKU (cocolash-bond-sealant-duo)
+  // is intentionally NOT listed here. Shopify keeps it hidden /
+  // existing-customers-only, so Coco must never surface, price, or link it as a
+  // purchasable product. Bond + sealant still appear as KIT CONTENTS above and
+  // in the application steps, which is correct.
 
   {
     sku: "lash-wand",
