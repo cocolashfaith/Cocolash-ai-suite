@@ -231,7 +231,12 @@ async function runPostProcessing(
   let finalVideoUrl: string | null = null;
   let processedVideoUrl: string | null = null;
   let thumbnailUrl: string | null = null;
-  let hasCaptions = video.has_captions;
+  // Honest: only flips true after a CONFIRMED Shotstack burn. Seeding this from
+  // the row (which is `true` at insert, as caption *intent*) would leave
+  // has_captions=true even when the burn fails — and the status-route repair
+  // path only retries while has_captions is false, so the video would never
+  // self-heal. Starting false makes a failed burn recoverable on the next poll.
+  let hasCaptions = false;
 
   if (rawVideoUrl) {
     try {
@@ -268,9 +273,6 @@ async function runPostProcessing(
         finalVideoUrl = captionedUpload.secureUrl;
         hasCaptions = true;
         console.log("[videos/status] Shotstack captioned video uploaded to Cloudinary");
-      } else if (video.script_text_cache) {
-        // No SRT but we have a script — treat as captioned (legacy overlay path).
-        hasCaptions = true;
       }
     } catch (processError) {
       console.error("[videos/status] Post-processing error:", processError);
