@@ -215,13 +215,17 @@ const VALID_LASH_STYLES: LashStyle[] = [
 ];
 const VALID_ASPECT_RATIOS: VideoAspectRatio[] = ["9:16", "1:1", "16:9"];
 
-// Normalize ethnicity: "south-asian" -> "South Asian", capitalize each word
-// Normalize ethnicity: "south-asian" / "SOUTH-ASIAN" -> "South Asian"
+// Normalize ethnicity to canonical form, capitalizing each word.
+// Accepts slug input ("east-asian"), canonical input ("East Asian"), and
+// mixed casing ("EAST ASIAN") — splitting on hyphen OR whitespace so the
+// space-separated values the UI sends ("East Asian", "South Asian",
+// "Middle Eastern") aren't mangled to "East asian" and rejected.
 function normalizeEthnicity(value: unknown): string | undefined {
   if (typeof value !== "string") return undefined;
   return value
     .toLowerCase()
-    .split("-")
+    .split(/[-\s]+/)
+    .filter(Boolean)
     .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
     .join(" ");
 }

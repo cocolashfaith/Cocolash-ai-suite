@@ -394,6 +394,42 @@ describe("POST /api/heygen/generate-studio-avatar — reference conditioning", (
   });
 
   // ─────────────────────────────────────────────────────────────────
+  // Validation: canonical (space-separated) ethnicity values are accepted
+  // ─────────────────────────────────────────────────────────────────
+
+  describe("ethnicity normalization accepts the UI's canonical values", () => {
+    it.each(["East Asian", "South Asian", "Middle Eastern", "east-asian", "Caucasian"])(
+      "accepts ethnicity=%s without a validation error",
+      async (ethnicity) => {
+        const body = {
+          ethnicity,
+          skinTone: "Light",
+          ageRange: "18-24",
+          hairStyle: "Straight short",
+          scene: "clean-white-cyclorama",
+          outfit: "neutral-button-up",
+          framing: "head-chest",
+          expression: "confident-teacher",
+          lashStyle: "natural",
+          aspectRatio: "9:16",
+        };
+
+        const mockRequest = new NextRequest(
+          new URL("http://localhost:3000/api/heygen/generate-studio-avatar"),
+          { method: "POST", body: JSON.stringify(body), headers: { "content-type": "application/json" } }
+        );
+
+        const response = await POST(mockRequest);
+        const data = await response.json();
+
+        // The bug surfaced as a 400 "ethnicity must be one of…"; assert it's gone.
+        expect(response.status).not.toBe(400);
+        expect(data.error ?? "").not.toMatch(/ethnicity must be one of/);
+      }
+    );
+  });
+
+  // ─────────────────────────────────────────────────────────────────
   // D-05: Per-image fetch failure is non-fatal
   // ─────────────────────────────────────────────────────────────────
 
