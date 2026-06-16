@@ -65,6 +65,25 @@ export function ProductReferencePicker({
           }
         }
         setImages(all);
+
+        // Reconcile the persisted selection against the freshly-loaded library.
+        // The selection is stored by URL in localStorage and rehydrated on mount;
+        // if a stored URL no longer exists in the library (deleted, re-uploaded
+        // with a new URL, or from another environment) it shows up in the
+        // "N selected" count with NO matching, clickable tile — a phantom
+        // selection the user can neither see nor clear. Drop those. Only prune
+        // when we actually loaded a non-empty library so a flaky/empty fetch
+        // never wipes a valid selection.
+        if (all.length > 0) {
+          const libraryUrls = new Set(all.map((i) => i.image_url));
+          setState((prev) => {
+            const current = prev.ugcProductImageUrls ?? [];
+            const pruned = current.filter((u) => libraryUrls.has(u));
+            return pruned.length === current.length
+              ? {}
+              : { ugcProductImageUrls: pruned };
+          });
+        }
       }
     } catch {
       // non-fatal — picker just shows the empty state
@@ -243,7 +262,7 @@ export function ProductReferencePicker({
                 </>
               )}
             </button>
-            {images.slice(0, 23).map((img) => {
+            {images.map((img) => {
               const isSelected = selected.includes(img.image_url);
               return (
                 <button
@@ -293,16 +312,31 @@ export function ProductReferencePicker({
         </>
       )}
 
-      <p
-        className={cn(
-          "text-[11px] font-medium",
-          selected.length > 0 ? "text-coco-golden" : "text-coco-brown-medium/50"
+      <div className="flex items-center justify-between gap-2">
+        <p
+          className={cn(
+            "text-[11px] font-medium",
+            selected.length > 0
+              ? "text-coco-golden"
+              : "text-coco-brown-medium/50"
+          )}
+        >
+          {selected.length > 0
+            ? `${selected.length} image${selected.length !== 1 ? "s" : ""} selected`
+            : "Select at least one product image to generate a script."}
+        </p>
+        {selected.length > 0 && (
+          <button
+            type="button"
+            onClick={() =>
+              setState({ ugcProductImageUrls: [], productFacts: undefined })
+            }
+            className="shrink-0 text-[11px] font-medium text-coco-brown-medium/60 underline-offset-2 transition-colors hover:text-coco-golden hover:underline"
+          >
+            Clear selection
+          </button>
         )}
-      >
-        {selected.length > 0
-          ? `${selected.length} image${selected.length !== 1 ? "s" : ""} selected`
-          : "Select at least one product image to generate a script."}
-      </p>
+      </div>
     </section>
   );
 }
