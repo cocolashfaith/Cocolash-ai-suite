@@ -19,6 +19,8 @@ export interface ProductCard {
   available: boolean;
   productUrl: string;
   addToCartUrl: string;
+  /** Server-computed gate for the "See it on you" button — only wearable lashes. */
+  tryOnEligible?: boolean;
 }
 
 export interface Message {

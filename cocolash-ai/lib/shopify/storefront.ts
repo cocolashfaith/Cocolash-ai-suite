@@ -288,6 +288,30 @@ export function cartPermalink(
   return discountCode ? `${base}?discount=${encodeURIComponent(discountCode)}` : base;
 }
 
+// ── Try-on eligibility ───────────────────────────────────────
+// "See it on you" composites a lash style onto the user's selfie, so it ONLY
+// makes sense for wearable lashes. Adhesives, tools, and accessories must never
+// offer it. These rules read Shopify's own product_type + tags plus the
+// handle/title, so they stay correct as the catalog grows — no per-product list.
+const TRYON_BLOCKLIST =
+  /\b(bond|sealant|glue|adhesive|remover|cleanser|applicator|tweezer|wand|brush|mirror|case|gift\s*card|tools?)\b/i;
+const TRYON_LASH_SIGNAL =
+  /\b(lash|lashes|extension|extensions|cluster|clusters|strip|strips|wispy|cat[-\s]?eye|doll[-\s]?eye)\b/i;
+const TRYON_STYLE_NAMES =
+  /\b(violet|peony|jasmine|iris|daisy|dahlia|poppy|marigold|orchid|rose|sorrel)\b/i;
+
+/**
+ * Whether a product should offer the "See it on you" virtual try-on button.
+ * Deterministic: hard-excludes adhesives/tools/accessories (so "Bond + Sealant
+ * Duo", applicators, removers, … never get it), then includes only products
+ * that clearly read as wearable lashes. Unknown products default to false.
+ */
+export function isTryOnEligible(p: ShopifyProduct): boolean {
+  const haystack = `${p.handle} ${p.title} ${p.productType} ${p.tags.join(" ")}`;
+  if (TRYON_BLOCKLIST.test(haystack)) return false;
+  return TRYON_LASH_SIGNAL.test(haystack) || TRYON_STYLE_NAMES.test(haystack);
+}
+
 /** Convert a ShopifyProduct into the compact ProductCard shape. */
 export function productToCard(
   p: ShopifyProduct,
@@ -308,6 +332,7 @@ export function productToCard(
     available: p.availableForSale,
     productUrl: `https://${process.env.SHOPIFY_STORE_DOMAIN ?? "cocolash.com"}/products/${p.handle}`.replace(/(\.myshopify)\.com/, "$1.com"),
     addToCartUrl: variantId ? cartPermalink(variantId, 1, undefined, discountCode) : "",
+    tryOnEligible: isTryOnEligible(p),
   };
 }
 

@@ -9,6 +9,8 @@ interface ProductCard {
   available: boolean;
   productUrl: string;
   addToCartUrl: string;
+  /** Only wearable lashes get the "See it on you" button (server-computed). */
+  tryOnEligible?: boolean;
 }
 
 interface ProductCardsProps {
@@ -65,7 +67,7 @@ export function ProductCards({ products, onTryOn }: ProductCardsProps) {
                 </a>
               ) : null}
             </div>
-            {onTryOn ? (
+            {onTryOn && p.tryOnEligible ? (
               <button
                 type="button"
                 class="product-card__tryon"

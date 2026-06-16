@@ -67,4 +67,10 @@ export interface ProductCard {
   productUrl: string;
   /** Stage 1 deep link; Stage 2 swaps to App Proxy mutation. */
   addToCartUrl: string;
+  /**
+   * Deterministic gate for the "See it on you" virtual try-on button. True
+   * ONLY for wearable lash products; false for adhesives, tools, accessories,
+   * and anything that can't be composited onto a selfie (e.g. Bond + Sealant).
+   */
+  tryOnEligible: boolean;
 }
