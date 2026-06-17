@@ -106,7 +106,9 @@ export function GenerateVideo(props: GenerateVideoProps) {
     onReset,
   } = props;
 
-  const [resolution, setResolution] = useState<VideoResolution>("1080p");
+  // HeyGen Avatar V renders at 1080p; 4K isn't supported on the avatar
+  // pipeline, so quality is locked to 1080p (no user-facing 4K option).
+  const resolution: VideoResolution = "1080p";
   const [isGenerating, setIsGenerating] = useState(false);
   const [videoId, setVideoId] = useState<string | null>(null);
   const [status, setStatus] = useState<HeyGenVideoStatus | null>(null);
@@ -259,37 +261,13 @@ export function GenerateVideo(props: GenerateVideoProps) {
               <SummaryRow label="Duration" value={`${duration}s`} />
               {hasComposition && pose && <SummaryRow label="Pose" value={pose} />}
               <SummaryRow label="Aspect Ratio" value={aspectRatio} />
-              <SummaryRow
-                label="Quality"
-                value={resolution === "4k" ? "4K · Ultra HD" : "1080p · Full HD"}
-              />
+              <SummaryRow label="Quality" value="1080p · Full HD" />
               {!hasComposition && (
                 <SummaryRow label="Composition" value="Direct presenter (no product)" />
               )}
               <SummaryRow
                 label="Captions"
                 value={captionMethod === "shotstack" ? "Styled (Shotstack)" : "Standard overlay"}
-              />
-            </div>
-          </div>
-
-          {/* Video Quality selector */}
-          <div className="space-y-2">
-            <label className="text-sm font-semibold text-coco-brown">
-              Video Quality
-            </label>
-            <div className="grid grid-cols-2 gap-2">
-              <ResolutionOption
-                active={resolution === "1080p"}
-                title="1080p"
-                subtitle="Full HD · recommended"
-                onClick={() => setResolution("1080p")}
-              />
-              <ResolutionOption
-                active={resolution === "4k"}
-                title="4K"
-                subtitle="Ultra HD · sharper, slower & pricier"
-                onClick={() => setResolution("4k")}
               />
             </div>
           </div>
@@ -390,30 +368,9 @@ export function GenerateVideo(props: GenerateVideoProps) {
                 >
                   app.heygen.com/developers
                 </a>
-                , then Try Again. A shorter clip or 1080p (below) costs less.
+                , then Try Again. A shorter clip costs less.
               </p>
             )}
-          </div>
-
-          {/* Let the user switch quality before retrying (e.g. drop to 1080p). */}
-          <div className="space-y-2">
-            <label className="text-sm font-semibold text-coco-brown">
-              Video Quality
-            </label>
-            <div className="grid grid-cols-2 gap-2">
-              <ResolutionOption
-                active={resolution === "1080p"}
-                title="1080p"
-                subtitle="Full HD · recommended"
-                onClick={() => setResolution("1080p")}
-              />
-              <ResolutionOption
-                active={resolution === "4k"}
-                title="4K"
-                subtitle="Ultra HD · sharper, slower & pricier"
-                onClick={() => setResolution("4k")}
-              />
-            </div>
           </div>
 
           <div className="flex gap-3">
@@ -486,34 +443,6 @@ export function GenerateVideo(props: GenerateVideoProps) {
         </div>
       )}
     </div>
-  );
-}
-
-function ResolutionOption({
-  active,
-  title,
-  subtitle,
-  onClick,
-}: {
-  active: boolean;
-  title: string;
-  subtitle: string;
-  onClick: () => void;
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      aria-pressed={active}
-      className={`flex flex-col items-start rounded-xl border-2 px-4 py-3 text-left transition-all ${
-        active
-          ? "border-coco-golden bg-coco-golden/10 ring-2 ring-coco-golden/30"
-          : "border-coco-beige-dark bg-white hover:border-coco-golden/40"
-      }`}
-    >
-      <span className="text-sm font-bold text-coco-brown">{title}</span>
-      <span className="text-[11px] text-coco-brown-medium/60">{subtitle}</span>
-    </button>
   );
 }
 

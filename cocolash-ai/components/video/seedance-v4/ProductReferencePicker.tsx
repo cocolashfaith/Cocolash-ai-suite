@@ -3,7 +3,7 @@
 import { useState, useEffect, useRef } from "react";
 import Link from "next/link";
 import { toast } from "sonner";
-import { Loader2, Upload, Check, Package, Settings } from "lucide-react";
+import { Loader2, Upload, Check, Package, Settings, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { SeedanceV4WizardState } from "./types";
 
@@ -110,6 +110,22 @@ export function ProductReferencePicker({
       ugcProductImageUrls: [...selected, url],
       productFacts: undefined,
     });
+  }
+
+  /**
+   * Remove an image from THIS picker's grid only (e.g. a wrong or duplicate
+   * upload). This is a local, in-session removal — it does NOT delete the image
+   * from Settings / the product library, so it reappears next time the picker
+   * loads. If the image was selected, it's also dropped from the selection.
+   */
+  function removeImage(img: ProductRef) {
+    setImages((prev) => prev.filter((i) => i.id !== img.id));
+    if (selected.includes(img.image_url)) {
+      setState({
+        ugcProductImageUrls: selected.filter((u) => u !== img.image_url),
+        productFacts: undefined,
+      });
+    }
   }
 
   async function handleUpload(e: React.ChangeEvent<HTMLInputElement>) {
@@ -265,31 +281,45 @@ export function ProductReferencePicker({
             {images.map((img) => {
               const isSelected = selected.includes(img.image_url);
               return (
-                <button
-                  key={img.id}
-                  type="button"
-                  onClick={() => toggle(img.image_url)}
-                  className={cn(
-                    "group relative aspect-square overflow-hidden rounded-lg border-2 transition-all",
-                    isSelected
-                      ? "border-coco-golden ring-2 ring-coco-golden/30"
-                      : "border-transparent hover:border-coco-golden/40"
-                  )}
-                  title={img.category_name}
-                >
-                  <img
-                    src={img.image_url}
-                    alt={img.category_name}
-                    className="h-full w-full object-cover"
-                  />
-                  {isSelected && (
-                    <div className="absolute inset-0 flex items-center justify-center bg-coco-golden/20">
-                      <div className="flex h-6 w-6 items-center justify-center rounded-full bg-coco-golden">
-                        <Check className="h-3.5 w-3.5 text-white" />
+                <div key={img.id} className="group relative aspect-square">
+                  <button
+                    type="button"
+                    onClick={() => toggle(img.image_url)}
+                    className={cn(
+                      "relative h-full w-full overflow-hidden rounded-lg border-2 transition-all",
+                      isSelected
+                        ? "border-coco-golden ring-2 ring-coco-golden/30"
+                        : "border-transparent hover:border-coco-golden/40"
+                    )}
+                    title={img.category_name}
+                  >
+                    <img
+                      src={img.image_url}
+                      alt={img.category_name}
+                      className="h-full w-full object-cover"
+                    />
+                    {isSelected && (
+                      <div className="absolute inset-0 flex items-center justify-center bg-coco-golden/20">
+                        <div className="flex h-6 w-6 items-center justify-center rounded-full bg-coco-golden">
+                          <Check className="h-3.5 w-3.5 text-white" />
+                        </div>
                       </div>
-                    </div>
-                  )}
-                </button>
+                    )}
+                  </button>
+                  {/* Remove from this list only (stays saved in Settings). */}
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      removeImage(img);
+                    }}
+                    className="absolute right-1 top-1 z-10 flex h-5 w-5 items-center justify-center rounded-full bg-coco-brown/70 text-white shadow-sm backdrop-blur-sm transition-all hover:bg-red-500 focus:opacity-100 sm:opacity-0 sm:group-hover:opacity-100"
+                    title="Remove from this list (stays in Settings)"
+                    aria-label={`Remove ${img.category_name || "image"} from this list`}
+                  >
+                    <X className="h-3 w-3" />
+                  </button>
+                </div>
               );
             })}
           </div>
