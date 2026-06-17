@@ -2,7 +2,6 @@ import { createAdminClient } from "@/lib/supabase/server";
 import { recordActualCost } from "@/lib/costs/tracker";
 import { SEEDANCE_COSTS } from "@/lib/seedance/types";
 import { processVideo } from "@/lib/video/processor";
-import { burnAndUploadCaptions } from "@/lib/video/burn-captions";
 import type { GeneratedVideo } from "@/lib/types";
 
 type SupabaseAdmin = Awaited<ReturnType<typeof createAdminClient>>;
@@ -37,14 +36,26 @@ export async function completeSeedanceVideo({
     return video;
   }
 
+  const completedAt = new Date().toISOString();
+
+  // Atomic claim → completed. Only one poll/webhook wins. Seedance videos carry
+  // NO captions (captions are a HeyGen-only feature), so there is no
+  // "captioning" step — the video goes straight to completed. We also accept a
+  // stale "captioning" status here so any video left in that transient state by
+  // the old caption pipeline drains cleanly to completed (uncaptioned).
   const { data: claimed, error: claimError } = await supabase
     .from("generated_videos")
     .update({
-      heygen_status: "captioning",
+      heygen_status: "completed",
       raw_video_url: rawVideoUrl,
+      final_video_url: rawVideoUrl, // provisional; upgraded to Cloudinary below
+      thumbnail_url: providerThumbnailUrl ?? null,
+      has_captions: false,
+      caption_srt: null,
+      completed_at: completedAt,
     })
     .eq("id", video.id)
-    .in("heygen_status", ["pending", "processing"])
+    .in("heygen_status", ["pending", "processing", "captioning"])
     .select();
 
   if (claimError) {
@@ -61,36 +72,12 @@ export async function completeSeedanceVideo({
     return (fresh ?? video) as GeneratedVideo;
   }
 
-  const runningVideo: GeneratedVideo = {
-    ...video,
-    heygen_status: "captioning",
-    raw_video_url: rawVideoUrl,
-  };
-
-  const updateData: Record<string, unknown> = {
-    heygen_status: "completed",
-    raw_video_url: rawVideoUrl,
-    final_video_url: rawVideoUrl,
-    thumbnail_url: providerThumbnailUrl ?? null,
-    completed_at: new Date().toISOString(),
-  };
-
-  // Mirrors the HeyGen post-processing pattern (runPostProcessing in
-  // app/api/videos/[id]/status/route.ts): upload to Cloudinary, then burn
-  // styled captions via Shotstack.
-  //
-  // Caption *intent* is decided at generation time and persisted as the
-  // presence of `caption_srt` on the row (see buildGenerationCaptionSrt in
-  // app/api/seedance/generate/route.ts). We do NOT re-derive it here — that
-  // keeps the user's "Stylized captions" toggle authoritative (OFF => null =>
-  // no captions) and removes the old dependency on a persisted `script_id`
-  // (the v4 wizard never sends one, which is why videos came out uncaptioned).
-  let hasCaptions = false;
-
+  // Best-effort: re-host the raw provider video on Cloudinary for a durable URL
+  // + thumbnail. No captions are ever burned for Seedance. On failure the video
+  // is still playable on the raw provider URL set in the claim above.
+  let finalVideoUrl = rawVideoUrl;
+  let thumbnailUrl = providerThumbnailUrl ?? null;
   try {
-    const captionSrt = video.caption_srt;
-
-    // Upload the raw video to Cloudinary (durable URL + thumbnail + publicId).
     const processed = await processVideo({
       rawVideoUrl,
       title: "CocoLash Seedance Video",
@@ -100,46 +87,19 @@ export async function completeSeedanceVideo({
       addCaptions: false,
     });
 
-    updateData.final_video_url = processed.videoUrl;
-    updateData.thumbnail_url = processed.thumbnailUrl ?? providerThumbnailUrl ?? null;
+    finalVideoUrl = processed.videoUrl;
+    thumbnailUrl = processed.thumbnailUrl ?? providerThumbnailUrl ?? null;
 
-    // Burn styled captions via Shotstack (same step HeyGen uses) only when the
-    // user kept captions ON (caption_srt present) and Shotstack is configured.
-    // On failure the video is still ready (uncaptioned) and the status-route
-    // repair path retries on the next poll using the persisted caption_srt.
-    if (captionSrt && process.env.SHOTSTACK_API_KEY) {
-      try {
-        const captionedUrl = await burnAndUploadCaptions({
-          videoUrl: processed.videoUrl,
-          srtContent: captionSrt,
-          durationSeconds: video.duration_seconds ?? 15,
-          videoPublicId: processed.cloudinaryPublicId,
-          aspectRatio:
-            (video.aspect_ratio as "9:16" | "16:9" | "1:1") ?? "9:16",
-        });
-        updateData.final_video_url = captionedUrl;
-        hasCaptions = true;
-      } catch (captionError) {
-        console.error(
-          "[seedance/complete] Caption burn failed (will retry on poll):",
-          captionError
-        );
-      }
+    const { error: updateError } = await supabase
+      .from("generated_videos")
+      .update({ final_video_url: finalVideoUrl, thumbnail_url: thumbnailUrl })
+      .eq("id", video.id);
+
+    if (updateError) {
+      console.error("[seedance/complete] Final URL update error:", updateError);
     }
   } catch (processError) {
     console.error("[seedance/complete] Post-processing error:", processError);
-  }
-
-  updateData.has_captions = hasCaptions;
-
-  const { error: updateError } = await supabase
-    .from("generated_videos")
-    .update(updateData)
-    .eq("id", video.id);
-
-  if (updateError) {
-    console.error("[seedance/complete] DB update error:", updateError);
-    throw new Error(`DB update failed: ${updateError.message}`);
   }
 
   try {
@@ -153,13 +113,14 @@ export async function completeSeedanceVideo({
   }
 
   return {
-    ...runningVideo,
+    ...video,
     heygen_status: "completed",
-    final_video_url: (updateData.final_video_url as string) ?? rawVideoUrl,
-    thumbnail_url: (updateData.thumbnail_url as string | null) ?? null,
-    caption_srt: video.caption_srt ?? null,
-    has_captions: hasCaptions,
-    completed_at: updateData.completed_at as string,
+    raw_video_url: rawVideoUrl,
+    final_video_url: finalVideoUrl,
+    thumbnail_url: thumbnailUrl,
+    caption_srt: null,
+    has_captions: false,
+    completed_at: completedAt,
   };
 }
 
