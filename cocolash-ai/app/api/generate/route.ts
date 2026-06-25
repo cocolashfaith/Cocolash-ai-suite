@@ -78,12 +78,6 @@ const VALID_VIBES: Vibe[] = [
   "confident-glam", "soft-romantic", "bold-editorial",
   "natural-beauty", "night-out", "self-care", "professional", "random",
 ];
-const VALID_PRODUCT_SUB_CATEGORIES: ProductCategoryKey[] = [
-  "single-black-tray", "single-nude-tray", "multi-lash-book",
-  "full-kit-pouch", "full-kit-box",
-  "storage-pouch", "branding-flatlay",
-];
-
 function validateSelections(body: unknown): GenerationSelections {
   const data = body as Record<string, unknown>;
 
@@ -148,13 +142,22 @@ function validateSelections(body: unknown): GenerationSelections {
     sizePercent: typeof logoData.sizePercent === "number" ? logoData.sizePercent : 22,
   } as GenerationSelections["logoOverlay"];
 
-  // Product sub-category (required when category is "product")
+  // Product sub-category. Required for "product"; optional for "lifestyle" (the
+  // featured product). We accept any product_categories.key (slug) — the DB
+  // lookup later is the real existence gate, so "custom-uploads" and future
+  // categories work without editing a hardcoded allow-list.
   const productSubCategory = data.productSubCategory as ProductCategoryKey | undefined;
-  if (category === "product" && productSubCategory) {
-    if (!VALID_PRODUCT_SUB_CATEGORIES.includes(productSubCategory)) {
-      throw new Error(`Invalid product sub-category: ${productSubCategory}`);
-    }
+  if (productSubCategory && !/^[a-z0-9-]+$/.test(productSubCategory)) {
+    throw new Error(`Invalid product sub-category: ${productSubCategory}`);
   }
+
+  // Locked reference-image IDs (optional). Empty/omitted = use ALL images in the
+  // selected category. Lets the user isolate one product inside a mixed category.
+  const referenceImageIds = Array.isArray(data.referenceImageIds)
+    ? (data.referenceImageIds as unknown[]).filter(
+        (x): x is string => typeof x === "string"
+      )
+    : undefined;
 
   // Optional context note (max 100 chars)
   const contextNote = typeof data.contextNote === "string"
@@ -255,6 +258,7 @@ function validateSelections(body: unknown): GenerationSelections {
   return {
     category,
     productSubCategory,
+    referenceImageIds,
     skinTone,
     lashStyle,
     hairStyle,
@@ -311,14 +315,20 @@ export async function POST(request: NextRequest) {
       brandId
     );
 
-    // 5. Fetch product reference images for the selected sub-category
+    // 5. Fetch product reference images for the selected product.
+    // Grounding applies to the Product category (required) and Lifestyle
+    // (optional "feature a product") so lifestyle shots hold the real product
+    // instead of drifting. Other categories never attach product references.
     const isProductCategory = selections.category === "product";
+    const wantsProductGrounding =
+      (selections.category === "product" || selections.category === "lifestyle") &&
+      !!selections.productSubCategory;
     let productSubCategoryLabel = "";
     let productSubCategoryDescription = "";
     let referenceImages: ReferenceImage[] | undefined;
     let hasProductRefs = false;
 
-    if (isProductCategory && selections.productSubCategory) {
+    if (wantsProductGrounding && selections.productSubCategory) {
       // Look up the category and its images from the database
       const { data: productCat } = await supabase
         .from("product_categories")
@@ -333,11 +343,18 @@ export async function POST(request: NextRequest) {
         // Fetch reference images for this specific category
         const { data: refImages } = await supabase
           .from("product_reference_images")
-          .select("image_url")
+          .select("id, image_url")
           .eq("category_id", productCat.id)
           .order("sort_order", { ascending: true });
 
-        const imageUrls = (refImages || []).map((r) => r.image_url);
+        // Per-image lock: when the user picked specific images, use only those;
+        // otherwise use every image in the category.
+        const lockedIds = selections.referenceImageIds;
+        const selectedRefs =
+          lockedIds && lockedIds.length > 0
+            ? (refImages || []).filter((r) => lockedIds.includes(r.id))
+            : refImages || [];
+        const imageUrls = selectedRefs.map((r) => r.image_url);
 
         if (imageUrls.length > 0) {
           console.log(`[Generate] Fetching ${imageUrls.length} reference image(s) for "${productCat.label}"...`);
@@ -630,12 +647,21 @@ export async function POST(request: NextRequest) {
       console.log(`[Generate] Product reference images for "${productSubCategoryLabel}": ${referenceImages?.length ?? 0}`);
     }
 
-    // 7. Call Gemini to generate the image (with optional product references)
+    // 7. Call Gemini to generate the image (with optional product references).
+    // For non-product categories (Lifestyle) the references show a product the
+    // person should hold/show faithfully — NOT a flatlay to recreate — so we
+    // pass a tailored instruction. Product shots keep the default
+    // "recreate the EXACT product" wording.
+    const referenceInstruction =
+      !isProductCategory && referenceImages && referenceImages.length > 0
+        ? `[PRODUCT REFERENCE IMAGES — ${referenceImages.length} provided] The CocoLash product shown in these reference image(s) must appear in the scene, held by or shown with the person, reproduced FAITHFULLY: identical packaging, shape, colors, text, and branding. Do not redesign, restyle, recolor, or substitute the product. Build the rest of the scene from the prompt below.`
+        : undefined;
+
     const geminiResult = await generateImage(
       composed.fullPrompt,
       selections.aspectRatio,
       referenceImages,
-      undefined,
+      referenceInstruction,
       selections.resolution
     );
 

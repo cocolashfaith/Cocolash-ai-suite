@@ -5,10 +5,12 @@ import { useRouter } from "next/navigation";
 import { Sparkles, Video } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
+import { cn } from "@/lib/utils";
 
 import { SavedTemplatesRow } from "./SavedTemplatesRow";
 import { CategorySelector } from "./CategorySelector";
 import { ProductSubCategorySelector } from "./ProductSubCategorySelector";
+import { ReferenceImagePicker } from "./ReferenceImagePicker";
 import { SkinToneSelector } from "./SkinToneSelector";
 import { EthnicitySelector } from "./EthnicitySelector";
 import { AgeRangeSelector } from "./AgeRangeSelector";
@@ -87,6 +89,8 @@ export function GenerateForm() {
   const [error, setError] = useState<GenerateErrorResponse | null>(null);
   const [templateRefreshKey, setTemplateRefreshKey] = useState(0);
   const [captionModalOpen, setCaptionModalOpen] = useState(false);
+  // Lifestyle: whether to ground the shot on a specific product (optional).
+  const [featureProduct, setFeatureProduct] = useState(false);
 
   // Update individual fields
   const update = useCallback(
@@ -99,11 +103,26 @@ export function GenerateForm() {
     []
   );
 
+  // Pick the product to ground on; always reset the per-image lock so it starts
+  // as "all images of the newly chosen product".
+  const setProductSubCategory = useCallback((key: ProductCategoryKey | undefined) => {
+    setSelections((prev) => ({
+      ...prev,
+      productSubCategory: key,
+      referenceImageIds: undefined,
+    }));
+  }, []);
+
   // Handle category change — reset scene based on category
   const handleCategoryChange = useCallback((category: ContentCategory) => {
+    // Product grounding only applies to "product" (required) and "lifestyle"
+    // (optional). Clear it for every other category so refs never leak across.
+    setFeatureProduct(false);
     setSelections((prev) => ({
       ...prev,
       category,
+      productSubCategory: undefined,
+      referenceImageIds: undefined,
       // Auto-select studio for lash close-ups and before-after
       scene: (category === "lash-closeup" || category === "before-after") ? "studio" : prev.scene,
       // Reset composition to solo for non-lifestyle
@@ -217,14 +236,76 @@ export function GenerateForm() {
             onChange={handleCategoryChange}
           />
 
-          {/* Product Sub-Category (only when Product is selected) */}
+          {/* Product Sub-Category + per-image reference lock (Product category) */}
           {selections.category === "product" && (
-            <ProductSubCategorySelector
-              value={selections.productSubCategory}
-              onChange={(v: ProductCategoryKey) =>
-                update("productSubCategory", v)
-              }
-            />
+            <div className="space-y-3">
+              <ProductSubCategorySelector
+                value={selections.productSubCategory}
+                onChange={(v: ProductCategoryKey) => setProductSubCategory(v)}
+              />
+              {selections.productSubCategory && (
+                <ReferenceImagePicker
+                  categoryKey={selections.productSubCategory}
+                  selectedIds={selections.referenceImageIds}
+                  onChange={(ids) => update("referenceImageIds", ids)}
+                />
+              )}
+            </div>
+          )}
+
+          {/* Lifestyle: optionally feature (and lock) a specific product so the
+              shot holds the real thing instead of drifting. */}
+          {selections.category === "lifestyle" && (
+            <div className="space-y-3 rounded-xl border-2 border-coco-beige-dark bg-white/50 p-4">
+              <div className="flex items-center justify-between gap-3">
+                <div>
+                  <p className="text-sm font-semibold text-coco-brown">
+                    Feature a specific product
+                  </p>
+                  <p className="mt-0.5 text-[11px] text-coco-brown-medium/60">
+                    Lock the exact product the model is holding/showing so it
+                    doesn&apos;t drift off the real one.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  role="switch"
+                  aria-checked={featureProduct}
+                  onClick={() => {
+                    const next = !featureProduct;
+                    setFeatureProduct(next);
+                    if (!next) setProductSubCategory(undefined);
+                  }}
+                  className={cn(
+                    "relative inline-flex h-5 w-9 shrink-0 items-center rounded-full transition-colors",
+                    featureProduct ? "bg-coco-golden" : "bg-coco-brown-medium/20"
+                  )}
+                >
+                  <span
+                    className={cn(
+                      "inline-block h-3.5 w-3.5 transform rounded-full bg-white shadow transition-transform",
+                      featureProduct ? "translate-x-[18px]" : "translate-x-[3px]"
+                    )}
+                  />
+                </button>
+              </div>
+
+              {featureProduct && (
+                <>
+                  <ProductSubCategorySelector
+                    value={selections.productSubCategory}
+                    onChange={(v: ProductCategoryKey) => setProductSubCategory(v)}
+                  />
+                  {selections.productSubCategory && (
+                    <ReferenceImagePicker
+                      categoryKey={selections.productSubCategory}
+                      selectedIds={selections.referenceImageIds}
+                      onChange={(ids) => update("referenceImageIds", ids)}
+                    />
+                  )}
+                </>
+              )}
+            </div>
           )}
 
           {/* Application Step Selector (only when Application Process) */}

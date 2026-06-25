@@ -257,7 +257,18 @@ export interface ProductReferenceImage {
 // ── Generation Selections (the full form state) ───────────────
 export interface GenerationSelections {
   category: ContentCategory;
-  productSubCategory?: ProductCategoryKey; // Only when category === "product"
+  /**
+   * The product to ground generation on. Required for category === "product";
+   * optional for "lifestyle" (the product featured in the shot). Holds a
+   * product_categories.key — including "custom-uploads" or future categories.
+   */
+  productSubCategory?: ProductCategoryKey;
+  /**
+   * Specific product_reference_images IDs to lock as the reference set. When
+   * omitted/empty, ALL images in the selected category are used. Lets the user
+   * isolate one product (e.g. the half-lash) inside a mixed category.
+   */
+  referenceImageIds?: string[];
   skinTone: SkinTone;
   lashStyle: LashStyle;
   hairStyle: HairStyle;
