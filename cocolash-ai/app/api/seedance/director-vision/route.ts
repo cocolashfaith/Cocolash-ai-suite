@@ -50,6 +50,8 @@ const VisionDirectorBodySchema = z.object({
   productSku: z.string().optional(),
   intent: z.string().optional(),
   productFacts: z.string().optional(),
+  /** Set on explicit "Regenerate" to request a distinctly different scene. */
+  variationHint: z.string().max(2000).optional(),
 });
 
 type VisionDirectorBody = z.infer<typeof VisionDirectorBodySchema>;
@@ -80,6 +82,7 @@ export async function POST(request: NextRequest) {
       productSku: parsed.productSku,
       intent: parsed.intent,
       productFacts: parsed.productFacts,
+      variationHint: parsed.variationHint,
     };
 
     const result = await generateSeedanceVisionPrompt(visionPromptInput);

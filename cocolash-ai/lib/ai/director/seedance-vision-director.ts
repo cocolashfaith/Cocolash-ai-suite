@@ -44,6 +44,11 @@ export interface VisionPromptInput {
    *  prompt block. Shares the script's source of truth so prompt and script
    *  can't drift. */
   productFacts?: string;
+  /** OPTIONAL: when set, the user asked for a fresh take (explicit "Regenerate").
+   *  We append this as a variation instruction and raise sampling temperature so
+   *  the Director proposes a distinctly different setting/scene than before,
+   *  instead of settling on the same cozy default every time. */
+  variationHint?: string;
 }
 
 /**
@@ -98,14 +103,23 @@ export async function generateSeedanceVisionPrompt(
   const systemPrompt = buildVisionDirectorSystemPrompt(truthContext);
 
   // Build user prompt (context for this specific task)
-  const userPrompt = buildVisionDirectorUserPrompt(input, productTruth);
+  let userPrompt = buildVisionDirectorUserPrompt(input, productTruth);
+
+  // Explicit regeneration: nudge the Director toward a distinctly different
+  // scene so repeated clicks don't keep returning the same setup, and sample
+  // with a higher temperature for genuine variety.
+  const isVariation = !!input.variationHint?.trim();
+  if (isVariation) {
+    userPrompt += `\n\nVARIATION REQUEST (the user clicked "Regenerate" for a fresh take): ${input.variationHint!.trim()} Keep the product identity, script, and on-screen actions accurate, but change the setting, location, time of day, props, framing, and overall vibe so this reads as a clearly different scene.`;
+  }
 
   // Call vision model
   const prompt = await callVisionModel(
     systemPrompt,
     userPrompt,
     input.influencerImageUrl,
-    input.productImageUrls
+    input.productImageUrls,
+    isVariation ? 0.9 : undefined
   );
 
   const durationMs = Date.now() - start;
@@ -178,7 +192,11 @@ export async function callVisionModel(
   systemPrompt: string,
   userPrompt: string,
   influencerImageUrl: string,
-  productImageUrls: string[]
+  productImageUrls: string[],
+  /** Optional sampling temperature. Omitted = provider default (grounded
+   *  initial run); a higher value is passed on explicit regeneration for
+   *  scene variety. */
+  temperature?: number
 ): Promise<string> {
   const client = getOpenRouterClient();
 
@@ -196,6 +214,7 @@ export async function callVisionModel(
     client.chat.completions.create({
       model: SEEDANCE_VISION_DIRECTOR_MODEL,
       max_tokens: 1024,
+      ...(temperature !== undefined ? { temperature } : {}),
       messages: [
         { role: "system", content: systemPrompt },
         {

@@ -68,7 +68,7 @@ export function Step3PromptReviewAndGenerate({ state, setState, onReset, goToSte
    * Vision agent path: call /api/seedance/director-vision with influencer + product images
    * (Enhancor-parity mode only)
    */
-  const generatePromptFromVisionAgent = useCallback(async () => {
+  const generatePromptFromVisionAgent = useCallback(async (variation = false) => {
     if (!isEnhancorParityMode) return;
 
     setVisionLoading(true);
@@ -86,6 +86,14 @@ export function Step3PromptReviewAndGenerate({ state, setState, onReset, goToSte
           // the prompt and the script share one source of truth and can't drift.
           ...(state.productFacts
             ? { productFacts: formatProductFactsForPrompt(state.productFacts) }
+            : {}),
+          // Explicit "Regenerate": ask for a distinctly different scene so the
+          // Director doesn't keep returning the same setup.
+          ...(variation
+            ? {
+                variationHint:
+                  "Give me a fresh, distinctly different scene from the previous version.",
+              }
             : {}),
           // Per BLOCKER 1 (D-34-04): NO productSku required — images are sole source of identity
         }),
@@ -105,7 +113,11 @@ export function Step3PromptReviewAndGenerate({ state, setState, onReset, goToSte
         directorPromptVersion: versionAtRun,
       });
       setEditedPrompt(data.prompt);
-      toast.success("Vision agent generated your prompt from the images.");
+      toast.success(
+        variation
+          ? "Fresh take generated — a different scene."
+          : "Vision agent generated your prompt from the images."
+      );
     } catch (error) {
       const msg = error instanceof Error ? error.message : "Failed to generate prompt";
       setVisionError(msg);
@@ -315,7 +327,7 @@ export function Step3PromptReviewAndGenerate({ state, setState, onReset, goToSte
             <p className="mt-0.5 text-xs text-red-800">{visionError}</p>
           </div>
         </div>
-        <Button onClick={generatePromptFromVisionAgent} variant="outline" size="sm" className="gap-1.5">
+        <Button onClick={() => generatePromptFromVisionAgent()} variant="outline" size="sm" className="gap-1.5">
           <RefreshCw className="h-3 w-3" />
           Retry
         </Button>
@@ -443,8 +455,13 @@ export function Step3PromptReviewAndGenerate({ state, setState, onReset, goToSte
             </h3>
             <button
               type="button"
-              onClick={writeDirectorPrompt}
-              className="flex items-center gap-1 text-xs font-medium text-coco-golden hover:text-coco-golden-dark"
+              onClick={
+                isEnhancorParityMode
+                  ? () => generatePromptFromVisionAgent(true)
+                  : writeDirectorPrompt
+              }
+              disabled={isWriting || visionLoading}
+              className="flex items-center gap-1 text-xs font-medium text-coco-golden transition-colors hover:text-coco-golden-dark disabled:opacity-50"
             >
               <RefreshCw className="h-3 w-3" />
               Regenerate with Director
