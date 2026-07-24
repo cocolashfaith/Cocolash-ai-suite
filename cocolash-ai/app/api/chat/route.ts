@@ -87,9 +87,37 @@ function sseFrame(event: string, data: unknown): Uint8Array {
   return new TextEncoder().encode(payload);
 }
 
+/**
+ * CORS headers for cross-origin widget traffic. The widget runs on the
+ * merchant's storefront (e.g. cocolash.com) and calls this API on the Vercel
+ * origin, so every request is cross-origin and the `application/json` body
+ * triggers a preflight. Without these headers the browser blocks the chat.
+ * No credentials are used (the session id travels in the body), so reflecting
+ * the request origin — falling back to `*` — is safe. Matches the pattern in
+ * /api/chat/tryon, /config, and /lead.
+ */
+function corsHeaders(origin: string | null): Record<string, string> {
+  return {
+    "access-control-allow-origin": origin ?? "*",
+    "access-control-allow-methods": "POST, OPTIONS",
+    "access-control-allow-headers": "content-type",
+    "access-control-expose-headers": "x-chat-session-id, x-chat-request-id",
+    "access-control-max-age": "86400",
+    vary: "Origin",
+  };
+}
+
+export function OPTIONS(req: NextRequest): Response {
+  return new Response(null, {
+    status: 204,
+    headers: corsHeaders(req.headers.get("origin")),
+  });
+}
+
 export async function POST(req: NextRequest): Promise<Response> {
   const requestId = randomUUID();
   const start = Date.now();
+  const cors = corsHeaders(req.headers.get("origin"));
 
   // Parse + validate body.
   let body: z.infer<typeof ChatRequestSchema>;
@@ -102,7 +130,7 @@ export async function POST(req: NextRequest): Promise<Response> {
         error: "invalid_request",
         message: err instanceof z.ZodError ? err.issues : String(err),
       }),
-      { status: 400, headers: { "content-type": "application/json" } }
+      { status: 400, headers: { "content-type": "application/json", ...cors } }
     );
   }
 
@@ -130,7 +158,7 @@ export async function POST(req: NextRequest): Promise<Response> {
         : "Coco is taking a quick break. Please try again later.";
     return new Response(
       JSON.stringify({ error: pre.reason ?? "bot_disabled", message }),
-      { status: 503, headers: { "content-type": "application/json" } }
+      { status: 503, headers: { "content-type": "application/json", ...cors } }
     );
   }
 
@@ -150,6 +178,7 @@ export async function POST(req: NextRequest): Promise<Response> {
         headers: {
           "content-type": "application/json",
           "retry-after": String(Math.ceil(rl.resetMs / 1000)),
+          ...cors,
         },
       }
     );
@@ -449,6 +478,7 @@ export async function POST(req: NextRequest): Promise<Response> {
       "x-chat-session-id": session.id,
       "x-chat-request-id": requestId,
       "x-accel-buffering": "no",
+      ...cors,
     },
   });
 }
