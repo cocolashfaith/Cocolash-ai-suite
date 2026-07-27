@@ -38,6 +38,8 @@ const STYLE_HANDLE_CACHE = new Map<string, string | null>();
 const STYLE_KEYWORDS = [
   "violet", "peony", "jasmine", "iris", "daisy",
   "dahlia", "poppy", "marigold", "orchid", "rose", "sorrel",
+  // Half Lash Kits (launched July 2026) — resolve to Shopify handles fern / ivy.
+  "fern", "ivy",
 ] as const;
 
 export interface ProductContextResult {

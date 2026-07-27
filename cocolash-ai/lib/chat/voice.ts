@@ -32,13 +32,13 @@ export const DEFAULT_VOICE_FRAGMENTS: VoiceFragments = {
   persona_name: "Coco",
   greeting: "Hey gorgeous! I'm Coco. What can I help you find today?",
   recommend_intro:
-    "Tell me a little about your look. Natural and everyday, or bold for a moment? And are you new to lash extensions or a regular?",
+    "Tell me a little about your look. Natural and everyday, or bold for a moment? And are you new to at-home lashes or a regular?",
   escalation:
     "Let me get this to Faith's team. They'll reach out at the email you give me. What's the best one to use?",
   after_hours_suffix:
     "They're online Mon to Fri, 9 AM to 5 PM EST and aim to reply within 24h.",
   lead_capture:
-    "If you're not ready to commit, no pressure. Drop your email and I'll send a little something to make your first set easier on the wallet.",
+    "If you're not ready to commit, no pressure. Drop your email and I'll keep you in the loop on new styles and offers.",
   tryon_offer:
     "Want to see {product} on you? Tap the See it on you button on the product card below and upload a quick selfie.",
   dont_know:
@@ -50,7 +50,12 @@ export interface ComposeSystemPromptInput {
   retrievedChunks?: ReadonlyArray<KnowledgeChunk>;
   /** Optional product context the bot may reference this turn (Phase 4). */
   productContext?: string;
-  /** Optional discount code rendered in the prompt for this turn (Phase 5). */
+  /**
+   * @deprecated Coco no longer surfaces typed discount codes. The only
+   * promotion is described as an automatic-at-checkout discount (see
+   * AUTOMATIC_DISCOUNT_NOTE / renderDiscount). Field kept optional for
+   * backward-compatible call sites; it is ignored.
+   */
   discountCode?: { code: string; description: string } | null;
   /**
    * Whether the request is inside business hours (Mon–Fri 9–5 EST). When
@@ -126,13 +131,22 @@ function renderCustomerContext(
   return parts.join(" ");
 }
 
-function renderDiscount(
-  discount: ComposeSystemPromptInput["discountCode"]
-): string {
-  if (!discount) {
-    return "Discount available this turn: none. Do not promise or invent a code.";
-  }
-  return `Discount available this turn: code "${discount.code}" — ${discount.description}. Use it only when contextually appropriate (do not push).`;
+/**
+ * CocoLash's only customer-facing promotion is a standing discount that applies
+ * automatically at checkout — there is NO typed code for shoppers. Per Faith
+ * (July 2026), Coco must never hand out a typed code; it only ever describes the
+ * automatic offer. This text is the single place to update the promo message.
+ */
+export const AUTOMATIC_DISCOUNT_NOTE =
+  "CocoLash runs a standing 10% off that applies AUTOMATICALLY at checkout — no code needed.";
+
+function renderDiscount(): string {
+  return (
+    `${AUTOMATIC_DISCOUNT_NOTE} ` +
+    "When a visitor asks about discounts, deals, coupons, or promo codes, or hesitates on price, " +
+    "you may mention this once, naturally. NEVER give out, print, or tell anyone to type or enter a " +
+    "discount code — there is no code to enter. Do not invent other offers, codes, or percentages."
+  );
 }
 
 function renderEmailAck(email: string | null | undefined): string | null {
@@ -159,7 +173,7 @@ export function composeSystemPrompt(input: ComposeSystemPromptInput): string {
     "## Visitor context",
     renderCustomerContext(input.customerContext ?? null),
     "## Discount context",
-    renderDiscount(input.discountCode ?? null),
+    renderDiscount(),
   ];
 
   const emailAck = renderEmailAck(input.customerProvidedEmail ?? null);

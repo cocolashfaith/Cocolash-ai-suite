@@ -83,18 +83,22 @@ describe("composeSystemPrompt", () => {
     expect(fragmentsBlock).not.toContain(DEFAULT_VOICE_FRAGMENTS.after_hours_suffix);
   });
 
-  it("renders 'no discount' line when discountCode is null", () => {
+  it("always describes the automatic-at-checkout discount, never a typed code", () => {
     const prompt = composeSystemPrompt(baseInput);
-    expect(prompt).toContain("Discount available this turn: none");
+    expect(prompt).toContain("applies AUTOMATICALLY at checkout");
+    expect(prompt).toContain("no code needed");
+    expect(prompt).toContain("NEVER give out, print, or tell anyone to type or enter a");
   });
 
-  it("renders the discount code when provided", () => {
+  it("ignores a legacy discountCode and never surfaces a typed code", () => {
     const prompt = composeSystemPrompt({
       ...baseInput,
+      // Field is deprecated/ignored; a value here must NOT reach the prompt.
       discountCode: { code: "TEXT15", description: "15% off site-wide" },
     });
-    expect(prompt).toContain('"TEXT15"');
-    expect(prompt).toContain("15% off site-wide");
+    expect(prompt).not.toContain("TEXT15");
+    expect(prompt).not.toContain("15% off site-wide");
+    expect(prompt).toContain("applies AUTOMATICALLY at checkout");
   });
 
   it("renders anonymous-visitor line when customerContext is null", () => {

@@ -26,7 +26,6 @@ import { isBusinessHours } from "@/lib/chat/hours";
 import { classifyIntent } from "@/lib/chat/intent";
 import { retrieve } from "@/lib/chat/retrieve";
 import { buildProductContext } from "@/lib/chat/product-context";
-import { fetchActiveDiscounts, selectDiscountForTurn } from "@/lib/chat/discount";
 import { preflight } from "@/lib/chat/preflight";
 import { chatRateLimiter } from "@/lib/chat/rate-limit";
 import { log } from "@/lib/log";
@@ -261,22 +260,12 @@ export async function POST(req: NextRequest): Promise<Response> {
   // genuinely outside them (handled in the prompt). See trust-recovery fixes.
   const intentForOffer = intentResult.intent;
 
-  // Phase 5: pick a discount code (Stage 1: one per turn). Best-effort.
-  // We pick the discount BEFORE building product cards so the Add-to-cart
-  // permalink can carry `?discount=CODE`. The current rule corpus uses
-  // null product_line_scope (any-product), so passing an empty handle list
-  // here doesn't cause spurious rejects.
-  const discountRules = await fetchActiveDiscounts(supabase).catch(() => []);
-  const offered = selectDiscountForTurn(discountRules, {
-    intent: intentForOffer,
-    productHandles: [],
-  });
-
-  // NOTE: we pass `null` (not the offered code) so the Add-to-cart permalink
-  // never carries a `?discount=CODE`. Baking a code into customer links is
-  // brittle (it surfaced a 100%-off internal code in testing) and stops people
-  // building a multi-item cart. The discount, when offered, is communicated in
-  // the reply text instead, for the customer to enter at checkout.
+  // Discounts: Coco NEVER surfaces a typed discount code (Faith, July 2026).
+  // The store's promotion applies automatically at checkout, so we pull no code
+  // from discount_rules and bake no `?discount=CODE` into any link. The prompt's
+  // Discount context (lib/chat/voice.ts → AUTOMATIC_DISCOUNT_NOTE) tells Coco to
+  // describe the automatic offer only. This closes the whole class of leaks
+  // (influencer/test/campaign codes like BRIT30) at the source.
   const productContext = await buildProductContext(
     body.message,
     retrieveResult.chunks,
@@ -299,7 +288,6 @@ export async function POST(req: NextRequest): Promise<Response> {
     retrievedChunks: retrieveResult.chunks,
     isBusinessHours: isBusinessHours(),
     productContext: productContext.promptText,
-    discountCode: offered ? { code: offered.code, description: offered.description } : null,
     customerProvidedEmail: emailMatch ? emailMatch[0].toLowerCase() : null,
   });
 
@@ -430,7 +418,7 @@ export async function POST(req: NextRequest): Promise<Response> {
         intent: finalIntent,
         retrievedChunkIds: retrieveResult.chunks.map((c) => c.id),
         productHandles: productContext.cards.map((c) => c.handle),
-        offeredCode: offered?.code ?? null,
+        offeredCode: null, // Coco no longer surfaces typed codes; discount is automatic at checkout.
         tokensIn: usage.inputTokens,
         tokensOut: usage.outputTokens,
         latencyMs: Date.now() - start,

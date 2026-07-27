@@ -271,6 +271,22 @@ function normalizeProduct(p: ShopifyProduct & { variants: { nodes?: ShopifyProdu
   };
 }
 
+/**
+ * The customer-facing storefront domain used in every link Coco shows.
+ *
+ * `SHOPIFY_STORE_DOMAIN` is the *.myshopify.com admin/API domain (required for
+ * the Storefront API), but customers must only ever see the branded primary
+ * domain (cocolash.com). We NEVER derive it by string-stripping .myshopify.com
+ * (that would turn `cocolashco.myshopify.com` into the wrong `cocolashco.com`),
+ * so the branded domain is configured explicitly via SHOPIFY_PUBLIC_STORE_DOMAIN
+ * and defaults to cocolash.com.
+ */
+export function publicStoreDomain(): string {
+  return (process.env.SHOPIFY_PUBLIC_STORE_DOMAIN ?? "cocolash.com")
+    .replace(/^https?:\/\//, "")
+    .replace(/\/+$/, "");
+}
+
 export function cartPermalink(
   variantId: string,
   quantity: number = 1,
@@ -280,10 +296,7 @@ export function cartPermalink(
   // Shopify supports the "online store" /cart/{numericVariantId}:{qty} permalink
   // with optional ?discount=CODE; we extract the numeric ID from the gid string.
   const numericId = variantId.match(/\/(\d+)$/)?.[1] ?? variantId;
-  const domain = storeDomain ?? process.env.SHOPIFY_STORE_DOMAIN ?? "cocolash.com";
-  const publicDomain = domain.endsWith(".myshopify.com")
-    ? domain
-    : domain.replace(/^https?:\/\//, "");
+  const publicDomain = (storeDomain ?? publicStoreDomain()).replace(/^https?:\/\//, "");
   const base = `https://${publicDomain}/cart/${numericId}:${quantity}`;
   return discountCode ? `${base}?discount=${encodeURIComponent(discountCode)}` : base;
 }
@@ -298,7 +311,7 @@ const TRYON_BLOCKLIST =
 const TRYON_LASH_SIGNAL =
   /\b(lash|lashes|extension|extensions|cluster|clusters|strip|strips|wispy|cat[-\s]?eye|doll[-\s]?eye)\b/i;
 const TRYON_STYLE_NAMES =
-  /\b(violet|peony|jasmine|iris|daisy|dahlia|poppy|marigold|orchid|rose|sorrel)\b/i;
+  /\b(violet|peony|jasmine|iris|daisy|dahlia|poppy|marigold|orchid|rose|sorrel|fern|ivy)\b/i;
 
 /**
  * Whether a product should offer the "See it on you" virtual try-on button.
@@ -330,7 +343,7 @@ export function productToCard(
     priceTo: formatPrice(p.priceRange.maxVariantPrice.amount),
     currency: p.priceRange.minVariantPrice.currencyCode,
     available: p.availableForSale,
-    productUrl: `https://${process.env.SHOPIFY_STORE_DOMAIN ?? "cocolash.com"}/products/${p.handle}`.replace(/(\.myshopify)\.com/, "$1.com"),
+    productUrl: `https://${publicStoreDomain()}/products/${p.handle}`,
     addToCartUrl: variantId ? cartPermalink(variantId, 1, undefined, discountCode) : "",
     tryOnEligible: isTryOnEligible(p),
   };
