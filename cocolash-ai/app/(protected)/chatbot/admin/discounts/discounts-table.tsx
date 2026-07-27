@@ -1,6 +1,12 @@
 "use client";
 
 import { useState } from "react";
+import { Plus, X, Pencil } from "lucide-react";
+
+const PRIMARY_BTN =
+  "inline-flex items-center gap-1.5 rounded-lg bg-coco-brown px-4 py-2 text-sm font-medium text-coco-cream shadow-sm transition-colors hover:bg-coco-brown-light disabled:opacity-50";
+const GHOST_BTN =
+  "inline-flex items-center gap-1.5 rounded-lg px-3 py-2 text-sm font-medium text-coco-brown-medium transition-colors hover:text-coco-brown";
 
 interface Row {
   id: string;
@@ -40,9 +46,10 @@ export function DiscountsTable({ rows: initial }: { rows: Row[] }) {
             setCreating((c) => !c);
             setEditing(null);
           }}
-          className="rounded-md bg-coco-brown px-4 py-2 text-sm font-medium text-coco-cream"
+          className={PRIMARY_BTN}
         >
-          {creating ? "Cancel" : "+ New code"}
+          {creating ? <X className="size-4" /> : <Plus className="size-4" />}
+          {creating ? "Cancel" : "New code"}
         </button>
       </div>
 
@@ -56,66 +63,79 @@ export function DiscountsTable({ rows: initial }: { rows: Row[] }) {
         />
       ) : null}
 
-      <div className="overflow-hidden rounded-md border border-coco-pink-soft bg-white">
+      <div className="overflow-hidden rounded-2xl border border-coco-pink-soft bg-white shadow-sm">
+        <div className="overflow-x-auto">
         <table className="w-full text-sm">
-          <thead className="bg-coco-beige text-left text-xs uppercase tracking-wide text-coco-brown-medium">
+          <thead className="border-b border-coco-pink-soft bg-coco-beige/70 text-left text-xs font-semibold uppercase tracking-wide text-coco-brown-medium">
             <tr>
-              <th className="px-3 py-2">Code</th>
-              <th className="px-3 py-2">Value</th>
-              <th className="px-3 py-2">Class</th>
-              <th className="px-3 py-2">Status</th>
-              <th className="px-3 py-2">Used</th>
-              <th className="px-3 py-2">Triggers</th>
-              <th className="px-3 py-2">Scope</th>
-              <th className="px-3 py-2"></th>
+              <th className="px-4 py-3">Code</th>
+              <th className="px-4 py-3">Value</th>
+              <th className="px-4 py-3">Class</th>
+              <th className="px-4 py-3">Status</th>
+              <th className="px-4 py-3">Used</th>
+              <th className="px-4 py-3">Triggers</th>
+              <th className="px-4 py-3">Scope</th>
+              <th className="px-4 py-3 text-right">Actions</th>
             </tr>
           </thead>
           <tbody>
             {rows.length === 0 ? (
               <tr>
-                <td colSpan={8} className="px-3 py-4 text-center text-coco-brown-medium">
-                  No discount rules yet — add one with “+ New code” or run the import script.
+                <td colSpan={8} className="px-4 py-8 text-center text-coco-brown-medium">
+                  No discount rules yet — add one with “New code” or run the import script.
                 </td>
               </tr>
             ) : null}
             {rows.map((r) => (
-              <tr key={r.id} className="border-t border-coco-pink-soft">
-                <td className="px-3 py-2 font-mono">{r.code}</td>
-                <td className="px-3 py-2">
+              <tr
+                key={r.id}
+                className="border-t border-coco-pink-soft/70 transition-colors hover:bg-coco-beige/40"
+              >
+                <td className="px-4 py-3 font-mono font-medium text-coco-brown">{r.code}</td>
+                <td className="px-4 py-3 tabular-nums">
                   {r.value_type === "percentage"
                     ? `${Math.abs(r.value).toFixed(0)}%`
                     : `$${Math.abs(r.value).toFixed(2)}`}
                 </td>
-                <td className="px-3 py-2">{r.discount_class}</td>
-                <td className="px-3 py-2">
+                <td className="px-4 py-3 capitalize text-coco-brown-medium">{r.discount_class}</td>
+                <td className="px-4 py-3">
                   <StatusBadge status={r.status} />
                 </td>
-                <td className="px-3 py-2">
+                <td className="px-4 py-3 tabular-nums text-coco-brown-medium">
                   {r.times_used}
                   {r.usage_limit_per_code ? ` / ${r.usage_limit_per_code}` : ""}
                 </td>
-                <td className="px-3 py-2 text-xs">
+                <td className="px-4 py-3 text-xs text-coco-brown-medium">
                   {r.intent_triggers && r.intent_triggers.length > 0 ? r.intent_triggers.join(", ") : "—"}
                 </td>
-                <td className="px-3 py-2 text-xs">
+                <td className="px-4 py-3 text-xs text-coco-brown-medium">
                   {r.product_line_scope && r.product_line_scope.length > 0 ? r.product_line_scope.join(", ") : "—"}
                 </td>
-                <td className="px-3 py-2 text-right">
+                <td className="px-4 py-3 text-right">
                   <button
                     type="button"
-                    className="text-xs underline"
+                    className="inline-flex items-center gap-1 rounded-md border border-coco-pink-dark/40 px-2.5 py-1 text-xs font-medium text-coco-brown transition-colors hover:bg-coco-pink-soft"
                     onClick={() => {
                       setEditing(editing === r.id ? null : r.id);
                       setCreating(false);
                     }}
                   >
-                    {editing === r.id ? "Cancel" : "Edit"}
+                    {editing === r.id ? (
+                      <>
+                        <X className="size-3" /> Cancel
+                      </>
+                    ) : (
+                      <>
+                        <Pencil className="size-3" /> Edit
+                      </>
+                    )}
                   </button>
                 </td>
               </tr>
             ))}
           </tbody>
         </table>
+        </div>
         {editing ? (
           <EditForm
             row={rows.find((r) => r.id === editing)!}
@@ -132,17 +152,27 @@ export function DiscountsTable({ rows: initial }: { rows: Row[] }) {
 }
 
 function StatusBadge({ status }: { status: Row["status"] }) {
-  const className =
+  const pill =
     status === "active"
-      ? "bg-green-100 text-green-800"
+      ? "bg-emerald-50 text-emerald-700 ring-emerald-600/20"
       : status === "paused"
-        ? "bg-amber-100 text-amber-800"
-        : "bg-gray-100 text-gray-700";
-  return <span className={`rounded px-2 py-0.5 text-xs ${className}`}>{status}</span>;
+        ? "bg-amber-50 text-amber-700 ring-amber-600/20"
+        : "bg-stone-100 text-stone-600 ring-stone-500/20";
+  const dot =
+    status === "active" ? "bg-emerald-500" : status === "paused" ? "bg-amber-500" : "bg-stone-400";
+  return (
+    <span
+      className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-xs font-medium capitalize ring-1 ring-inset ${pill}`}
+    >
+      <span className={`size-1.5 rounded-full ${dot}`} />
+      {status}
+    </span>
+  );
 }
 
-const FIELD_CLASS = "w-full rounded-md border border-coco-pink-soft px-2 py-1";
-const LABEL_CLASS = "mb-1 text-xs uppercase text-coco-brown-medium";
+const FIELD_CLASS =
+  "w-full rounded-lg border border-coco-pink-dark/40 bg-white px-3 py-2 text-coco-brown outline-none transition-colors focus:border-coco-golden focus:ring-2 focus:ring-coco-golden/30";
+const LABEL_CLASS = "mb-1 text-xs font-medium uppercase tracking-wide text-coco-brown-medium";
 
 function NewDiscountForm({
   onCreated,
@@ -202,7 +232,7 @@ function NewDiscountForm({
   }
 
   return (
-    <div className="rounded-md border border-coco-pink-soft bg-coco-beige p-4 text-sm">
+    <div className="rounded-2xl border border-coco-pink-soft bg-coco-beige/60 p-5 text-sm shadow-sm">
       <h3 className="mb-3 font-semibold text-coco-brown">New discount code</h3>
       <div className="grid gap-3 md:grid-cols-3">
         <label className="block">
@@ -296,11 +326,11 @@ function NewDiscountForm({
           type="button"
           onClick={save}
           disabled={saving}
-          className="rounded-md bg-coco-brown px-4 py-2 text-sm font-medium text-coco-cream disabled:opacity-50"
+          className={PRIMARY_BTN}
         >
           {saving ? "Creating…" : "Create code"}
         </button>
-        <button type="button" onClick={onCancel} className="text-sm text-coco-brown-medium underline">
+        <button type="button" onClick={onCancel} className={GHOST_BTN}>
           Cancel
         </button>
         {error ? <span className="text-sm text-red-600">{error}</span> : null}
@@ -352,7 +382,7 @@ function EditForm({
   }
 
   return (
-    <div className="border-t border-coco-pink-soft bg-coco-beige p-4 text-sm">
+    <div className="border-t border-coco-pink-soft bg-coco-beige/60 p-5 text-sm">
       <h3 className="mb-3 font-semibold text-coco-brown">Edit {draft.code}</h3>
       <div className="grid gap-3 md:grid-cols-3">
         <label className="block">
@@ -440,11 +470,11 @@ function EditForm({
           type="button"
           onClick={save}
           disabled={saving}
-          className="rounded-md bg-coco-brown px-4 py-2 text-sm font-medium text-coco-cream disabled:opacity-50"
+          className={PRIMARY_BTN}
         >
           {saving ? "Saving…" : "Save"}
         </button>
-        <button type="button" onClick={onCancel} className="text-sm text-coco-brown-medium underline">
+        <button type="button" onClick={onCancel} className={GHOST_BTN}>
           Cancel
         </button>
         {error ? <span className="text-sm text-red-600">{error}</span> : null}

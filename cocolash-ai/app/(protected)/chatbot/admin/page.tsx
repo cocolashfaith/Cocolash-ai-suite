@@ -27,24 +27,54 @@ export default async function ChatbotAdminOverview() {
 
   const fragments = (settings?.voice_fragments ?? {}) as Record<string, string>;
 
+  const live = !!settings?.bot_enabled;
+
   return (
     <div className="space-y-6">
-      <h1 className="text-2xl font-bold text-coco-brown">Coco — admin overview</h1>
-      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+      <div>
+        <h1 className="text-2xl font-bold text-coco-brown">Overview</h1>
+        <p className="mt-1 text-sm text-coco-brown-medium">
+          How Coco is doing across your store this week.
+        </p>
+      </div>
+
+      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <Stat label="Sessions today" value={String(sessionsToday ?? 0)} />
         <Stat label="Sessions (7d)" value={String(sessions7d ?? 0)} />
         <Stat label="Leads today" value={String(leadsToday ?? 0)} />
         <Stat label="Spend today" value={`$${todayCost.toFixed(2)}`} />
       </div>
-      <div className="rounded-md border border-coco-pink-soft bg-white p-4">
-        <h2 className="mb-2 text-sm font-semibold text-coco-brown">Bot status</h2>
-        <p className="text-sm text-coco-brown-medium">
-          {settings?.bot_enabled ? "✅ Live" : "⛔ Off"} · daily cap{" "}
-          <strong>${Number(settings?.daily_cap_usd ?? 0).toFixed(2)}</strong> · prompt version{" "}
-          <strong>{settings?.system_prompt_version ?? "—"}</strong>
-        </p>
-        <p className="mt-2 text-sm text-coco-brown-medium">
-          Greeting: <em>“{fragments.greeting ?? ""}”</em>
+
+      <div className="rounded-2xl border border-coco-pink-soft bg-white p-5 shadow-sm">
+        <div className="flex items-center justify-between">
+          <h2 className="text-sm font-semibold text-coco-brown">Bot status</h2>
+          <span
+            className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-xs font-medium ring-1 ring-inset ${
+              live
+                ? "bg-emerald-50 text-emerald-700 ring-emerald-600/20"
+                : "bg-stone-100 text-stone-600 ring-stone-500/20"
+            }`}
+          >
+            <span className={`size-1.5 rounded-full ${live ? "bg-emerald-500" : "bg-stone-400"}`} />
+            {live ? "Live" : "Off"}
+          </span>
+        </div>
+        <dl className="mt-4 grid gap-4 sm:grid-cols-2">
+          <div>
+            <dt className="text-xs uppercase tracking-wide text-coco-brown-medium">Daily cap</dt>
+            <dd className="mt-0.5 font-semibold text-coco-brown">
+              ${Number(settings?.daily_cap_usd ?? 0).toFixed(2)}
+            </dd>
+          </div>
+          <div>
+            <dt className="text-xs uppercase tracking-wide text-coco-brown-medium">Prompt version</dt>
+            <dd className="mt-0.5 font-semibold text-coco-brown">
+              {settings?.system_prompt_version ?? "—"}
+            </dd>
+          </div>
+        </dl>
+        <p className="mt-4 border-t border-coco-pink-soft pt-4 text-sm text-coco-brown-medium">
+          Greeting: <em className="text-coco-brown">“{fragments.greeting ?? ""}”</em>
         </p>
       </div>
     </div>
@@ -53,9 +83,9 @@ export default async function ChatbotAdminOverview() {
 
 function Stat({ label, value }: { label: string; value: string }) {
   return (
-    <div className="rounded-md border border-coco-pink-soft bg-white p-4">
-      <div className="text-xs uppercase tracking-wide text-coco-brown-medium">{label}</div>
-      <div className="mt-1 text-2xl font-bold text-coco-brown">{value}</div>
+    <div className="rounded-2xl border border-coco-pink-soft bg-white p-5 shadow-sm transition-shadow hover:shadow-md">
+      <div className="text-xs font-medium uppercase tracking-wide text-coco-brown-medium">{label}</div>
+      <div className="mt-1.5 text-3xl font-bold text-coco-brown">{value}</div>
     </div>
   );
 }

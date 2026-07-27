@@ -69,6 +69,13 @@
   --color-coco-beige-dark: #ddd3c0;
   --color-coco-charcoal: #242424;
   --color-coco-white: #ffffff;
+  /* Cream = light button/label text on dark brown surfaces. */
+  --color-coco-cream: #f7f1e7;
+  /* Soft pink = subtle borders, table rules, and hover fills on white/beige. */
+  --color-coco-pink-soft: #f0e0d4;
+  /* Warm brand red for error/danger states. */
+  --color-coco-red: #c0392b;
+  --color-coco-red-500: #d64545;
 }
 
 :root {

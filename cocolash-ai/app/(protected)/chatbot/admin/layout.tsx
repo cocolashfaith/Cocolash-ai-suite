@@ -1,27 +1,14 @@
 import { redirect } from "next/navigation";
 import Link from "next/link";
+import { ArrowLeft, MessageCircleHeart } from "lucide-react";
 import { createClient } from "@/lib/supabase/server";
 import { isChatAdmin } from "@/lib/chat/admin-auth";
-
-const NAV: Array<{ href: string; label: string }> = [
-  { href: "/chatbot/admin", label: "Overview" },
-  { href: "/chatbot/admin/discounts", label: "Discounts" },
-  { href: "/chatbot/admin/voice", label: "Voice" },
-  { href: "/chatbot/admin/content", label: "Knowledge" },
-  { href: "/chatbot/admin/transcripts", label: "Transcripts" },
-  { href: "/chatbot/admin/analytics", label: "Analytics" },
-  { href: "/chatbot/admin/leads", label: "Leads" },
-  { href: "/chatbot/admin/prompts", label: "AI Prompts" },
-  { href: "/chatbot/admin/settings", label: "Settings" },
-  { href: "/chatbot/admin/admins", label: "Manage Admins" },
-];
+import { AdminNav } from "./admin-nav";
 
 function AccessDenied({ email }: { email: string | null }) {
   return (
-    <div className="mx-auto max-w-lg space-y-4 rounded-lg border border-coco-pink-soft bg-white p-8 text-center">
-      <h1 className="text-2xl font-bold text-coco-brown">
-        Admin access required
-      </h1>
+    <div className="mx-auto max-w-lg space-y-4 rounded-2xl border border-coco-pink-soft bg-white p-8 text-center shadow-sm">
+      <h1 className="text-2xl font-bold text-coco-brown">Admin access required</h1>
       <p className="text-sm text-coco-brown-medium">
         You&rsquo;re signed in
         {email ? (
@@ -41,7 +28,7 @@ function AccessDenied({ email }: { email: string | null }) {
       <div className="flex items-center justify-center gap-3 pt-2">
         <Link
           href="/"
-          className="rounded-md bg-coco-brown px-4 py-2 text-sm font-medium text-coco-cream"
+          className="rounded-lg bg-coco-brown px-4 py-2 text-sm font-medium text-coco-cream transition-colors hover:bg-coco-brown-light"
         >
           Back to app
         </Link>
@@ -60,41 +47,65 @@ export default async function ChatbotAdminLayout({
 }) {
   const supabase = await createClient();
 
-  // Distinguish "not signed in" (→ login) from "signed in but not an admin"
-  // (→ explicit Access Denied). Previously both cases redirected to /login,
-  // which bounced authenticated non-admins (like Faith) to the main app and
-  // looked like the link was broken.
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-  if (!user) {
-    redirect("/login?next=/chatbot/admin");
-  }
-
+  // isChatAdmin now also accepts the shared access-password cookie, so an
+  // access-password session no longer bounces to /login → /generate. Only fall
+  // back to login when there is neither an admin session nor a Supabase user.
   const ok = await isChatAdmin(supabase);
   if (!ok) {
-    return <AccessDenied email={user.email ?? null} />;
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
+    if (!user) {
+      redirect("/login?next=/chatbot/admin");
+    }
+    return (
+      <div className="px-4 py-10">
+        <AccessDenied email={user.email ?? null} />
+      </div>
+    );
   }
 
   return (
-    <div className="grid gap-6 md:grid-cols-[200px_1fr]">
-      <aside className="md:sticky md:top-6 md:self-start">
-        <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-coco-brown-medium">
-          Coco admin
-        </h2>
-        <nav className="flex flex-col gap-1">
-          {NAV.map((n) => (
-            <Link
-              key={n.href}
-              href={n.href}
-              className="rounded-md px-3 py-2 text-sm text-coco-brown hover:bg-coco-pink-soft"
-            >
-              {n.label}
-            </Link>
-          ))}
-        </nav>
-      </aside>
-      <section>{children}</section>
+    <div className="mx-auto max-w-6xl px-4 py-6 md:px-6">
+      <header className="mb-6 flex flex-col gap-3 border-b border-coco-pink-soft pb-5 sm:flex-row sm:items-center sm:justify-between">
+        <div className="flex items-center gap-3">
+          <span className="flex size-10 items-center justify-center rounded-xl bg-coco-brown text-coco-golden shadow-sm">
+            <MessageCircleHeart className="size-5" />
+          </span>
+          <div>
+            <h1 className="text-lg font-bold leading-tight text-coco-brown">
+              Coco Admin
+            </h1>
+            <p className="text-xs text-coco-brown-medium">
+              Manage your CocoLash chatbot
+            </p>
+          </div>
+        </div>
+        <div className="flex items-center gap-2">
+          <Link
+            href="/chatbot"
+            className="rounded-lg border border-coco-pink-dark/40 bg-white px-3 py-1.5 text-sm font-medium text-coco-brown transition-colors hover:bg-coco-pink-soft"
+          >
+            Open chatbot
+          </Link>
+          <Link
+            href="/generate"
+            className="inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-sm font-medium text-coco-brown-medium transition-colors hover:text-coco-brown"
+          >
+            <ArrowLeft className="size-4" />
+            Back to app
+          </Link>
+        </div>
+      </header>
+
+      <div className="grid gap-6 md:grid-cols-[210px_1fr]">
+        <aside className="md:sticky md:top-6 md:self-start">
+          <div className="rounded-2xl border border-coco-pink-soft bg-white p-2 shadow-sm">
+            <AdminNav />
+          </div>
+        </aside>
+        <section className="min-w-0">{children}</section>
+      </div>
     </div>
   );
 }
