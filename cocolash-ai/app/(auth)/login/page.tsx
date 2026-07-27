@@ -33,6 +33,21 @@ export default function LoginPage() {
       });
 
       if (authError) {
+        // Fallback: some admin accounts can't sign in via Supabase (e.g. a
+        // corrupted auth record like admin@cocolash.com). If the entered
+        // password is the shared access password, log in through that path
+        // instead — it sets the access cookie, which grants admin. A wrong
+        // password fails both ways and shows the original error.
+        const res = await fetch("/api/auth", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ password }),
+        });
+        if (res.ok) {
+          router.push("/generate");
+          router.refresh();
+          return;
+        }
         setError(authError.message);
         setIsLoading(false);
         return;
