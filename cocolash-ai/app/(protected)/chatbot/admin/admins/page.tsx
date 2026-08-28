@@ -1,6 +1,6 @@
 import { createAdminClient } from "@/lib/supabase/server";
-import { addChatAdmin, removeChatAdmin } from "./actions";
 import RemoveAdminButton from "./remove-admin-button";
+import { CreateAdminForm } from "./create-admin-form";
 
 interface ChatAdminRow {
   auth_user_id: string;
@@ -29,31 +29,40 @@ export default async function ChatbotAdminAdminsPage() {
 
   return (
     <div className="space-y-6">
-      <h1 className="text-2xl font-bold text-coco-brown">Manage Admins</h1>
+      <div>
+        <h1 className="text-2xl font-bold text-coco-brown">Manage Admins</h1>
+        <p className="mt-1 text-sm text-coco-brown-medium">
+          Everyone who can sign in and see customer conversations. Create individual logins and
+          revoke access anytime.
+        </p>
+      </div>
 
       {/* Existing admins table */}
       <div className="space-y-2">
         <h2 className="text-sm font-semibold uppercase tracking-wide text-coco-brown-medium">
-          Current Admins
+          Who has access
         </h2>
         {admins.length === 0 ? (
-          <p className="text-sm text-coco-brown-medium">No admins yet. Use the form below to add one.</p>
+          <p className="text-sm text-coco-brown-medium">No individual logins yet. Create one below.</p>
         ) : (
-          <div className="overflow-x-auto rounded-md border border-coco-beige">
+          <div className="overflow-x-auto rounded-2xl border border-coco-pink-soft bg-white shadow-sm">
             <table className="w-full text-sm">
-              <thead className="border-b border-coco-beige bg-coco-beige">
+              <thead className="border-b border-coco-pink-soft bg-coco-beige/70 text-left text-xs font-semibold uppercase tracking-wide text-coco-brown-medium">
                 <tr>
-                  <th className="px-4 py-3 text-left font-semibold text-coco-brown">Email</th>
-                  <th className="px-4 py-3 text-left font-semibold text-coco-brown">Role</th>
-                  <th className="px-4 py-3 text-left font-semibold text-coco-brown">Added</th>
-                  <th className="px-4 py-3 text-right font-semibold text-coco-brown">Action</th>
+                  <th className="px-4 py-3">Email</th>
+                  <th className="px-4 py-3">Role</th>
+                  <th className="px-4 py-3">Added</th>
+                  <th className="px-4 py-3 text-right">Action</th>
                 </tr>
               </thead>
               <tbody>
                 {admins.map((admin) => (
-                  <tr key={admin.auth_user_id} className="border-b border-coco-beige hover:bg-coco-beige/50">
-                    <td className="px-4 py-3 text-coco-brown">{admin.email}</td>
-                    <td className="px-4 py-3 capitalize text-coco-brown">{admin.role}</td>
+                  <tr
+                    key={admin.auth_user_id}
+                    className="border-t border-coco-pink-soft/70 transition-colors hover:bg-coco-beige/40"
+                  >
+                    <td className="px-4 py-3 font-medium text-coco-brown">{admin.email}</td>
+                    <td className="px-4 py-3 capitalize text-coco-brown-medium">{admin.role}</td>
                     <td className="px-4 py-3 text-coco-brown-medium">{formatDate(admin.created_at)}</td>
                     <td className="px-4 py-3 text-right">
                       <RemoveAdminButton authUserId={admin.auth_user_id} email={admin.email} />
@@ -66,52 +75,7 @@ export default async function ChatbotAdminAdminsPage() {
         )}
       </div>
 
-      {/* Add admin form */}
-      <div className="space-y-2 rounded-md border border-coco-beige p-6">
-        <h2 className="text-sm font-semibold uppercase tracking-wide text-coco-brown-medium">
-          Add a New Admin
-        </h2>
-        <p className="text-sm text-coco-brown-medium">
-          Invite a teammate by email. They must have signed into the app at least once.
-        </p>
-
-        <form action={addChatAdmin} className="space-y-3 pt-3">
-          <div className="flex flex-col gap-2">
-            <label htmlFor="email" className="text-sm font-medium text-coco-brown">
-              Email
-            </label>
-            <input
-              id="email"
-              name="email"
-              type="email"
-              required
-              placeholder="team@example.com"
-              className="rounded border border-coco-beige px-3 py-2 text-sm text-coco-brown placeholder-coco-brown-medium focus:border-coco-pink-soft focus:outline-none"
-            />
-          </div>
-
-          <div className="flex flex-col gap-2">
-            <label htmlFor="role" className="text-sm font-medium text-coco-brown">
-              Role
-            </label>
-            <select
-              id="role"
-              name="role"
-              className="rounded border border-coco-beige px-3 py-2 text-sm text-coco-brown focus:border-coco-pink-soft focus:outline-none"
-            >
-              <option value="team">Team Member</option>
-              <option value="owner">Owner</option>
-            </select>
-          </div>
-
-          <button
-            type="submit"
-            className="rounded bg-coco-pink-soft px-4 py-2 text-sm font-medium text-coco-brown hover:bg-coco-pink transition-colors"
-          >
-            Add Admin
-          </button>
-        </form>
-      </div>
+      <CreateAdminForm />
     </div>
   );
 }

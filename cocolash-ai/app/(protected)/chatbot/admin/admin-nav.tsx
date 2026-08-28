@@ -13,6 +13,7 @@ import {
   Sparkles,
   Settings,
   ShieldCheck,
+  KeyRound,
   type LucideIcon,
 } from "lucide-react";
 
@@ -26,6 +27,7 @@ const NAV: Array<{ href: string; label: string; icon: LucideIcon }> = [
   { href: "/chatbot/admin/leads", label: "Leads", icon: Inbox },
   { href: "/chatbot/admin/prompts", label: "AI Prompts", icon: Sparkles },
   { href: "/chatbot/admin/settings", label: "Settings", icon: Settings },
+  { href: "/chatbot/admin/account", label: "Account", icon: KeyRound },
   { href: "/chatbot/admin/admins", label: "Manage Admins", icon: ShieldCheck },
 ];
 
