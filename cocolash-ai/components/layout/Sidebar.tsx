@@ -12,6 +12,7 @@ import {
   Loader2,
   Shield,
   Video,
+  KeyRound,
 } from "lucide-react";
 import { useState, useEffect } from "react";
 import { createClient } from "@/lib/supabase/client";
@@ -56,6 +57,12 @@ const navItems = [
     href: "/settings",
     icon: Settings,
     description: "Brand profile & preferences",
+  },
+  {
+    label: "Account",
+    href: "/account",
+    icon: KeyRound,
+    description: "Password & access",
   },
 ];
 
