@@ -1,18 +1,30 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/server";
+import {
+  MIGRATION_REQUIRED_STATUS,
+  isMissingColumnError,
+  migrationRequiredBody,
+} from "@/lib/supabase/schema-errors";
 import type { GeneratedVideo } from "@/lib/types";
 
 /**
  * GET /api/videos
  *
  * Lists generated videos, paginated and sorted by creation date.
- * Supports filtering by status and pipeline.
+ * Supports filtering by status, pipeline and Seedance engine.
+ *
+ * `engine=2.0|2.5` (D1/D14) filters on the column added by
+ * `supabase/migrations/20260908_seedance25.sql`. Before that migration runs the
+ * column does not exist and Postgres answers 42703 — we turn that into the
+ * actionable 503 "migration_required" body instead of a generic 500 so the
+ * gallery can tell the user exactly which SQL file to run.
  */
 export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url);
     const status = searchParams.get("status");
     const pipeline = searchParams.get("pipeline");
+    const engine = searchParams.get("engine");
     const limit = Math.min(Number(searchParams.get("limit") ?? 20), 100);
     const offset = Number(searchParams.get("offset") ?? 0);
 
@@ -32,9 +44,20 @@ export async function GET(request: NextRequest) {
       query = query.eq("pipeline", pipeline);
     }
 
+    if (engine === "2.0" || engine === "2.5") {
+      query = query.eq("engine", engine);
+    }
+
     const { data, error, count } = await query;
 
     if (error) {
+      // Pre-migration: `engine` does not exist yet. Say so, don't 500.
+      if (isMissingColumnError(error)) {
+        console.warn("[videos] Seedance 2.5 columns missing — migration not applied");
+        return NextResponse.json(migrationRequiredBody(error), {
+          status: MIGRATION_REQUIRED_STATUS,
+        });
+      }
       console.error("[videos] List error:", error);
       return NextResponse.json(
         { error: "Failed to fetch videos" },

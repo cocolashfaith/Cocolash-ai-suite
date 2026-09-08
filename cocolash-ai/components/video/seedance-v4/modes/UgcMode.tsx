@@ -10,6 +10,7 @@ import {
   Check,
   RefreshCw,
   Upload,
+  X,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -31,6 +32,7 @@ import { LASH_STYLE_OPTIONS } from "@/lib/prompts/modules/lash-styles";
 import type { LashStyle } from "@/lib/types";
 import type { SeedanceV4WizardState } from "../types";
 import { CapabilityCard } from "../CapabilityCard";
+import { inputLimitsFor } from "../lib/mode-input-rules";
 
 interface UgcModeProps {
   state: SeedanceV4WizardState;
@@ -53,18 +55,16 @@ function pickRandom<T>(arr: readonly { value: T }[]): T {
 }
 
 /**
- * Phase 34.1 (R-34.1-03): Step 2 is AVATAR-ONLY.
+ * UGC Step 2 — the INFLUENCER side of the request (products are picked in
+ * Step 1). Seedance 2.5 accepts several influencers, with products +
+ * influencers combined ≤ 30 (D8), so all three tabs ADD to one selection:
  *
- * Product images are now chosen in Step 1 (ProductReferencePicker → state
- * .ugcProductImageUrls). This step's single job is to produce the influencer
- * image (state.ugcInfluencerImageUrl) via one of three tabs:
  *   - Generate: synthesize a UGC avatar from look traits.
- *   - Gallery: reuse an avatar previously generated in this pipeline.
- *   - Upload: bring your own influencer image.
+ *   - Gallery:  multi-select avatars previously generated in this pipeline.
+ *   - Upload:   bring one or more of your own influencer images.
  *
- * Continuing always routes through the Enhancor-parity vision pipeline in
- * Step 3 (influencer + products[]) — the legacy single-image compose path is
- * gone for UGC.
+ * `ugcInfluencerImageUrl` is kept equal to `ugcInfluencerImageUrls[0]` — Step
+ * 3's vision path still keys on the single-image field.
  */
 export function UgcMode({ state, setState, onReady }: UgcModeProps) {
   const [activeTab, setActiveTab] = useState<"generate" | "gallery" | "upload">(
@@ -80,19 +80,17 @@ export function UgcMode({ state, setState, onReady }: UgcModeProps) {
   const [vibe, setVibe] = useState<UGCVibe>("excited-discovery");
   const [lashStyle, setLashStyle] = useState<LashStyle>("natural");
 
-  // Generated avatar
-  const [generatedAvatarUrl, setGeneratedAvatarUrl] = useState<string | null>(null);
   const [isGeneratingAvatar, setIsGeneratingAvatar] = useState(false);
 
   // Gallery
   const [galleryAvatars, setGalleryAvatars] = useState<GalleryAvatar[]>([]);
   const [loadingGallery, setLoadingGallery] = useState(false);
-  const [selectedGalleryUrl, setSelectedGalleryUrl] = useState<string | null>(null);
-
-  // Upload-your-own influencer
-  const [uploadedInfluencerUrl, setUploadedInfluencerUrl] = useState<string | null>(null);
 
   const productCount = state.ugcProductImageUrls?.length ?? 0;
+  const influencers = state.ugcInfluencerImageUrls ?? [];
+  const combinedCap = inputLimitsFor(state.engine, "ugc").ugcCombined;
+  const maxInfluencers = Math.max(0, combinedCap - productCount);
+  const atLimit = influencers.length >= maxInfluencers;
 
   useEffect(() => {
     if (activeTab === "gallery" && galleryAvatars.length === 0) {
@@ -106,7 +104,7 @@ export function UgcMode({ state, setState, onReady }: UgcModeProps) {
     try {
       // Only UGC avatars produced by THIS Seedance pipeline (tag "ugc-avatar").
       const res = await fetch(
-        "/api/images?limit=24&assetTag=ugc-avatar&sortBy=created_at&sortOrder=desc"
+        "/api/images?limit=48&assetTag=ugc-avatar&sortBy=created_at&sortOrder=desc"
       );
       const data = await res.json();
       if (res.ok) {
@@ -117,6 +115,51 @@ export function UgcMode({ state, setState, onReady }: UgcModeProps) {
     } finally {
       setLoadingGallery(false);
     }
+  }
+
+  const addInfluencers = useCallback(
+    (urls: string[]) => {
+      setState((prev) => {
+        const current = prev.ugcInfluencerImageUrls ?? [];
+        const cap = Math.max(
+          0,
+          inputLimitsFor(prev.engine, "ugc").ugcCombined -
+            (prev.ugcProductImageUrls?.length ?? 0)
+        );
+        const merged = [...current];
+        for (const url of urls) {
+          if (merged.length >= cap) break;
+          if (!merged.includes(url)) merged.push(url);
+        }
+        if (merged.length === current.length) return {};
+        return { ugcInfluencerImageUrls: merged, ugcInfluencerImageUrl: merged[0] };
+      });
+    },
+    [setState]
+  );
+
+  const removeInfluencer = useCallback(
+    (url: string) => {
+      setState((prev) => {
+        const next = (prev.ugcInfluencerImageUrls ?? []).filter((u) => u !== url);
+        return { ugcInfluencerImageUrls: next, ugcInfluencerImageUrl: next[0] };
+      });
+    },
+    [setState]
+  );
+
+  function toggleInfluencer(url: string) {
+    if (influencers.includes(url)) {
+      removeInfluencer(url);
+      return;
+    }
+    if (atLimit) {
+      toast.error(
+        `Products + influencers are capped at ${combinedCap} — remove one first.`
+      );
+      return;
+    }
+    addInfluencers([url]);
   }
 
   function handleRandomize() {
@@ -131,8 +174,11 @@ export function UgcMode({ state, setState, onReady }: UgcModeProps) {
   }
 
   async function handleGenerateAvatar() {
+    if (atLimit) {
+      toast.error(`Products + influencers are capped at ${combinedCap}.`);
+      return;
+    }
     setIsGeneratingAvatar(true);
-    setGeneratedAvatarUrl(null);
     try {
       const res = await fetch("/api/seedance/generate-ugc-image", {
         method: "POST",
@@ -152,8 +198,8 @@ export function UgcMode({ state, setState, onReady }: UgcModeProps) {
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Avatar generation failed");
-      setGeneratedAvatarUrl(data.imageUrl);
-      toast.success("Avatar generated.");
+      addInfluencers([data.imageUrl]);
+      toast.success("Avatar generated and added.");
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Avatar generation failed");
     } finally {
@@ -161,23 +207,10 @@ export function UgcMode({ state, setState, onReady }: UgcModeProps) {
     }
   }
 
-  const currentAvatar =
-    activeTab === "gallery"
-      ? selectedGalleryUrl
-      : activeTab === "upload"
-      ? uploadedInfluencerUrl
-      : generatedAvatarUrl;
-
   const handleContinue = useCallback(() => {
-    const finalAvatar =
-      activeTab === "gallery"
-        ? selectedGalleryUrl
-        : activeTab === "upload"
-        ? uploadedInfluencerUrl
-        : generatedAvatarUrl;
-
-    if (!finalAvatar) {
-      toast.error("Generate, pick, or upload an avatar first.");
+    const chosen = state.ugcInfluencerImageUrls ?? [];
+    if (chosen.length === 0) {
+      toast.error("Generate, pick, or upload at least one influencer image first.");
       return;
     }
     if ((state.ugcProductImageUrls?.length ?? 0) === 0) {
@@ -185,32 +218,24 @@ export function UgcMode({ state, setState, onReady }: UgcModeProps) {
       return;
     }
 
-    // Always the Enhancor-parity vision pipeline: influencer + products[].
+    // Always the Enhancor-parity vision pipeline: influencers[] + products[].
     setState({
-      ugcInfluencerImageUrl: finalAvatar,
+      ugcInfluencerImageUrl: chosen[0],
       // Clear legacy single-image compose fields so Step 3 uses the vision path.
       ugcComposedImageUrl: undefined,
       ugcWasComposed: false,
       ugcSeparateProductUrl: undefined,
     });
     onReady();
-  }, [
-    activeTab,
-    selectedGalleryUrl,
-    uploadedInfluencerUrl,
-    generatedAvatarUrl,
-    state.ugcProductImageUrls,
-    setState,
-    onReady,
-  ]);
+  }, [state.ugcInfluencerImageUrls, state.ugcProductImageUrls, setState, onReady]);
 
-  const canContinue = !!currentAvatar && productCount >= 1;
+  const canContinue = influencers.length > 0 && productCount >= 1;
 
   return (
     <div className="space-y-6">
       <CapabilityCard mode="ugc" />
 
-      {/* Product recap — products were chosen in Step 1; this step is avatar-only. */}
+      {/* Reference budget recap — products come from Step 1. */}
       <div
         className={cn(
           "flex items-center gap-2 rounded-lg border-2 px-3 py-2 text-[11px]",
@@ -222,13 +247,47 @@ export function UgcMode({ state, setState, onReady }: UgcModeProps) {
         {productCount > 0 ? (
           <>
             <Check className="h-3.5 w-3.5 text-coco-golden" />
-            {productCount} product image{productCount !== 1 ? "s" : ""} selected in
-            Step 1.
+            {productCount} product image{productCount !== 1 ? "s" : ""} from Step 1 ·{" "}
+            {influencers.length} / {maxInfluencers} influencer
+            {maxInfluencers !== 1 ? "s" : ""} (combined cap {combinedCap}).
           </>
         ) : (
           <>No product selected — go back to Step 1 and pick at least one.</>
         )}
       </div>
+
+      {/* Selected influencers */}
+      {influencers.length > 0 && (
+        <section className="space-y-2 rounded-xl border-2 border-coco-beige-dark/50 bg-white/50 p-4">
+          <div className="flex items-baseline justify-between gap-3">
+            <h3 className="text-sm font-semibold text-coco-brown">Chosen influencers</h3>
+            <p className="text-[11px] font-medium text-coco-golden">
+              {influencers.length} / {maxInfluencers}
+            </p>
+          </div>
+          <div className="grid grid-cols-4 gap-2 sm:grid-cols-6">
+            {influencers.map((url, i) => (
+              <div key={url} className="group relative aspect-[9/16]">
+                {/* Supabase / CDN hosts are not in next.config remotePatterns. */}
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img
+                  src={url}
+                  alt={`Influencer ${i + 1}`}
+                  className="h-full w-full rounded-lg border-2 border-coco-golden/30 object-cover"
+                />
+                <button
+                  type="button"
+                  onClick={() => removeInfluencer(url)}
+                  aria-label={`Remove influencer ${i + 1}`}
+                  className="absolute right-1 top-1 flex h-5 w-5 items-center justify-center rounded-full bg-coco-brown/70 text-white transition-colors hover:bg-red-500"
+                >
+                  <X className="h-3 w-3" />
+                </button>
+              </div>
+            ))}
+          </div>
+        </section>
+      )}
 
       {/* Tab switcher */}
       <div className="flex flex-wrap gap-1.5 rounded-lg bg-coco-beige/50 p-1">
@@ -257,9 +316,9 @@ export function UgcMode({ state, setState, onReady }: UgcModeProps) {
           <div>
             <h3 className="text-sm font-semibold text-coco-brown">Avatar look</h3>
             <p className="mt-0.5 text-[11px] text-coco-brown-medium/60">
-              These traits define the creator. The avatar is generated alone — the
-              products you picked in Step 1 are sent to Seedance as separate
-              references.
+              These traits define the creator. Each generated avatar is added to your
+              influencer selection — the products you picked in Step 1 are sent to Seedance
+              as separate references.
             </p>
           </div>
 
@@ -302,7 +361,7 @@ export function UgcMode({ state, setState, onReady }: UgcModeProps) {
             <Button
               type="button"
               onClick={handleGenerateAvatar}
-              disabled={isGeneratingAvatar}
+              disabled={isGeneratingAvatar || atLimit}
               className="flex-1 gap-2 bg-coco-brown py-5 text-sm font-semibold text-white shadow-md hover:bg-coco-brown-light disabled:opacity-50"
               size="lg"
             >
@@ -311,10 +370,10 @@ export function UgcMode({ state, setState, onReady }: UgcModeProps) {
                   <Loader2 className="h-4 w-4 animate-spin" />
                   Generating…
                 </>
-              ) : generatedAvatarUrl ? (
+              ) : influencers.length > 0 ? (
                 <>
                   <RefreshCw className="h-4 w-4" />
-                  Regenerate Avatar
+                  Generate Another Avatar
                 </>
               ) : (
                 <>
@@ -333,18 +392,6 @@ export function UgcMode({ state, setState, onReady }: UgcModeProps) {
               Randomize
             </Button>
           </div>
-
-          {generatedAvatarUrl && (
-            <div className="overflow-hidden rounded-xl border-2 border-coco-golden/30 bg-white">
-              <div className="aspect-[9/16] max-h-80 bg-coco-beige-light">
-                <img
-                  src={generatedAvatarUrl}
-                  alt="UGC Avatar"
-                  className="h-full w-full object-cover"
-                />
-              </div>
-            </div>
-          )}
         </section>
       )}
 
@@ -355,8 +402,8 @@ export function UgcMode({ state, setState, onReady }: UgcModeProps) {
               Your Seedance UGC avatars
             </h3>
             <p className="mt-0.5 text-[11px] text-coco-brown-medium/60">
-              Avatars previously generated in this Seedance UGC pipeline.
-              (Doesn&apos;t include images from the Generate page or Brand Content
+              Avatars previously generated in this Seedance UGC pipeline — tap to add or
+              remove. (Doesn&apos;t include images from the Generate page or Brand Content
               Studio pipeline.)
             </p>
           </div>
@@ -377,19 +424,23 @@ export function UgcMode({ state, setState, onReady }: UgcModeProps) {
           ) : (
             <div className="grid grid-cols-3 gap-2 sm:grid-cols-4">
               {galleryAvatars.map((img) => {
-                const isSelected = selectedGalleryUrl === img.image_url;
+                const isSelected = influencers.includes(img.image_url);
+                const blocked = !isSelected && atLimit;
                 return (
                   <button
                     key={img.id}
                     type="button"
-                    onClick={() => setSelectedGalleryUrl(img.image_url)}
+                    disabled={blocked}
+                    onClick={() => toggleInfluencer(img.image_url)}
                     className={cn(
                       "group relative aspect-[9/16] overflow-hidden rounded-lg border-2 transition-all",
                       isSelected
                         ? "border-coco-golden ring-2 ring-coco-golden/30"
-                        : "border-transparent hover:border-coco-golden/40"
+                        : "border-transparent hover:border-coco-golden/40",
+                      blocked && "cursor-not-allowed opacity-40"
                     )}
                   >
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
                     <img
                       src={img.image_url}
                       alt="UGC avatar"
@@ -414,16 +465,17 @@ export function UgcMode({ state, setState, onReady }: UgcModeProps) {
         <section className="space-y-3 rounded-xl border-2 border-coco-beige-dark/50 bg-white/50 p-4">
           <div>
             <h3 className="text-sm font-semibold text-coco-brown">
-              Influencer Image <span className="text-coco-golden">*</span>
+              Influencer Images <span className="text-coco-golden">*</span>
             </h3>
             <p className="mt-0.5 text-[11px] text-coco-brown-medium/60">
-              Bring your own creator/talent image. It becomes the influencer the
-              video is built around.
+              Bring your own creator/talent images. They become the influencers the video is
+              built around — pick several to give Seedance more angles.
             </p>
           </div>
-          <InfluencerPicker
-            selectedUrl={uploadedInfluencerUrl}
-            onSelect={setUploadedInfluencerUrl}
+          <InfluencerUploader
+            disabled={atLimit}
+            remaining={maxInfluencers - influencers.length}
+            onUploaded={addInfluencers}
           />
         </section>
       )}
@@ -499,41 +551,75 @@ function Dropdown({
   );
 }
 
-function InfluencerPicker({
-  selectedUrl,
-  onSelect,
+/**
+ * Multi-file influencer upload. Uses the existing /api/images/upload route
+ * (public `generated-images` bucket) — the same path the single-image picker
+ * used before, just batched.
+ */
+function InfluencerUploader({
+  disabled,
+  remaining,
+  onUploaded,
 }: {
-  selectedUrl: string | null;
-  onSelect: (url: string) => void;
+  disabled: boolean;
+  remaining: number;
+  onUploaded: (urls: string[]) => void;
 }) {
   const fileRef = useRef<HTMLInputElement>(null);
   const [uploading, setUploading] = useState(false);
 
   async function handleUpload(e: React.ChangeEvent<HTMLInputElement>) {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    if (!file.type.startsWith("image/")) {
-      toast.error("Please select an image file");
+    const picked = Array.from(e.target.files ?? []);
+    const reset = () => {
+      if (fileRef.current) fileRef.current.value = "";
+    };
+    if (picked.length === 0) return;
+
+    const valid: File[] = [];
+    for (const file of picked) {
+      if (!file.type.startsWith("image/")) {
+        toast.error(`"${file.name}" is not an image — skipped.`);
+        continue;
+      }
+      if (file.size > 10 * 1024 * 1024) {
+        toast.error(`"${file.name}" is over 10 MB — skipped.`);
+        continue;
+      }
+      valid.push(file);
+    }
+    const toUpload = valid.slice(0, Math.max(0, remaining));
+    if (valid.length > toUpload.length) {
+      toast.warning(`Only ${Math.max(0, remaining)} more can be added.`);
+    }
+    if (toUpload.length === 0) {
+      reset();
       return;
     }
-    if (file.size > 10 * 1024 * 1024) {
-      toast.error("Image must be under 10 MB");
-      return;
-    }
+
     setUploading(true);
+    const urls: string[] = [];
     try {
-      const fd = new FormData();
-      fd.append("file", file);
-      const res = await fetch("/api/images/upload", { method: "POST", body: fd });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || "Upload failed");
-      onSelect(data.image.image_url);
-      toast.success("Influencer image uploaded.");
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Upload failed");
+      for (const file of toUpload) {
+        try {
+          const fd = new FormData();
+          fd.append("file", file);
+          const res = await fetch("/api/images/upload", { method: "POST", body: fd });
+          const data = await res.json();
+          if (!res.ok) throw new Error(data.error || "Upload failed");
+          urls.push(data.image.image_url);
+        } catch (err) {
+          toast.error(
+            `${file.name}: ${err instanceof Error ? err.message : "Upload failed"}`
+          );
+        }
+      }
+      if (urls.length > 0) {
+        onUploaded(urls);
+        toast.success(`${urls.length} influencer image${urls.length === 1 ? "" : "s"} added.`);
+      }
     } finally {
       setUploading(false);
-      if (fileRef.current) fileRef.current.value = "";
+      reset();
     }
   }
 
@@ -543,16 +629,17 @@ function InfluencerPicker({
         ref={fileRef}
         type="file"
         accept="image/*"
+        multiple
         onChange={handleUpload}
         className="hidden"
       />
       <button
         type="button"
         onClick={() => fileRef.current?.click()}
-        disabled={uploading}
+        disabled={uploading || disabled}
         className={cn(
           "w-full rounded-lg border-2 border-dashed border-coco-beige-dark px-4 py-6 text-center transition-all hover:border-coco-golden/40 hover:bg-coco-golden/5",
-          uploading && "opacity-50"
+          (uploading || disabled) && "opacity-50"
         )}
       >
         {uploading ? (
@@ -564,26 +651,13 @@ function InfluencerPicker({
           <>
             <Upload className="mx-auto h-5 w-5 text-coco-brown-medium/60" />
             <p className="mt-1 text-sm font-medium text-coco-brown">
-              Click to upload influencer image
+              {disabled
+                ? "Reference limit reached"
+                : "Click to upload one or more influencer images"}
             </p>
           </>
         )}
       </button>
-      {selectedUrl && (
-        <div className="overflow-hidden rounded-lg border-2 border-coco-golden/30 bg-white">
-          <img
-            src={selectedUrl}
-            alt="Selected influencer"
-            className="h-64 w-full object-cover"
-          />
-          <div className="border-t border-coco-beige px-3 py-2">
-            <p className="flex items-center gap-1.5 text-[11px] text-coco-brown-medium">
-              <Check className="h-3.5 w-3.5 text-coco-golden" />
-              Influencer image selected
-            </p>
-          </div>
-        </div>
-      )}
     </div>
   );
 }

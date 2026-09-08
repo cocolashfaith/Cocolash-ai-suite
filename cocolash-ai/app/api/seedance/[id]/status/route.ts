@@ -2,13 +2,30 @@ import { NextRequest, NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/server";
 import { querySeedanceTask } from "@/lib/seedance/client";
 import { completeSeedanceVideo } from "@/lib/seedance/completion";
+import { recordActualCost } from "@/lib/costs/tracker";
+import { creditsToUsd } from "@/lib/seedance/pricing";
+import { getVideoSettings } from "@/lib/settings/video-settings";
 import { SeedanceError } from "@/lib/seedance/types";
-import type { GeneratedVideo, VideoStatusResponse } from "@/lib/types";
+import { querySeedance25Task } from "@/lib/seedance/v25/client";
+import { safeUpdateVideo, truncateErrorMessage } from "@/lib/seedance/v25/db";
+import { rowHasSeedance25Columns } from "@/lib/supabase/schema-errors";
+import type {
+  GeneratedVideo,
+  QualityTier,
+  SeedanceEngine,
+  VideoStatusResponse,
+} from "@/lib/types";
 
 /**
  * GET /api/seedance/[id]/status
  *
- * Polls the current status of a Seedance video generation request.
+ * Polls the current status of a Seedance video generation request — for BOTH
+ * engines (03-PLAN.md §1.3). The engine column picks the client:
+ *   2.5 → POST {SEEDANCE_25_API_BASE}/status (idempotent, retries once)
+ *   2.0 → the legacy querySeedanceTask (unchanged)
+ *
+ * It also backfills `credits_cost` for a completed 2.5 row whose real cost is
+ * still unknown (the webhook may have been lost).
  *
  * Flow:
  * 1. Fetch video record from `generated_videos` (pipeline = 'seedance')
@@ -47,9 +64,13 @@ export async function GET(
     }
 
     const typedVideo = video as GeneratedVideo;
+    const engine: SeedanceEngine = typedVideo.engine ?? "2.0";
 
     if (typedVideo.heygen_status === "completed") {
-      return NextResponse.json(buildStatusResponse(typedVideo));
+      // A completed 2.5 row whose real credit cost never arrived (lost webhook):
+      // one status call backfills it. Best effort — never fails the response.
+      const backfilled = await backfillCreditsCost(supabase, typedVideo, engine);
+      return NextResponse.json(buildStatusResponse(backfilled));
     }
 
     if (typedVideo.heygen_status === "failed") {
@@ -67,9 +88,9 @@ export async function GET(
 
     // Poll Enhancor for status update. The webhook path can also complete this
     // record, so polling errors are non-terminal unless Enhancor says FAILED.
-    let taskStatus;
+    let poll: PollResult;
     try {
-      taskStatus = await querySeedanceTask(typedVideo.seedance_task_id);
+      poll = await pollEngine(engine, typedVideo.seedance_task_id);
     } catch (error) {
       console.error("[seedance/status] Enhancor poll error:", error);
 
@@ -84,9 +105,8 @@ export async function GET(
       );
     }
 
-    if (taskStatus.status === "COMPLETED") {
-      const rawVideoUrl = taskStatus.output?.video_url ?? null;
-      if (!rawVideoUrl) {
+    if (poll.status === "COMPLETED") {
+      if (!poll.videoUrl) {
         return NextResponse.json(
           buildStatusResponse(typedVideo, "Enhancor completed without a video URL")
         );
@@ -95,34 +115,35 @@ export async function GET(
       const updatedVideo = await completeSeedanceVideo({
         supabase,
         video: typedVideo,
-        rawVideoUrl,
-        thumbnailUrl: taskStatus.output?.thumbnail_url ?? null,
+        rawVideoUrl: poll.videoUrl,
+        thumbnailUrl: poll.thumbnailUrl,
+        creditsCost: poll.cost ?? null,
+        engine,
       });
       return NextResponse.json(buildStatusResponse(updatedVideo));
     }
 
-    if (taskStatus.status === "FAILED") {
-      const errorMsg = taskStatus.error ?? "Seedance video generation failed";
+    if (poll.status === "FAILED") {
+      const errorMsg = poll.error ?? "Seedance video generation failed";
 
-      await supabase
-        .from("generated_videos")
-        .update({
-          heygen_status: "failed",
-          completed_at: new Date().toISOString(),
-        })
-        .eq("id", id);
+      await safeUpdateVideo(supabase, id, {
+        heygen_status: "failed",
+        completed_at: new Date().toISOString(),
+        ...(rowHasSeedance25Columns(typedVideo as unknown as Record<string, unknown>)
+          ? { error_message: truncateErrorMessage(errorMsg) }
+          : {}),
+      });
 
       return NextResponse.json(
         buildStatusResponse(
-          { ...typedVideo, heygen_status: "failed" },
+          { ...typedVideo, heygen_status: "failed", error_message: errorMsg },
           errorMsg
         )
       );
     }
 
     // PENDING / IN_QUEUE / IN_PROGRESS / PROCESSING — update status if changed
-    const mappedStatus =
-      taskStatus.status === "PENDING" ? "pending" : "processing";
+    const mappedStatus = poll.status === "PENDING" ? "pending" : "processing";
 
     if (mappedStatus !== typedVideo.heygen_status) {
       await supabase
@@ -142,6 +163,67 @@ export async function GET(
     const message =
       error instanceof Error ? error.message : "Failed to check video status";
     return NextResponse.json({ error: message }, { status: 500 });
+  }
+}
+
+type SupabaseAdmin = Awaited<ReturnType<typeof createAdminClient>>;
+
+/** Engine-agnostic shape so the flow below reads the same for 2.0 and 2.5. */
+interface PollResult {
+  status: string;
+  videoUrl: string | null;
+  thumbnailUrl: string | null;
+  /** Credits — 2.5 only. */
+  cost?: number;
+  error?: string;
+}
+
+async function pollEngine(engine: SeedanceEngine, taskId: string): Promise<PollResult> {
+  if (engine === "2.5") {
+    const result = await querySeedance25Task(taskId);
+    return {
+      status: result.status,
+      videoUrl: result.resultUrl ?? null,
+      thumbnailUrl: result.thumbnailUrl ?? null,
+      cost: result.cost,
+      error: result.error,
+    };
+  }
+
+  const result = await querySeedanceTask(taskId);
+  return {
+    status: result.status,
+    videoUrl: result.output?.video_url ?? null,
+    thumbnailUrl: result.output?.thumbnail_url ?? null,
+    error: result.error ?? undefined,
+  };
+}
+
+/**
+ * Completed 2.5 row + no `credits_cost` + a task id ⇒ ask Enhancor once for the
+ * real cost. Purely additive: any failure leaves the row exactly as it was.
+ */
+async function backfillCreditsCost(
+  supabase: SupabaseAdmin,
+  video: GeneratedVideo,
+  engine: SeedanceEngine
+): Promise<GeneratedVideo> {
+  if (engine !== "2.5") return video;
+  if (video.credits_cost != null) return video;
+  if (!video.seedance_task_id) return video;
+
+  try {
+    const result = await querySeedance25Task(video.seedance_task_id);
+    if (result.cost == null || !Number.isFinite(result.cost)) return video;
+
+    const settings = await getVideoSettings(supabase);
+    const usd = Number(creditsToUsd(result.cost, settings.usd_per_credit).toFixed(4));
+    await recordActualCost(video.id, usd, { credits: result.cost });
+
+    return { ...video, credits_cost: result.cost, processing_cost: usd };
+  } catch (error) {
+    console.error("[seedance/status] credits_cost backfill failed (non-fatal):", error);
+    return video;
   }
 }
 
@@ -166,6 +248,25 @@ function buildStatusResponse(
   } else if (video.heygen_status === "pending") {
     response.progress = 10;
   }
+
+  // ── Seedance 2.5 metadata (absent on pre-migration rows) ────
+  if (video.engine) response.engine = video.engine;
+  if (video.seedance_mode !== undefined) response.mode = video.seedance_mode;
+  if (video.resolution !== undefined) response.resolution = video.resolution;
+  if (video.quality_tier !== undefined) {
+    response.qualityTier = video.quality_tier as QualityTier | null;
+  }
+  if (video.requested_duration !== undefined) {
+    response.requestedDuration = video.requested_duration;
+  }
+  if (video.credits_cost !== undefined) {
+    response.creditsCost = video.credits_cost == null ? null : Number(video.credits_cost);
+  }
+  if (video.processing_cost !== undefined && video.processing_cost !== null) {
+    response.costUsd = Number(video.processing_cost);
+  }
+  if (video.error_message !== undefined) response.errorMessage = video.error_message;
+  if (video.rerender_of !== undefined) response.rerenderOf = video.rerender_of;
 
   if (error) {
     response.error = error;

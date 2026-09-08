@@ -16,6 +16,20 @@ import {
  * that contract — adding a new lash style or kit without a categoryKey
  * (or with a key that does not exist in the live DB) will fail CI.
  */
+/**
+ * Seedance 2.5 (D7) exceptions to the packaging→category rule. Three SKUs get
+ * their OWN category because the shared packaging category misrepresents them
+ * on screen: Sorrel is a dark-brown lash but the nude-tray reference photos are
+ * black, and Fern/Ivy are pre-glued half lashes that look nothing like the
+ * full-kit box shots. Their images are seeded from live Shopify imagery by
+ * scripts/seed-shopify-references.ts. Everything else still follows the rule.
+ */
+const PER_SKU_CATEGORY_EXCEPTIONS: Record<string, string> = {
+  sorrel: "sorrel",
+  fern: "fern",
+  ivy: "ivy",
+};
+
 describe("Phase 27 — categoryKey coverage", () => {
   const active = getActiveProducts();
 
@@ -27,7 +41,7 @@ describe("Phase 27 — categoryKey coverage", () => {
     expect(missing).toEqual([]);
   });
 
-  it("every categoryKey is in the known seven-key allowlist", () => {
+  it("every categoryKey is in the known allowlist", () => {
     const allowed = new Set(KNOWN_PRODUCT_CATEGORY_KEYS);
     const invalid = active
       .filter((p) => p.categoryKey && !allowed.has(p.categoryKey))
@@ -44,8 +58,30 @@ describe("Phase 27 — categoryKey coverage", () => {
     );
 
     for (const p of singles) {
+      const exception = PER_SKU_CATEGORY_EXCEPTIONS[p.sku];
+      if (exception) {
+        expect(p.categoryKey).toBe(exception);
+        continue;
+      }
       expect(p.categoryKey).toMatch(/^single-(black|nude)-tray$/);
     }
+  });
+
+  it("the per-SKU exceptions are exactly Sorrel, Fern and Ivy", () => {
+    const offRule = active
+      .filter((p) => {
+        if (p.lashType === "tools" || !p.categoryKey) return false;
+        if (p.lashType === "kit") return p.categoryKey !== "full-kit-box";
+        if (p.packagingType === "single-pack lash tray") {
+          return !/^single-(black|nude)-tray$/.test(p.categoryKey);
+        }
+        if (p.packagingType === "four-pack box") return p.categoryKey !== "multi-lash-book";
+        return false;
+      })
+      .map((p) => p.sku)
+      .sort();
+
+    expect(offRule).toEqual(["fern", "ivy", "sorrel"]);
   });
 
   it("four-packs map to multi-lash-book", () => {
@@ -63,6 +99,11 @@ describe("Phase 27 — categoryKey coverage", () => {
     const kits = active.filter((p) => p.lashType === "kit");
 
     for (const p of kits) {
+      const exception = PER_SKU_CATEGORY_EXCEPTIONS[p.sku];
+      if (exception) {
+        expect(p.categoryKey).toBe(exception);
+        continue;
+      }
       expect(p.categoryKey).toBe("full-kit-box");
     }
   });

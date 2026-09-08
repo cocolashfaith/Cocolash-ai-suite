@@ -2,7 +2,18 @@
 
 import { cn } from "@/lib/utils";
 import { Film, Smartphone, Sparkles, Check } from "lucide-react";
+import { estimateCredits, formatUsd } from "@/lib/seedance/pricing";
 import type { VideoPipeline } from "@/lib/types";
+
+/** Cheapest realistic Seedance 2.5 run: UGC, 720p draft, 8 s. */
+const SEEDANCE_FROM_PRICE = formatUsd(
+  estimateCredits({
+    engine: "2.5",
+    mode: "ugc",
+    resolution: "720p",
+    durationSeconds: 8,
+  }).usd
+);
 
 interface PipelineSelectorProps {
   onSelect: (pipeline: VideoPipeline) => void;
@@ -35,16 +46,16 @@ const PIPELINES: {
   },
   {
     value: "seedance",
-    title: "Seedance 2.0 Pipeline",
+    title: "Seedance Pipeline",
     description:
-      "Authentic UGC-style videos with iPhone aesthetic. AI speaks your script or lip-syncs your voice. Best for TikTok/Reels ad creatives.",
-    badge: "New",
+      "Authentic UGC-style videos with iPhone aesthetic. Seedance 2.5 by default (nine modes, 4–30 s or Auto, draft/final quality tiers) with 2.0 still available as legacy.",
+    badge: "Seedance 2.5",
     badgeColor: "bg-coco-golden/20 text-coco-golden",
-    cost: "~$3.20 / 15s 720p video",
+    cost: `from ≈ ${SEEDANCE_FROM_PRICE} / 8 s draft`,
     icon: Smartphone,
     bullets: [
-      "iPhone-style UGC aesthetic",
-      "AI speaks or lip-syncs your audio",
+      "Nine modes — UGC, edit, extend, lip-sync, voice clone and more",
+      "Draft 720p to iterate, re-render the keeper as Final 1080p",
       "3-step wizard, no composition needed",
     ],
   },

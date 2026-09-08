@@ -14,8 +14,8 @@ import type { ProductTruthEntry } from "@/lib/brand/product-truth";
 
 /**
  * All nine Seedance 2.5 modes (a superset of the six 2.0 Director modes).
- * `edit`, `extend` and `voice_clone` get their system prompts in Wave 1
- * (package F); until then getSeedanceDirectorPrompt() throws for them.
+ * Every one of them has a registered system prompt — see
+ * `getSeedanceDirectorPrompt` in ./system-prompts.ts.
  */
 export type DirectorMode = Seedance25Mode;
 
@@ -36,7 +36,10 @@ export interface DirectorInput {
 
   /** Seedance 2.5 edit / extend: the source clip(s) the model must change or continue. */
   sourceVideoUrls?: string[];
-  /** Seedance 2.5 edit / extend: what to change (edit) or how to continue (extend). */
+  /**
+   * Seedance 2.5 edit / extend: what to change (edit — required) or how to
+   * continue (extend — optional).
+   */
   editInstruction?: string;
   /** Seedance 2.5 multi_reference: several audio refs (`@audioN`). */
   referenceAudioUrls?: string[];
@@ -50,7 +53,7 @@ export interface DirectorInput {
    */
   script?: string;
 
-  /** UGC / lipsyncing / first_n_last_frames primary subject. */
+  /** UGC / lipsyncing / voice_clone / first_n_last_frames primary subject. */
   composedPersonProductImage?: ImageRoleRef;
 
   /** multi_reference: N labeled reference images. */
@@ -59,7 +62,7 @@ export interface DirectorInput {
   /** multi_reference / multi_frame / lipsyncing / first_n_last_frames: optional motion ref. */
   referenceVideoUrl?: string;
 
-  /** lipsyncing / multi_reference: optional audio ref. */
+  /** lipsyncing / voice_clone / multi_reference: the audio ref (@audio1). */
   referenceAudioUrl?: string;
 
   /** first_n_last_frames: required first frame (UGC composed image OR upload). */
@@ -68,7 +71,7 @@ export interface DirectorInput {
   /** first_n_last_frames: NanoBanana-generated last frame (passed back from director). */
   lastFrameImage?: ImageRoleRef;
 
-  /** multi_frame: how many segments to plan (4-15s total). */
+  /** multi_frame: how many segments to plan (≤ 10, each 3-8s, 4-30s total). */
   multiFrameSegmentCount?: number;
 
   /**
@@ -115,7 +118,7 @@ export interface DirectorInput {
 export interface DirectorPromptOutput {
   /** The prompt body sent to Enhancor. For multi_frame this is empty (use segments). */
   prompt: string;
-  /** multi_frame mode only — array of {prompt, duration} segments summing 4-15s. */
+  /** multi_frame mode only — array of {prompt, duration} segments summing 4-30s. */
   multiFramePrompts?: SeedanceMultiFramePrompt[];
   /** Diagnostics — what the model was told. Surfaced by /admin/prompts viewer. */
   diagnostics: {

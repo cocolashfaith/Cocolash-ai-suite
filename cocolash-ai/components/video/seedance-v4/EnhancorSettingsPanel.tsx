@@ -1,6 +1,16 @@
 "use client";
 
 import { cn } from "@/lib/utils";
+import {
+  QUALITY_TIERS,
+  engineLabel,
+  qualityTierToResolution,
+} from "@/lib/seedance/engines";
+import {
+  SEEDANCE_25_MODE_LABELS,
+  type Seedance25Mode,
+} from "@/lib/seedance/v25/types";
+import { defaultOutputFormatFor, effectiveDuration } from "./lib/mode-input-rules";
 import type { SeedanceV4WizardState } from "./types";
 
 /**
@@ -9,15 +19,10 @@ import type { SeedanceV4WizardState } from "./types";
  * Used in Step 3 (Prompt Review) to show the user the Enhancor parameters
  * that will be applied. Can be used as read-only (recap) or interactive (editing).
  *
- * Displays:
- *   - Model (hardcoded: Seedance 2.0)
- *   - Mode (hardcoded: UGC)
- *   - Duration
- *   - Resolution
- *   - Aspect Ratio
- *   - Pass Faces (fullAccess toggle)
- *   - Unrestricted toggle
- *   - Quality
+ * Read-only (Step 3 recap) shows exactly what will be submitted: engine,
+ * mode, quality tier + resolution, duration (or "Auto" / "sum of segments"),
+ * aspect ratio and — on Seedance 2.5 — pass_faces, is_uncensored, the
+ * effective output_format and bitrate_mode. Engine 2.0 keeps its own rows.
  */
 
 interface EnhancorSettingsPanelProps {
@@ -45,66 +50,62 @@ export function EnhancorSettingsPanel({
 
   if (isReadOnly) {
     // Read-only recap format (Step 3 review)
+    const is25 = state.engine === "2.5";
+    const duration = effectiveDuration(state);
+    const durationLabel =
+      state.mode === "multi_frame"
+        ? "Sum of segments"
+        : duration === -1
+        ? "Auto"
+        : `${duration}s`;
+    const resolution = is25 ? qualityTierToResolution(state.qualityTier) : state.resolution;
+
     return (
       <section className="space-y-4 rounded-xl border border-coco-beige-dark bg-white p-4">
         <h3 className="text-sm font-semibold text-coco-brown">Settings Recap</h3>
 
         <div className="grid grid-cols-2 gap-4 text-sm">
-          {/* Model (hardcoded) */}
-          <div>
-            <p className="text-xs text-coco-brown-medium/70">Model</p>
-            <p className="font-medium text-coco-brown">Seedance 2.0</p>
-          </div>
+          <Row label="Engine" value={engineLabel(state.engine)} />
+          <Row
+            label="Mode"
+            value={SEEDANCE_25_MODE_LABELS[state.mode as Seedance25Mode] ?? state.mode}
+          />
 
-          {/* Mode (hardcoded) */}
-          <div>
-            <p className="text-xs text-coco-brown-medium/70">Mode</p>
-            <p className="font-medium text-coco-brown">UGC</p>
-          </div>
-
-          {/* Duration */}
           {!hideDuration && !hideTopLevelDuration && (
-            <div>
-              <p className="text-xs text-coco-brown-medium/70">Duration</p>
-              <p className="font-medium text-coco-brown">{state.duration}s</p>
-            </div>
+            <Row label="Duration" value={durationLabel} />
           )}
 
-          {/* Resolution */}
-          <div>
-            <p className="text-xs text-coco-brown-medium/70">Resolution</p>
-            <p className="font-medium text-coco-brown">{state.resolution}</p>
-          </div>
+          <Row
+            label={is25 ? "Quality" : "Resolution"}
+            value={is25 ? `${QUALITY_TIERS[state.qualityTier].label} · ${resolution}` : resolution}
+          />
 
-          {/* Aspect Ratio */}
-          <div>
-            <p className="text-xs text-coco-brown-medium/70">Aspect Ratio</p>
-            <p className="font-medium text-coco-brown">{state.aspectRatio}</p>
-          </div>
+          <Row label="Aspect Ratio" value={state.aspectRatio} />
 
-          {/* Pass Faces */}
-          <div>
-            <p className="text-xs text-coco-brown-medium/70">Pass Faces</p>
-            <p className="font-medium text-coco-brown">
-              {state.fullAccess ? "ON" : "OFF"}
-            </p>
-          </div>
-
-          {/* Unrestricted */}
-          <div>
-            <p className="text-xs text-coco-brown-medium/70">Unrestricted</p>
-            <p className="font-medium text-coco-brown">
-              {state.unrestricted ? "ON" : "OFF"}
-            </p>
-          </div>
-
-          {/* Quality */}
-          <div>
-            <p className="text-xs text-coco-brown-medium/70">Quality</p>
-            <p className="font-medium capitalize text-coco-brown">
-              {state.quality ?? "standard"}
-            </p>
-          </div>
+          {is25 ? (
+            <>
+              <Row label="Pass faces" value={state.passFaces ? "ON" : "OFF"} />
+              <Row
+                label="Unrestricted (NSFW)"
+                value={state.isUncensored ? "ON" : "OFF"}
+              />
+              <Row
+                label="Output format"
+                value={
+                  state.outputFormat
+                    ? `.${state.outputFormat}`
+                    : `.${defaultOutputFormatFor(state.mode)} (default)`
+                }
+              />
+              <Row label="Bitrate" value={state.bitrateMode} capitalize />
+            </>
+          ) : (
+            <>
+              <Row label="Pass Faces" value={state.fullAccess ? "ON" : "OFF"} />
+              <Row label="Unrestricted" value={state.unrestricted ? "ON" : "OFF"} />
+              <Row label="Quality" value={state.quality ?? "standard"} capitalize />
+            </>
+          )}
         </div>
       </section>
     );
@@ -297,5 +298,29 @@ export function EnhancorSettingsPanel({
         </button>
       </div>
     </section>
+  );
+}
+
+function Row({
+  label,
+  value,
+  capitalize,
+}: {
+  label: string;
+  value: string;
+  capitalize?: boolean;
+}) {
+  return (
+    <div>
+      <p className="text-xs text-coco-brown-medium/70">{label}</p>
+      <p
+        className={cn(
+          "font-medium text-coco-brown",
+          capitalize && "capitalize"
+        )}
+      >
+        {value}
+      </p>
+    </div>
   );
 }

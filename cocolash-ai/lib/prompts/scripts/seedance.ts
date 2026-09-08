@@ -1,4 +1,6 @@
 import type { CampaignType, ScriptTone } from "@/lib/types";
+import { AUTO_DURATION, SEEDANCE_25_LIMITS } from "@/lib/seedance/v25/types";
+import { AUTO_DURATION_ESTIMATE_SECONDS } from "@/lib/seedance/pricing";
 import type { ScriptUserPromptParams } from "./user";
 import { CAMPAIGN_TEMPLATES } from "./templates";
 
@@ -135,13 +137,27 @@ const TONE_NOTES: Record<ScriptTone, string> = {
 };
 
 /**
- * Size the spoken script to the actual Seedance clip duration (4–15s).
- * Spoken pace is ~2.5–3 words/sec, so we give the model a concrete word band
- * plus structure guidance scaled to the available time. Seedance caps at 15s,
- * so there is no 30/60/90s case — the script must fit the clip exactly.
+ * Size the spoken script to the actual Seedance clip duration.
+ *
+ * Seedance 2.5 clips run 4-30 seconds, or "Auto" (`-1`) where the model picks
+ * the final length. Seedance 2.0 clips run 4-15 seconds — the same clamp
+ * covers both because 2.0 durations are always inside the 2.5 range.
+ *
+ * Spoken pace is ~2.3-3 words/sec, so we give the model a concrete word band
+ * plus structure guidance scaled to the available time. There is no 60/90s
+ * case — the script must fit the clip exactly.
+ *
+ * Auto (`-1`, or any non-finite value) is planned as ~10 seconds and the rule
+ * says so explicitly, so the writer knows the length is a target, not a cap.
  */
 export function buildSeedanceDurationRule(seconds: number): string {
-  const s = Math.max(4, Math.min(15, Math.round(seconds)));
+  const isAuto = !Number.isFinite(seconds) || Math.round(seconds) <= AUTO_DURATION;
+  const s = isAuto
+    ? AUTO_DURATION_ESTIMATE_SECONDS
+    : Math.max(
+        SEEDANCE_25_LIMITS.durationMin,
+        Math.min(SEEDANCE_25_LIMITS.durationMax, Math.round(seconds))
+      );
   const minWords = Math.round(s * 2.3);
   const maxWords = Math.round(s * 3);
 
@@ -150,24 +166,34 @@ export function buildSeedanceDurationRule(seconds: number): string {
     structure =
       "One single idea only. The first sentence must work as the visual hook. No separate CTA — fold the ask into the close.";
   } else if (s <= 10) {
-    structure = "Hook + one proof/benefit beat + a short CTA. Do NOT cover every framework beat — pick the strongest one or two.";
+    structure =
+      "Hook + one proof/benefit beat + a short CTA. Do NOT cover every framework beat — pick the strongest one or two.";
+  } else if (s <= 15) {
+    structure = "Hook + two quick beats + CTA. Short, speakable sentences only.";
   } else {
     structure =
-      "Hook + two quick beats + CTA. Short, speakable sentences only.";
+      "Hook + two or three beats + CTA; still short speakable sentences; no filler. Give each beat one clear idea and move on — a long clip is not permission to ramble.";
   }
 
-  return `HARD LENGTH LIMIT — the clip is only ${s} seconds long. The full_script MUST be ${minWords}-${maxWords} words and MUST NOT exceed ${maxWords} words (spoken pace ~2.5-3 words/sec). A longer script gets cut off mid-sentence in the video. Count the words before you finish. ${structure}`;
+  const lead = isAuto
+    ? `Duration is Auto — write for about ${s} seconds.`
+    : `HARD LENGTH LIMIT — the clip is only ${s} seconds long.`;
+  const overrun = isAuto
+    ? "Going far over the band makes the delivery rushed."
+    : "A longer script gets cut off mid-sentence in the video.";
+
+  return `${lead} The full_script MUST be ${minWords}-${maxWords} words and MUST NOT exceed ${maxWords} words (spoken pace ~2.5-3 words/sec). ${overrun} Count the words before you finish. ${structure}`;
 }
 
 export function buildSeedanceScriptSystemPrompt(): string {
-  return `You are a UGC script writer for CocoLash videos generated with Seedance 2.0.
+  return `You are a UGC script writer for CocoLash videos generated with Seedance 2.0 / 2.5.
 
 Your job is to write SPOKEN DIALOGUE first. Another AI layer will turn the selected script into a Seedance director prompt with camera, action, timing, and reference instructions.
 
 Write scripts that a human-looking creator can say naturally while holding, showing, unboxing, applying, or reacting to CocoLash lashes.
 
 Core rules:
-- LENGTH IS A HARD CONSTRAINT. The clip is only a few seconds long — obey the word limit in the user message exactly. Every full_script MUST fit the limit; count the words. A script that runs long gets cut off mid-sentence in the video. When in doubt, write fewer words.
+- LENGTH IS A HARD CONSTRAINT. The clip is short (4-30 seconds) — obey the word limit in the user message exactly. Every full_script MUST fit the limit; count the words. A script that runs long gets cut off mid-sentence in the video. When in doubt, write fewer words.
 - Write for speech, not captions. Use contractions and short sentences.
 - Every script must contain a visual action opportunity: hold product, show packaging, point to lashes, turn face, reveal result, or react.
 - Keep the dialogue realistic for AI lip movement. Avoid tongue-twisters, dense clauses, and rapid lists.

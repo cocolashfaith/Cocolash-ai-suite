@@ -150,6 +150,46 @@ export async function uploadProductImage(
   return { url: `${publicUrl}?t=${Date.now()}`, path: filename };
 }
 
+/**
+ * Upload a product reference image to a CALLER-CHOSEN path in `brand-assets`.
+ *
+ * Differs from `uploadProductImage` in two ways that the Shopify re-hosting
+ * seed (D7) depends on:
+ *   - the path is deterministic (`products/shopify/<handle>-<n>.png`), so a
+ *     re-run overwrites the same object instead of orphaning the old one, and
+ *     the script stays idempotent;
+ *   - the returned URL has NO `?t=` cache-buster, so it is stable enough to
+ *     store in `product_reference_images.image_url` and to dedupe on.
+ *
+ * `brand-assets` is image-MIME only and caps at 5 MB — never send audio/video.
+ */
+export async function uploadProductImageToPath(
+  supabase: SupabaseClient,
+  file: File | Blob,
+  storagePath: string,
+  options: { upsert?: boolean } = {}
+): Promise<{ url: string; path: string }> {
+  const { upsert = true } = options;
+
+  const { error } = await supabase.storage
+    .from(BUCKETS.BRAND_ASSETS)
+    .upload(storagePath, file, {
+      contentType: file.type || "image/png",
+      cacheControl: "3600",
+      upsert,
+    });
+
+  if (error) {
+    throw new Error(`Failed to upload product image: ${error.message}`);
+  }
+
+  const {
+    data: { publicUrl },
+  } = supabase.storage.from(BUCKETS.BRAND_ASSETS).getPublicUrl(storagePath);
+
+  return { url: publicUrl, path: storagePath };
+}
+
 // ── Delete Storage File ───────────────────────────────────────
 export async function deleteStorageFile(
   supabase: SupabaseClient,

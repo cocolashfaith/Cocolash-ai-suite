@@ -123,6 +123,57 @@ describe("applyStatusUpdate — merging a completion back onto the card", () => 
     expect(v.final_video_url).toBeNull();
   });
 
+  it("merges the Seedance 2.5 metadata + actual credits onto the card (D14)", () => {
+    const v = makeVideo({ heygen_status: "processing", processing_cost: null });
+    const next = applyStatusUpdate(v, {
+      videoId: v.id,
+      status: "completed",
+      finalVideoUrl: "https://cdn/final.mp4",
+      progress: 100,
+      engine: "2.5",
+      mode: "ugc",
+      qualityTier: "draft-720p",
+      resolution: "720p",
+      requestedDuration: 6,
+      durationSeconds: 6,
+      creditsCost: 1615.8,
+      costUsd: 1.6158,
+      rerenderOf: null,
+    });
+    expect(next.engine).toBe("2.5");
+    expect(next.seedance_mode).toBe("ugc");
+    expect(next.quality_tier).toBe("draft-720p");
+    expect(next.resolution).toBe("720p");
+    expect(next.requested_duration).toBe(6);
+    expect(next.duration_seconds).toBe(6);
+    expect(next.credits_cost).toBe(1615.8);
+    expect(next.processing_cost).toBe(1.6158);
+  });
+
+  it("carries the provider error text onto a failed card", () => {
+    const v = makeVideo({ heygen_status: "processing" });
+    const next = applyStatusUpdate(v, {
+      videoId: v.id,
+      status: "failed",
+      errorMessage: "Enhancor rejected the request: invalid video url",
+    });
+    expect(next.heygen_status).toBe("failed");
+    expect(next.error_message).toBe("Enhancor rejected the request: invalid video url");
+  });
+
+  it("keeps 2.5 metadata a later poll omits (pre-migration / HeyGen responses)", () => {
+    const v = makeVideo({
+      heygen_status: "processing",
+      engine: "2.5",
+      quality_tier: "draft-720p",
+      credits_cost: 1615.8,
+    });
+    const next = applyStatusUpdate(v, { videoId: v.id, status: "processing" });
+    expect(next.engine).toBe("2.5");
+    expect(next.quality_tier).toBe("draft-720p");
+    expect(next.credits_cost).toBe(1615.8);
+  });
+
   it("preserves existing fields when the poll omits them (still processing)", () => {
     const v = makeVideo({
       heygen_status: "processing",

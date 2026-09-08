@@ -14,6 +14,8 @@ import { LruCache } from "./cache";
 import {
   ShopifyError,
   type ShopifyProduct,
+  type ShopifyProductImage,
+  type ShopifyProductVariant,
   type ProductCard,
 } from "./types";
 
@@ -48,6 +50,18 @@ function readConfig(): StorefrontConfig {
 }
 
 const cache = new LruCache<ShopifyProduct>(50, 15 * 60 * 1000);
+
+/**
+ * Separate cache for the WHOLE catalog (`listProductsWithImages`). The LRU
+ * above stores one product per key, so a list needs its own slot; 15 min
+ * matches the LRU's TTL. Shopify's Storefront API is rate limited per app, and
+ * the Seedance "Store products" picker (D7) is opened repeatedly.
+ */
+const ALL_PRODUCTS_TTL_MS = 15 * 60 * 1000;
+const ALL_PRODUCTS_PAGE_SIZE = 50;
+const ALL_PRODUCTS_HARD_CAP = 250;
+let allProductsCache: { at: number; products: ShopifyProduct[] } | null = null;
+let allProductsServedFromCache = false;
 
 interface GraphQLResponse<T> {
   data?: T;
@@ -134,6 +148,7 @@ fragment Product on Product {
   totalInventory
   availableForSale
   featuredImage { url altText }
+  images(first: 20) { nodes { url altText width height } }
   priceRange {
     minVariantPrice { amount currencyCode }
     maxVariantPrice { amount currencyCode }
@@ -162,6 +177,16 @@ const BY_HANDLE_QUERY = `
 ${PRODUCT_FRAGMENT}
 query ByHandle($handle: String!) {
   product(handle: $handle) { ...Product }
+}
+`.trim();
+
+const ALL_PRODUCTS_QUERY = `
+${PRODUCT_FRAGMENT}
+query AllProducts($first: Int!, $after: String) {
+  products(first: $first, after: $after) {
+    nodes { ...Product }
+    pageInfo { hasNextPage endCursor }
+  }
 }
 `.trim();
 
@@ -257,17 +282,88 @@ export async function getProductsByHandles(handles: ReadonlyArray<string>): Prom
   }
 }
 
+/**
+ * Every product in the store WITH all of its images — the source for the
+ * Seedance wizard's "Store products" picker (D7). Sorrel/Fern/Ivy only exist
+ * on Shopify, so the picker cannot rely on the seeded reference library.
+ *
+ * Paginates until Shopify says there is no next page (hard cap 250 products),
+ * caches the whole list for 15 minutes, and on a rate limit returns the last
+ * good list (or `[]`) instead of throwing — an empty picker beats a 502.
+ */
+export async function listProductsWithImages(
+  first: number = ALL_PRODUCTS_PAGE_SIZE
+): Promise<ShopifyProduct[]> {
+  const now = Date.now();
+  if (allProductsCache && now - allProductsCache.at < ALL_PRODUCTS_TTL_MS) {
+    allProductsServedFromCache = true;
+    return allProductsCache.products;
+  }
+  allProductsServedFromCache = false;
+
+  const pageSize = Math.min(Math.max(1, first), 250);
+  const products: ShopifyProduct[] = [];
+  let after: string | null = null;
+
+  try {
+    for (;;) {
+      const data: {
+        products: {
+          nodes: ShopifyProduct[];
+          pageInfo: { hasNextPage: boolean; endCursor: string | null };
+        };
+      } = await gqlFetch(ALL_PRODUCTS_QUERY, { first: pageSize, after });
+
+      for (const node of data.products?.nodes ?? []) {
+        products.push(normalizeProduct(node));
+      }
+
+      const pageInfo = data.products?.pageInfo;
+      if (!pageInfo?.hasNextPage || !pageInfo.endCursor) break;
+      if (products.length >= ALL_PRODUCTS_HARD_CAP) break;
+      after = pageInfo.endCursor;
+    }
+  } catch (err) {
+    if (err instanceof ShopifyError && err.code === "rate_limited") {
+      allProductsServedFromCache = Boolean(allProductsCache);
+      return allProductsCache?.products ?? [];
+    }
+    throw err;
+  }
+
+  for (const p of products) cache.set(`handle:${p.handle}`, p);
+  allProductsCache = { at: now, products };
+  return products;
+}
+
+/**
+ * Whether the most recent `listProductsWithImages()` call was served from the
+ * in-process cache. Reported by GET /api/shopify/product-images so the UI can
+ * say how fresh the list is.
+ */
+export function lastListProductsWasCached(): boolean {
+  return allProductsServedFromCache;
+}
+
+function flattenConnection<T>(raw: unknown): T[] {
+  if (!raw) return [];
+  if (Array.isArray(raw)) return raw as T[];
+  if (typeof raw === "object" && "nodes" in (raw as Record<string, unknown>)) {
+    return ((raw as { nodes?: T[] }).nodes ?? []) as T[];
+  }
+  return [];
+}
+
 function normalizeProduct(p: ShopifyProduct & { variants: { nodes?: ShopifyProduct["variants"] } | unknown }): ShopifyProduct {
   // Shopify's GraphQL returns connections with .nodes; flatten for simpler downstream.
-  const variantsRaw =
-    (p as { variants: { nodes?: ShopifyProduct["variants"] } | ShopifyProduct["variants"] }).variants;
-  const variants =
-    variantsRaw && typeof variantsRaw === "object" && "nodes" in variantsRaw
-      ? (variantsRaw as { nodes: ShopifyProduct["variants"] }).nodes ?? []
-      : (variantsRaw as ShopifyProduct["variants"]) ?? [];
+  const variants = flattenConnection<ShopifyProductVariant>(
+    (p as { variants?: unknown }).variants
+  );
+  const images = flattenConnection<ShopifyProductImage>((p as { images?: unknown }).images);
   return {
     ...(p as ShopifyProduct),
     variants,
+    images,
   };
 }
 
@@ -364,4 +460,6 @@ function formatPrice(amount: string): string {
 /** Exported for tests. Caller resets cross-test state. */
 export function _resetCache(): void {
   cache.clear();
+  allProductsCache = null;
+  allProductsServedFromCache = false;
 }

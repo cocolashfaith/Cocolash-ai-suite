@@ -9,6 +9,7 @@ import { SocialAccountsManager } from "@/components/settings/SocialAccountsManag
 import { CaptionSettingsForm } from "@/components/settings/CaptionSettingsForm";
 import { UserManager } from "@/components/settings/UserManager";
 import { CostSummary } from "@/components/settings/CostSummary";
+import { VideoDefaultsForm } from "@/components/settings/VideoDefaultsForm";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Settings, AlertCircle } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -169,6 +170,9 @@ export default function SettingsPage() {
 
       {/* Product Reference Images — Category-based */}
       <ProductCategoryManager />
+
+      {/* Video Defaults & Pricing — Seedance 2.5 (D4/D5) */}
+      <VideoDefaultsForm isAdmin={isAdmin} />
 
       {/* API Cost Tracker — Upgrade 1 Phase 2.9 */}
       <CostSummary />

@@ -1,12 +1,23 @@
 "use client";
 
 import { useEffect, useState, useCallback } from "react";
-import { Loader2, Sparkles, RefreshCw, Check, AlertTriangle, Image as ImageIcon } from "lucide-react";
+import { Loader2, Sparkles, RefreshCw, AlertTriangle } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { EnhancorSettingsPanel } from "./EnhancorSettingsPanel";
 import { CostBreakdown } from "./CostBreakdown";
+import {
+  SeedanceGenerationProgress,
+  type GenerateEstimate,
+} from "./SeedanceGenerationProgress";
+import {
+  buildSeedance20Body,
+  buildSeedance25GenerateBody,
+  effectiveDuration,
+  isEnhancorParityUgc,
+  multiFrameTotalSeconds,
+} from "./lib/build-request";
 import type { SeedanceV4WizardState } from "./types";
 import type {
   DirectorInput,
@@ -14,6 +25,20 @@ import type {
 } from "@/lib/ai/director/types";
 import { estimateV4Cost } from "@/lib/costs/estimates";
 import { formatProductFactsForPrompt } from "@/lib/ai/director/product-fact-extractor";
+import {
+  SEEDANCE_ENGINES,
+  qualityTierToResolution,
+} from "@/lib/seedance/engines";
+import {
+  SEEDANCE_25_LIMITS,
+  SEEDANCE_25_MODE_LABELS,
+} from "@/lib/seedance/v25/types";
+import {
+  Seedance25GenerateBodySchema,
+  formatZodIssues,
+} from "@/lib/seedance/v25/schema";
+import { useVideoSettings } from "@/lib/settings/use-video-settings";
+import { MIGRATION_REQUIRED_CODE } from "@/lib/supabase/schema-errors";
 
 interface Step3Props {
   state: SeedanceV4WizardState;
@@ -52,17 +77,35 @@ export function Step3PromptReviewAndGenerate({ state, setState, onReset, goToSte
     state.directorMultiFramePrompts ?? []
   );
   const [isGenerating, setIsGenerating] = useState(false);
-  const [generationStarted, setGenerationStarted] = useState(false);
+  const [generation, setGeneration] = useState<{
+    videoId: string;
+    taskId?: string;
+    estimate?: GenerateEstimate | null;
+  } | null>(null);
   const [isSkuDegraded, setIsSkuDegraded] = useState(false);
   const [visionLoading, setVisionLoading] = useState(false);
   const [visionError, setVisionError] = useState<string | null>(null);
 
+  const { settings } = useVideoSettings();
+
   // Detect if we're in Enhancor-parity UGC mode (has influencer + product images)
-  const isEnhancorParityMode =
-    state.mode === "ugc" &&
-    !!state.ugcInfluencerImageUrl &&
-    state.ugcProductImageUrls &&
-    state.ugcProductImageUrls.length > 0;
+  const isEnhancorParityMode = isEnhancorParityUgc(state);
+
+  const is25 = state.engine === "2.5";
+  const engineCaps = SEEDANCE_ENGINES[state.engine].capabilities;
+
+  // Multi-frame: segments must sum to a length the engine accepts
+  // (4–30 s on 2.5, 4–15 s on 2.0). Approve is blocked while they don't.
+  const segmentTotal = multiFrameTotalSeconds(editedSegments);
+  const segmentMax = engineCaps.durationMax;
+  const segmentsOutOfRange =
+    state.mode === "multi_frame" &&
+    (segmentTotal < engineCaps.durationMin || segmentTotal > segmentMax);
+
+  // videos[] on multi_reference / edit / extend / multi_frame bills at the
+  // cheaper "reduced" credit rate — the estimate has to know.
+  const hasVideoInputs =
+    state.inputVideoUrls.length > 0 || !!state.multiReferenceVideoUrl;
 
   /**
    * Vision agent path: call /api/seedance/director-vision with influencer + product images
@@ -246,21 +289,38 @@ export function Step3PromptReviewAndGenerate({ state, setState, onReset, goToSte
 
   async function handleApproveAndGenerate() {
     setIsGenerating(true);
-    setGenerationStarted(true);
     try {
-      // For Enhancor-parity UGC mode, build payload with influencers[] and products[] arrays
-      const body = isEnhancorParityMode
-        ? buildEnhancorBodyV4UGC(state, editedPrompt)
-        : buildEnhancorBody(state, editedPrompt, editedSegments);
+      // Engine 2.5 → the new envelope, validated client-side FIRST so a bad
+      // combination (missing input, illegal duration) is reported instantly
+      // instead of after a round trip. The route re-validates server-side.
+      let body: unknown;
+      if (is25) {
+        const candidate = buildSeedance25GenerateBody(state, editedPrompt, editedSegments);
+        const parsed = Seedance25GenerateBodySchema.safeParse(candidate);
+        if (!parsed.success) {
+          toast.error(formatZodIssues(parsed.error), { duration: 9000 });
+          return;
+        }
+        body = candidate;
+      } else {
+        body = buildSeedance20Body(state, editedPrompt, editedSegments);
+      }
 
       const res = await fetch("/api/seedance/generate", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(body),
       });
-      const data = await res.json();
+      const data = await res.json().catch(() => ({}));
+
       if (!res.ok) {
-        throw new Error(data.error || "Seedance queue submission failed");
+        // 503: the 20260908 migration has not been applied yet. The message
+        // names the SQL file — show it long enough to act on.
+        if (data?.code === MIGRATION_REQUIRED_CODE) {
+          toast.error(data.error ?? "Database migration not applied", { duration: 12000 });
+          return;
+        }
+        throw new Error(data?.error || "Seedance queue submission failed");
       }
 
       // Check for degraded flag from /api/seedance/generate response (D-04)
@@ -272,12 +332,17 @@ export function Step3PromptReviewAndGenerate({ state, setState, onReset, goToSte
         );
       }
 
-      toast.success(
-        "Submitted to Seedance. You'll see the video in the gallery when it's ready."
-      );
+      if (typeof data.videoId === "string") {
+        setGeneration({
+          videoId: data.videoId,
+          taskId: typeof data.taskId === "string" ? data.taskId : undefined,
+          estimate: (data.estimate as GenerateEstimate | undefined) ?? null,
+        });
+      }
+
+      toast.success("Submitted to Seedance — watch it render right here.");
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Generation failed");
-      setGenerationStarted(false);
     } finally {
       setIsGenerating(false);
     }
@@ -404,7 +469,7 @@ export function Step3PromptReviewAndGenerate({ state, setState, onReset, goToSte
             </button>
           </div>
           <p className="text-[11px] text-coco-brown-medium/60">
-            The Director split your {state.duration}s clip into {editedSegments.length} segments. Edit each segment&apos;s prompt or duration before approving.
+            The Director split your {segmentTotal}s clip into {editedSegments.length} segments. Edit each segment&apos;s prompt or duration before approving.
           </p>
           {editedSegments.map((seg, i) => (
             <div
@@ -419,9 +484,12 @@ export function Step3PromptReviewAndGenerate({ state, setState, onReset, goToSte
                   type="number"
                   value={seg.duration}
                   min={1}
-                  max={15}
+                  max={segmentMax}
                   onChange={(e) => {
-                    const newDuration = Math.max(1, Math.min(15, Number(e.target.value)));
+                    const newDuration = Math.max(
+                      1,
+                      Math.min(segmentMax, Number(e.target.value) || 1)
+                    );
                     setEditedSegments((prev) =>
                       prev.map((s, idx) => (idx === i ? { ...s, duration: newDuration } : s))
                     );
@@ -442,9 +510,16 @@ export function Step3PromptReviewAndGenerate({ state, setState, onReset, goToSte
               />
             </div>
           ))}
-          <p className="text-[11px] text-coco-brown-medium/50">
-            Total: {editedSegments.reduce((sum, s) => sum + s.duration, 0)}s
-            (must be 4–15s)
+          <p
+            className={cn(
+              "text-[11px]",
+              segmentsOutOfRange
+                ? "font-semibold text-red-600"
+                : "text-coco-brown-medium/50"
+            )}
+          >
+            Total: {segmentTotal}s (must be {engineCaps.durationMin}–{segmentMax}s
+            {" "}on {SEEDANCE_ENGINES[state.engine].label})
           </p>
         </section>
       ) : (
@@ -498,8 +573,20 @@ export function Step3PromptReviewAndGenerate({ state, setState, onReset, goToSte
         variant="detailed"
         breakdown={estimateV4Cost({
           mode: state.mode,
-          durationSeconds: state.duration,
-          resolution: state.resolution,
+          // Seedance 2.5 prices per second in credits: send the EFFECTIVE
+          // duration (-1 ⇒ Auto, estimated on 10 s) and the tier's resolution,
+          // plus the live rate table from video_settings.
+          durationSeconds: is25 ? effectiveDuration(state) : state.duration,
+          resolution: is25 ? qualityTierToResolution(state.qualityTier) : state.resolution,
+          engine: state.engine,
+          isUncensored: state.isUncensored,
+          hasVideoInputs: hasVideoInputs,
+          multiFrameDurations:
+            state.mode === "multi_frame"
+              ? editedSegments.map((s) => s.duration)
+              : undefined,
+          rates: settings.rates,
+          usdPerCredit: settings.usd_per_credit,
           generatesAvatar:
             state.mode === "ugc" ||
             state.mode === "multi_frame" ||
@@ -529,35 +616,24 @@ export function Step3PromptReviewAndGenerate({ state, setState, onReset, goToSte
         </div>
       )}
 
-      {/* Approve & generate */}
-      {generationStarted && !isGenerating ? (
-        <div className="space-y-3 rounded-xl border-2 border-green-300 bg-green-50 p-4">
-          <div className="flex items-center gap-3">
-            <Check className="h-5 w-5 shrink-0 text-green-600" />
-            <div>
-              <p className="text-sm font-semibold text-green-900">
-                Submitted to Seedance.
-              </p>
-              <p className="text-xs text-green-800">
-                Open <code>/video/gallery</code> to watch progress.
-              </p>
-            </div>
-          </div>
-          {onStartAnother && (
-            <Button
-              onClick={() => {
-                setGenerationStarted(false);
-                onStartAnother();
-              }}
-              variant="outline"
-              size="sm"
-              className="gap-1.5"
-            >
-              <Sparkles className="h-3 w-3" />
-              Create another video (keeps your images)
-            </Button>
-          )}
-        </div>
+      {/* Approve & generate — once queued this becomes the live progress view (D11) */}
+      {generation ? (
+        <SeedanceGenerationProgress
+          videoId={generation.videoId}
+          engine={state.engine}
+          estimate={generation.estimate}
+          onCreateAnother={
+            onStartAnother
+              ? () => {
+                  setGeneration(null);
+                  onStartAnother();
+                }
+              : undefined
+          }
+          onRerendered={(newVideoId) =>
+            setGeneration({ videoId: newVideoId, estimate: null })
+          }
+        />
       ) : (
         <div className="flex gap-3">
           {isEnhancorParityMode && goToStep ? (
@@ -579,6 +655,7 @@ export function Step3PromptReviewAndGenerate({ state, setState, onReset, goToSte
             disabled={
               isGenerating ||
               visionLoading ||
+              segmentsOutOfRange ||
               (state.mode === "multi_frame"
                 ? editedSegments.length === 0
                 : !editedPrompt.trim())
@@ -609,19 +686,7 @@ export function Step3PromptReviewAndGenerate({ state, setState, onReset, goToSte
 // ── Helpers ──────────────────────────────────────────────────
 
 function modeLabel(mode: DirectorMode): string {
-  return (
-    {
-      ugc: "UGC",
-      multi_reference: "Multi-Reference",
-      multi_frame: "Multi-Frame",
-      lipsyncing: "Lip-Sync",
-      first_n_last_frames: "First+Last Frame",
-      text_to_video: "Text-to-Video",
-      edit: "Edit",
-      extend: "Extend",
-      voice_clone: "Voice Clone",
-    } as const
-  )[mode];
+  return SEEDANCE_25_MODE_LABELS[mode] ?? mode;
 }
 
 function buildDirectorBody(state: SeedanceV4WizardState): DirectorInput {
@@ -629,7 +694,10 @@ function buildDirectorBody(state: SeedanceV4WizardState): DirectorInput {
     mode: state.mode,
     campaignType: state.campaignType,
     tone: state.tone,
-    durationSeconds: state.duration,
+    // Auto (-1) tells the Director to write for an unspecified length; the
+    // script sizer treats it as ~10 s (package F).
+    durationSeconds:
+      state.engine === "2.5" ? effectiveDuration(state) : state.duration,
     aspectRatio: state.aspectRatio,
     script: state.scriptText || undefined,
     productSku: state.productSku || undefined,
@@ -649,6 +717,8 @@ function buildDirectorBody(state: SeedanceV4WizardState): DirectorInput {
         referenceImages: state.multiReferenceImages,
         referenceVideoUrl: state.multiReferenceVideoUrl,
         referenceAudioUrl: state.multiReferenceAudioUrl,
+        referenceVideoUrls: state.inputVideoUrls.length ? state.inputVideoUrls : undefined,
+        referenceAudioUrls: state.inputAudioUrls.length ? state.inputAudioUrls : undefined,
         userInstructions: state.multiReferenceUserInstructions,
       };
     case "lipsyncing":
@@ -659,6 +729,24 @@ function buildDirectorBody(state: SeedanceV4WizardState): DirectorInput {
           : undefined,
         referenceAudioUrl: state.lipsyncAudioUrl,
         referenceVideoUrl: state.lipsyncVideoUrl,
+      };
+    case "voice_clone": {
+      // Same inputs as lip-sync: a face + the voice to clone.
+      const faceUrl = state.inputImageUrls[0] ?? state.lipsyncImageUrl;
+      return {
+        ...base,
+        composedPersonProductImage: faceUrl ? { url: faceUrl } : undefined,
+        referenceAudioUrl: state.lipsyncAudioUrl,
+      };
+    }
+    case "edit":
+    case "extend":
+      // The Director needs the source clip(s) plus what to change / how to
+      // continue — that instruction is the whole brief for these two modes.
+      return {
+        ...base,
+        sourceVideoUrls: state.inputVideoUrls.length ? state.inputVideoUrls : undefined,
+        editInstruction: state.editInstruction || undefined,
       };
     case "first_n_last_frames":
       return {
@@ -674,10 +762,13 @@ function buildDirectorBody(state: SeedanceV4WizardState): DirectorInput {
         ...base,
         subjectBrief: state.subjectBrief,
         // 3-second segments are a reasonable default per the Director prompt's
-        // best-practices guide. Caps at 5 segments × 3s for a 15s clip.
+        // best-practices guide; 2.5 allows up to 10 segments / 30 s.
         multiFrameSegmentCount: Math.max(
           2,
-          Math.min(5, Math.round(state.duration / 3))
+          Math.min(
+            SEEDANCE_25_LIMITS.maxMultiFrameSegments,
+            Math.round((state.duration > 0 ? state.duration : 8) / 3)
+          )
         ),
       };
     case "text_to_video":
@@ -685,138 +776,7 @@ function buildDirectorBody(state: SeedanceV4WizardState): DirectorInput {
         ...base,
         sceneDescription: state.t2vSceneDescription,
       };
-    // edit / extend / voice_clone: Director inputs are wired in Wave 1 (package E/F).
     default:
       return base;
-  }
-}
-
-/**
- * Build payload for Enhancor-parity UGC mode (Plan 34-04).
- * Sends influencer-first image arrays + edited prompt + all settings.
- * Per BLOCKER 1 (D-34-04): NO productSku required — images are sole source of identity.
- */
-function buildEnhancorBodyV4UGC(
-  state: SeedanceV4WizardState,
-  editedPrompt: string
-): Record<string, unknown> {
-  return {
-    type: "image-to-video",
-    seedanceMode: "ugc",
-    prompt: editedPrompt,
-    duration: state.duration,
-    resolution: state.resolution,
-    aspectRatio: state.aspectRatio,
-    fullAccess: state.fullAccess ?? true,
-    unrestricted: state.unrestricted ?? false,
-    quality: state.quality ?? "standard",
-    // Images: influencer FIRST, then products (per @-mention alignment)
-    influencers: state.ugcInfluencerImageUrl ? [state.ugcInfluencerImageUrl] : [],
-    products: state.ugcProductImageUrls || [],
-    // Script for downstream reference
-    scriptText: state.scriptText,
-    campaignType: state.campaignType,
-    tone: state.tone,
-    fastMode: state.fastMode,
-    // Legacy compat fields (kept for backward compatibility)
-    personImageUrl: state.ugcInfluencerImageUrl,
-    productImageUrl: state.ugcProductImageUrls?.[0],
-    overridePrompt: editedPrompt,
-    // NO productSku per BLOCKER 1 (D-34-04)
-  };
-}
-
-function buildEnhancorBody(
-  state: SeedanceV4WizardState,
-  editedPrompt: string,
-  editedSegments: { prompt: string; duration: number }[]
-): Record<string, unknown> {
-  const common = {
-    aspectRatio: state.aspectRatio,
-    resolution: state.resolution,
-    duration: state.duration,
-    fastMode: state.fastMode && state.resolution !== "1080p",
-    campaignType: state.campaignType,
-    tone: state.tone,
-    seedanceMode: state.mode === "text_to_video" ? "ugc" : state.mode,
-    // Pass the selected SKU so the generate route can resolve its DB reference
-    // images and attach them to the Enhancor payload (Phase 29 reference
-    // conditioning). Without this the resolver receives undefined and no
-    // product references reach generation.
-    productSku: state.productSku || undefined,
-    fullAccess: true,
-    // Carry the script for downstream (some current API code expects it)
-    scriptText: state.scriptText,
-    // Pass the AI-approved prompt as the AUTHORITATIVE prompt — the existing
-    // /api/seedance/generate route can use this directly without rerunning
-    // its planner.
-    overridePrompt:
-      state.mode === "multi_frame"
-        ? editedSegments
-            .map((s, i) => `Shot ${i + 1} (${s.duration}s): ${s.prompt}`)
-            .join("\n\n")
-        : editedPrompt,
-  };
-
-  switch (state.mode) {
-    case "ugc":
-      // Two paths:
-      //  - toggle ON: ugcComposedImageUrl is a SINGLE composed image (avatar
-      //    already holding product). productImageUrl carries the same URL so
-      //    the legacy /api/seedance/generate route keeps a value in its
-      //    required field, but Seedance receives ONE image visually.
-      //  - toggle OFF: ugcComposedImageUrl is the avatar-only image;
-      //    ugcSeparateProductUrl is the separate product reference. Both go.
-      return {
-        ...common,
-        type: "image-to-video",
-        personImageUrl: state.ugcComposedImageUrl,
-        productImageUrl: state.ugcWasComposed
-          ? state.ugcComposedImageUrl
-          : state.ugcSeparateProductUrl,
-      };
-    case "text_to_video":
-      return {
-        ...common,
-        type: "text-to-video",
-      };
-    case "multi_reference":
-      return {
-        ...common,
-        type: "image-to-video",
-        images: state.multiReferenceImages?.map((r) => r.url) ?? [],
-        videos: state.multiReferenceVideoUrl ? [state.multiReferenceVideoUrl] : [],
-        audios: state.multiReferenceAudioUrl ? [state.multiReferenceAudioUrl] : [],
-      };
-    case "lipsyncing":
-      return {
-        ...common,
-        type: "image-to-video",
-        personImageUrl: state.lipsyncImageUrl,
-        audios: state.lipsyncAudioUrl ? [state.lipsyncAudioUrl] : [],
-        videos: state.lipsyncVideoUrl ? [state.lipsyncVideoUrl] : [],
-      };
-    case "first_n_last_frames":
-      return {
-        ...common,
-        type: "image-to-video",
-        firstFrameImage: state.firstFrameUrl,
-        lastFrameImage: state.lastFrameUrl,
-      };
-    case "multi_frame": {
-      // Phase 26, D-26-01: Multi-Frame is TEXT-ONLY. Enhancor API silently drops
-      // images[] / products[] / influencers[] for mode=multi_frame. The only
-      // required field is multi_frame_prompts[] (each segment has prompt + duration).
-      // No top-level prompt, no top-level duration (those live inside segments).
-      return {
-        ...common,
-        type: "image-to-video",
-        multiFramePrompts: editedSegments,
-      };
-    }
-    // edit / extend / voice_clone are Seedance 2.5 only — the 2.5 request
-    // builder (Wave 1, package E) replaces this legacy 2.0 body entirely.
-    default:
-      return { ...common, type: "image-to-video" };
   }
 }

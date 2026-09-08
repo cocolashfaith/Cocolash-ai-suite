@@ -4,6 +4,13 @@ import { Play, Clock, Film, Loader2, AlertCircle, Sparkles, Clapperboard, Gradua
 import { Badge } from "@/components/ui/badge";
 import { SafeThumbnail } from "@/components/ui/safe-thumbnail";
 import type { GeneratedVideo } from "@/lib/types";
+import {
+  videoCostLabel,
+  videoDurationLabel,
+  videoEngineLabel,
+  videoModeLabel,
+  videoTierLabel,
+} from "@/lib/video/display";
 import { cn } from "@/lib/utils";
 
 const EDUCATIONAL_CAMPAIGNS = new Set([
@@ -53,9 +60,13 @@ export function VideoCard({ video, onClick, eager = false }: VideoCardProps) {
     day: "numeric",
   });
 
-  const durationStr = video.duration_seconds
-    ? `${video.duration_seconds}s`
-    : "—";
+  // D14: engine / mode / tier / duration / credits straight off the row.
+  // A pre-migration row has none of those columns and falls back gracefully.
+  const isSeedance = video.pipeline === "seedance";
+  const durationStr = videoDurationLabel(video);
+  const engineStr = videoEngineLabel(video);
+  const metaStr = `${videoModeLabel(video)} · ${videoTierLabel(video)}`;
+  const costStr = videoCostLabel(video);
 
   return (
     <div className="group relative overflow-hidden rounded-xl border border-coco-beige-dark bg-white shadow-sm transition-all duration-200 hover:shadow-md">
@@ -126,11 +137,16 @@ export function VideoCard({ video, onClick, eager = false }: VideoCardProps) {
       <div className="flex items-center justify-between px-3 py-2">
         <div className="flex items-center gap-1.5">
           <span className="text-[11px] text-coco-brown-medium/60">{dateStr}</span>
-          {video.pipeline === "seedance" ? (
-            <Badge className="bg-orange-100 text-[9px] text-orange-700">
-              <Sparkles className="mr-0.5 h-2.5 w-2.5" />
-              Seedance
-            </Badge>
+          {isSeedance ? (
+            <>
+              <Badge className="bg-orange-100 text-[9px] text-orange-700">
+                <Sparkles className="mr-0.5 h-2.5 w-2.5" />
+                {engineStr}
+              </Badge>
+              <Badge className="bg-coco-beige text-[9px] text-coco-brown-medium">
+                {metaStr}
+              </Badge>
+            </>
           ) : isEducational ? (
             <Badge className="bg-indigo-100 text-[9px] text-indigo-700">
               <GraduationCap className="mr-0.5 h-2.5 w-2.5" />
@@ -143,20 +159,24 @@ export function VideoCard({ video, onClick, eager = false }: VideoCardProps) {
             </Badge>
           )}
         </div>
-        <Badge
-          className={cn(
-            "text-[10px] backdrop-blur-sm",
-            statusConfig.className
+        <div className="flex items-center gap-1.5">
+          {isSeedance && costStr !== "—" && (
+            <span className="text-[10px] tabular-nums text-coco-brown-medium/60">
+              {costStr}
+            </span>
           )}
-        >
-          <StatusIcon
-            className={cn(
-              "mr-1 h-3 w-3",
-              (status === "processing" || status === "captioning") && "animate-spin"
-            )}
-          />
-          {statusConfig.label}
-        </Badge>
+          <Badge
+            className={cn("text-[10px] backdrop-blur-sm", statusConfig.className)}
+          >
+            <StatusIcon
+              className={cn(
+                "mr-1 h-3 w-3",
+                (status === "processing" || status === "captioning") && "animate-spin"
+              )}
+            />
+            {statusConfig.label}
+          </Badge>
+        </div>
       </div>
     </div>
   );

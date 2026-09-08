@@ -25,6 +25,9 @@ export class ShopifyError extends Error {
 export interface ShopifyProductImage {
   url: string;
   altText: string | null;
+  /** Present on the `images` connection; absent on legacy featuredImage-only reads. */
+  width?: number | null;
+  height?: number | null;
 }
 
 export interface ShopifyProductVariant {
@@ -47,6 +50,12 @@ export interface ShopifyProduct {
   totalInventory: number | null;
   availableForSale: boolean;
   featuredImage: ShopifyProductImage | null;
+  /**
+   * ALL product images, flattened from the `images(first: 20)` connection.
+   * Optional because only the newer reads request it — chat/widget code that
+   * predates Seedance 2.5 (D7) keeps using `featuredImage` and ignores this.
+   */
+  images?: ShopifyProductImage[];
   priceRange: {
     minVariantPrice: { amount: string; currencyCode: string };
     maxVariantPrice: { amount: string; currencyCode: string };

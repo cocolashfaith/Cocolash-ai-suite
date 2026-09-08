@@ -19,6 +19,7 @@ import type {
   ImageRoleRef,
 } from "./types";
 import type { SeedanceMultiFramePrompt } from "@/lib/seedance/types";
+import { AUTO_DURATION, SEEDANCE_25_LIMITS } from "@/lib/seedance/v25/types";
 
 /** Centralized model constant — Faith's hard requirement is Opus 4 minimum. */
 export const SEEDANCE_DIRECTOR_MODEL = "anthropic/claude-opus-4.7";
@@ -107,10 +108,17 @@ function validateDirectorInput(input: DirectorInput): void {
   if (!input.tone) throw new SeedanceDirectorError("INVALID_INPUT", "tone is required");
   if (!input.aspectRatio)
     throw new SeedanceDirectorError("INVALID_INPUT", "aspectRatio is required");
-  if (!input.durationSeconds || input.durationSeconds < 5)
+  // Seedance 2.5 (D10): 4–30 s, or -1 = Auto (required for `edit`).
+  // 2.0 durations (4–15) all sit inside that range, so one rule covers both.
+  const duration = input.durationSeconds;
+  if (
+    typeof duration !== "number" ||
+    !Number.isFinite(duration) ||
+    (duration !== AUTO_DURATION && duration < SEEDANCE_25_LIMITS.durationMin)
+  )
     throw new SeedanceDirectorError(
       "INVALID_INPUT",
-      "durationSeconds must be ≥ 5"
+      `durationSeconds must be ${AUTO_DURATION} (Auto) or at least ${SEEDANCE_25_LIMITS.durationMin}`
     );
 
   const requiresScript: DirectorMode[] = [
@@ -174,12 +182,47 @@ function validateDirectorInput(input: DirectorInput): void {
       );
   }
 
-  if (input.mode === "multi_frame") {
-    const count = input.multiFrameSegmentCount ?? 3;
-    if (count < 1 || count > 5) {
+  // ── Seedance 2.5 only ──────────────────────────────────────
+
+  if (input.mode === "edit" || input.mode === "extend") {
+    if (!input.sourceVideoUrls?.length)
       throw new SeedanceDirectorError(
         "INVALID_INPUT",
-        "multi_frame multiFrameSegmentCount must be between 1 and 5"
+        `${input.mode} mode requires at least one source video (sourceVideoUrls)`
+      );
+    if (input.sourceVideoUrls.length > SEEDANCE_25_LIMITS.maxVideos)
+      throw new SeedanceDirectorError(
+        "INVALID_INPUT",
+        `${input.mode} mode accepts at most ${SEEDANCE_25_LIMITS.maxVideos} source videos`
+      );
+  }
+
+  if (input.mode === "edit" && !input.editInstruction?.trim()) {
+    throw new SeedanceDirectorError(
+      "INVALID_INPUT",
+      "edit mode requires editInstruction (what to change in the source clip)"
+    );
+  }
+
+  if (input.mode === "voice_clone") {
+    if (!input.composedPersonProductImage?.url)
+      throw new SeedanceDirectorError(
+        "INVALID_INPUT",
+        "voice_clone mode requires a speaker image (composedPersonProductImage)"
+      );
+    if (!input.referenceAudioUrl)
+      throw new SeedanceDirectorError(
+        "INVALID_INPUT",
+        "voice_clone mode requires referenceAudioUrl (the voice to clone, ≤ 30 s)"
+      );
+  }
+
+  if (input.mode === "multi_frame") {
+    const count = input.multiFrameSegmentCount ?? 3;
+    if (count < 1 || count > SEEDANCE_25_LIMITS.maxMultiFrameSegments) {
+      throw new SeedanceDirectorError(
+        "INVALID_INPUT",
+        `multi_frame multiFrameSegmentCount must be between 1 and ${SEEDANCE_25_LIMITS.maxMultiFrameSegments}`
       );
     }
     if (!input.subjectBrief?.trim() || input.subjectBrief.trim().length < 10) {
@@ -197,7 +240,11 @@ export function composeUserMessage(input: DirectorInput): string {
   const lines: string[] = [];
   lines.push(`Campaign type: ${input.campaignType}`);
   lines.push(`Tone: ${input.tone}`);
-  lines.push(`Total duration: ${input.durationSeconds}s`);
+  lines.push(
+    input.durationSeconds === AUTO_DURATION
+      ? `Total duration: Auto (model decides — plan for ~10 s)`
+      : `Total duration: ${input.durationSeconds}s`
+  );
   lines.push(`Aspect ratio: ${input.aspectRatio}`);
   if (input.script) lines.push("", "Script (verbatim):", input.script);
   if (input.sceneDescription)
@@ -220,16 +267,27 @@ export function composeUserMessage(input: DirectorInput): string {
       }
       if (input.referenceVideoUrl)
         lines.push(`  @video1 (motion / camera reference)`);
+      for (const [i, url] of (input.referenceVideoUrls ?? []).entries()) {
+        const n = i + (input.referenceVideoUrl ? 2 : 1);
+        lines.push(`  @video${n} (motion / camera reference): ${url}`);
+      }
       if (input.referenceAudioUrl)
         lines.push(`  @audio1 (rhythm / voice reference)`);
+      for (const [i, url] of (input.referenceAudioUrls ?? []).entries()) {
+        const n = i + (input.referenceAudioUrl ? 2 : 1);
+        lines.push(`  @audio${n} (rhythm / voice reference): ${url}`);
+      }
       break;
     case "multi_frame": {
       const count = input.multiFrameSegmentCount ?? 3;
-      const totalSeconds = input.durationSeconds;
+      const totalSeconds =
+        input.durationSeconds === AUTO_DURATION ? 10 : input.durationSeconds;
       lines.push(
         "",
         `Plan exactly ${count} segments. Total duration ${totalSeconds}s. ` +
-          `Distribute durations sensibly (each segment 3-8s, all integers, summing to ${totalSeconds}).`
+          `Distribute durations sensibly (each segment 3-8s, all integers, summing to ${totalSeconds}). ` +
+          `The sum across all segments must stay within ${SEEDANCE_25_LIMITS.durationMin}-${SEEDANCE_25_LIMITS.durationMax}s ` +
+          `and there can be at most ${SEEDANCE_25_LIMITS.maxMultiFrameSegments} segments.`
       );
       if (input.subjectBrief?.trim()) {
         lines.push(
@@ -258,6 +316,49 @@ export function composeUserMessage(input: DirectorInput): string {
       break;
     case "text_to_video":
       // sceneDescription already added above
+      break;
+    case "edit":
+      lines.push("", "Source clip(s) to edit:");
+      for (const [i, url] of (input.sourceVideoUrls ?? []).entries()) {
+        lines.push(`  @video${i + 1}: ${url}`);
+      }
+      lines.push(
+        "",
+        "Edit instruction (the ONE change to make — everything else must survive untouched):",
+        input.editInstruction?.trim() ?? ""
+      );
+      lines.push(
+        "",
+        "Duration is Auto and the aspect ratio follows the source clip — do not specify either, and do not write timed beats."
+      );
+      break;
+    case "extend":
+      lines.push("", "Source clip(s) to continue:");
+      for (const [i, url] of (input.sourceVideoUrls ?? []).entries()) {
+        lines.push(`  @video${i + 1}: ${url}`);
+      }
+      if (input.editInstruction?.trim()) {
+        lines.push(
+          "",
+          "How the user wants it to continue:",
+          input.editInstruction.trim()
+        );
+      }
+      lines.push(
+        "",
+        "Continue directly from @video1's final frame — no cut, no restart, no re-establishing shot. The aspect ratio follows the source clip."
+      );
+      break;
+    case "voice_clone":
+      lines.push(
+        "",
+        `Speaker image (@image1): ${input.composedPersonProductImage?.url ?? ""}`,
+        `Voice to clone (@audio1, drives both the voice and the mouth timing): ${input.referenceAudioUrl ?? ""}`
+      );
+      lines.push(
+        "",
+        "The clip runs as long as @audio1. Never describe the voice — it is cloned from @audio1. Keep the speaker on camera and the mouth readable the whole time."
+      );
       break;
   }
 
@@ -355,11 +456,21 @@ function parseMultiFrameSegments(raw: string): SeedanceMultiFramePrompt[] {
     }
   );
 
-  const total = segments.reduce((sum, s) => sum + s.duration, 0);
-  if (total < 4 || total > 15) {
+  if (segments.length > SEEDANCE_25_LIMITS.maxMultiFrameSegments) {
     throw new SeedanceDirectorError(
       "INVALID_OUTPUT",
-      `Multi-frame total duration must be 4-15s; got ${total}s. Director must retry or user must edit.`
+      `Multi-frame accepts at most ${SEEDANCE_25_LIMITS.maxMultiFrameSegments} segments; got ${segments.length}.`
+    );
+  }
+
+  const total = segments.reduce((sum, s) => sum + s.duration, 0);
+  if (
+    total < SEEDANCE_25_LIMITS.durationMin ||
+    total > SEEDANCE_25_LIMITS.durationMax
+  ) {
+    throw new SeedanceDirectorError(
+      "INVALID_OUTPUT",
+      `Multi-frame total duration must be ${SEEDANCE_25_LIMITS.durationMin}-${SEEDANCE_25_LIMITS.durationMax}s; got ${total}s. Director must retry or user must edit.`
     );
   }
 
@@ -387,6 +498,9 @@ function summarizeInput(input: DirectorInput): string {
   if (refCount > 0) summary.push(`refImages=${refCount}`);
   if (hasVideo) summary.push("refVideo=yes");
   if (hasAudio) summary.push("refAudio=yes");
+  if (input.sourceVideoUrls?.length)
+    summary.push(`sourceVideos=${input.sourceVideoUrls.length}`);
+  if (input.editInstruction) summary.push("editInstruction=yes");
   if (input.composedPersonProductImage) summary.push("composed=yes");
   if (input.firstFrameImage) summary.push("firstFrame=yes");
   if (input.lastFrameImage) summary.push("lastFrame=yes");

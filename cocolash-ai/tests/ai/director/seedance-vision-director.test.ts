@@ -56,7 +56,7 @@ describe("Seedance Vision Director", () => {
       // In real execution, this would call Claude with vision.
       // For testing, we verify the input validation logic.
       expect(input.influencerImageUrl).toMatch(/^https:\/\//);
-      expect(input.productImageUrls.length).toBeLessThanOrEqual(9);
+      expect(input.productImageUrls.length).toBeLessThanOrEqual(30);
       expect(input.script.length).toBeGreaterThan(0);
     });
 
@@ -89,10 +89,11 @@ describe("Seedance Vision Director", () => {
       );
     });
 
-    it("rejects requests with more than 9 product images", async () => {
+    // Seedance 2.5 raised the image cap from 9 to 30 (01-API-REFERENCE.md).
+    it("rejects requests with more than 30 product images", async () => {
       const input: VisionPromptInput = {
         influencerImageUrl: "https://example.com/influencer.jpg",
-        productImageUrls: Array.from({ length: 10 }, (_, i) =>
+        productImageUrls: Array.from({ length: 31 }, (_, i) =>
           `https://example.com/product${i}.jpg`
         ),
         script: "Test script",
@@ -100,7 +101,7 @@ describe("Seedance Vision Director", () => {
       };
 
       await expect(generateSeedanceVisionPrompt(input)).rejects.toThrow(
-        /exceeds 9 images/i
+        /exceeds 30 images/i
       );
     });
 

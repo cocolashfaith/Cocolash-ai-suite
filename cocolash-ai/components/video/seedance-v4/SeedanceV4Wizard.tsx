@@ -6,7 +6,10 @@ import { Step2DynamicInputs } from "./Step2DynamicInputs";
 import { Step3PromptReviewAndGenerate } from "./Step3PromptReviewAndGenerate";
 import { CostBreakdown } from "./CostBreakdown";
 import { DEFAULT_V4_STATE, type SeedanceV4WizardState } from "./types";
+import { applyVideoSettingsToState, isPristineWizardState } from "./lib/apply-settings";
+import { effectiveDuration, effectiveResolution } from "./lib/mode-input-rules";
 import { estimateV4Cost } from "@/lib/costs/estimates";
+import { useVideoSettings } from "@/lib/settings/use-video-settings";
 import { cn } from "@/lib/utils";
 
 const STEPS = [
@@ -24,6 +27,29 @@ const STEPS = [
  */
 const WIZARD_STORAGE_KEY = "cocolash:seedance-v4-wizard";
 
+/**
+ * Step-3-only state fields — patches that ONLY touch these don't bump
+ * `inputsVersion`. Anything else (script, mode, engine, duration, avatar,
+ * product, …) counts as an upstream change and invalidates the cached Director
+ * output. `engine`, `mode`, `duration` and `durationMode` are deliberately NOT
+ * here: they change the brief the Director writes to.
+ */
+const STEP3_OWNED_KEYS = new Set<keyof SeedanceV4WizardState>([
+  "directorPrompt",
+  "directorMultiFramePrompts",
+  "directorDiagnostics",
+  "directorPromptVersion",
+  "aspectRatio",
+  "resolution",
+  "fastMode",
+  "qualityTier",
+  "passFaces",
+  "isUncensored",
+  "outputFormat",
+  "bitrateMode",
+  "settingsApplied",
+]);
+
 interface SeedanceV4WizardProps {
   initialPersonImageUrl?: string;
 }
@@ -40,6 +66,7 @@ export function SeedanceV4Wizard({ initialPersonImageUrl: _ }: SeedanceV4WizardP
   const [step, setStep] = useState<0 | 1 | 2>(0);
   const [maxStep, setMaxStep] = useState<0 | 1 | 2>(0);
   const [state, setStateRaw] = useState<SeedanceV4WizardState>(DEFAULT_V4_STATE);
+  const { settings, loading: settingsLoading } = useVideoSettings();
 
   // Rehydrate persisted inputs once on mount. Done in an effect (not the
   // useState initializer) so the server and first client render both start
@@ -52,6 +79,14 @@ export function SeedanceV4Wizard({ initialPersonImageUrl: _ }: SeedanceV4WizardP
       const raw = window.localStorage.getItem(WIZARD_STORAGE_KEY);
       if (raw) {
         const parsed = JSON.parse(raw) as Partial<SeedanceV4WizardState>;
+        // Migrate pre-2.5 single-value inputs into the multi-select arrays so a
+        // returning user doesn't have to re-pick what they already chose.
+        if (parsed.ugcInfluencerImageUrl && !parsed.ugcInfluencerImageUrls?.length) {
+          parsed.ugcInfluencerImageUrls = [parsed.ugcInfluencerImageUrl];
+        }
+        if (!parsed.inputImageUrls?.length && parsed.multiReferenceImages?.length) {
+          parsed.inputImageUrls = parsed.multiReferenceImages.map((r) => r.url);
+        }
         // Merge over defaults so newly-added fields still get their defaults.
         // One-time localStorage rehydration is the documented escape hatch for
         // setting state in an effect (kept out of the useState initializer to
@@ -64,6 +99,21 @@ export function SeedanceV4Wizard({ initialPersonImageUrl: _ }: SeedanceV4WizardP
     }
   }, []);
 
+  // Seed a FRESH wizard from the global video defaults (D5). Runs at most once,
+  // and only when nothing the defaults own has been touched yet — a returning
+  // user's localStorage always wins.
+  const settingsSeededRef = useRef(false);
+  useEffect(() => {
+    if (!hydratedRef.current || settingsSeededRef.current || settingsLoading) return;
+    settingsSeededRef.current = true;
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setStateRaw((prev) =>
+      isPristineWizardState(prev)
+        ? { ...prev, ...applyVideoSettingsToState(prev, settings) }
+        : prev
+    );
+  }, [settings, settingsLoading]);
+
   // Persist on every change (only after hydration, so we don't clobber stored
   // state with the initial defaults before rehydration runs).
   useEffect(() => {
@@ -74,21 +124,6 @@ export function SeedanceV4Wizard({ initialPersonImageUrl: _ }: SeedanceV4WizardP
       // Quota / serialization issues are non-fatal.
     }
   }, [state]);
-
-  /**
-   * Step-3-only state fields — patches that ONLY touch these don't bump
-   * `inputsVersion`. Anything else (script, mode, avatar, product, etc.)
-   * counts as an upstream change and invalidates the cached Director output.
-   */
-  const STEP3_OWNED_KEYS = new Set<keyof SeedanceV4WizardState>([
-    "directorPrompt",
-    "directorMultiFramePrompts",
-    "directorDiagnostics",
-    "directorPromptVersion",
-    "aspectRatio",
-    "resolution",
-    "fastMode",
-  ]);
 
   const setState = useCallback(
     (
@@ -119,7 +154,12 @@ export function SeedanceV4Wizard({ initialPersonImageUrl: _ }: SeedanceV4WizardP
   };
 
   const handleReset = () => {
-    setStateRaw(DEFAULT_V4_STATE);
+    // "Start Over" re-seeds from the global video defaults, exactly like a
+    // brand-new browser would.
+    setStateRaw({
+      ...DEFAULT_V4_STATE,
+      ...applyVideoSettingsToState(DEFAULT_V4_STATE, settings),
+    });
     setStep(0);
     setMaxStep(0);
     try {
@@ -143,8 +183,15 @@ export function SeedanceV4Wizard({ initialPersonImageUrl: _ }: SeedanceV4WizardP
   const liveBreakdown = useMemo(() => {
     return estimateV4Cost({
       mode: state.mode,
-      durationSeconds: state.duration,
-      resolution: state.resolution,
+      // Engine 2.5 prices in real Enhancor credits; Auto (-1) is estimated on 10 s.
+      engine: state.engine,
+      durationSeconds: effectiveDuration(state),
+      resolution: effectiveResolution(state),
+      isUncensored: state.isUncensored,
+      hasVideoInputs: (state.inputVideoUrls?.length ?? 0) > 0,
+      multiFrameDurations: state.directorMultiFramePrompts?.map((p) => p.duration),
+      rates: settings.rates,
+      usdPerCredit: settings.usd_per_credit,
       generatesAvatar:
         state.mode === "ugc" ||
         // first+last w/ "Generate UGC" path also runs the avatar generator
@@ -155,16 +202,13 @@ export function SeedanceV4Wizard({ initialPersonImageUrl: _ }: SeedanceV4WizardP
       generatesLastFrame:
         state.mode === "first_n_last_frames" && !!state.lastFrameUrl,
       generatesScript:
-        state.mode !== "lipsyncing" && state.mode !== "text_to_video",
+        state.mode !== "lipsyncing" &&
+        state.mode !== "voice_clone" &&
+        state.mode !== "text_to_video" &&
+        state.mode !== "edit" &&
+        state.mode !== "extend",
     });
-  }, [
-    state.mode,
-    state.duration,
-    state.resolution,
-    state.ugcWasComposed,
-    state.firstFrameUrl,
-    state.lastFrameUrl,
-  ]);
+  }, [state, settings]);
 
   return (
     <div>

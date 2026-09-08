@@ -15,6 +15,7 @@
 import { getProductTruthBySku } from "@/lib/brand/product-truth";
 import type { ProductTruthEntry } from "@/lib/brand/product-truth";
 import { getOpenRouterClient, openrouterRequest } from "@/lib/openrouter/client";
+import { SEEDANCE_25_LIMITS } from "@/lib/seedance/v25/types";
 
 /**
  * Vision-capable model id (OpenRouter). Image-grounded prompt writing.
@@ -28,9 +29,16 @@ export const SEEDANCE_VISION_DIRECTOR_MODEL = "anthropic/claude-opus-4.7";
  * productSku is OPTIONAL and used only for supplementary grounding.
  */
 export interface VisionPromptInput {
-  /** URL of the influencer/creator image (first position, @influencer_image1) */
+  /** URL of the primary influencer/creator image (first position, @influencer_image1) */
   influencerImageUrl: string;
-  /** URLs of product images from different angles (2–9 images, @product_image1..N) */
+  /**
+   * OPTIONAL: several influencer/creator references (@influencer_image1..N).
+   * Seedance 2.5 accepts up to 30 images in total. When present, position 0 is
+   * the same image as `influencerImageUrl` (the caller keeps them in sync); the
+   * single-field contract still works on its own.
+   */
+  influencerImageUrls?: string[];
+  /** URLs of product images from different angles (1–30 images, @product_image1..N) */
   productImageUrls: string[];
   /** The spoken script the creator will say on camera */
   script: string;
@@ -99,11 +107,20 @@ export async function generateSeedanceVisionPrompt(
     ? buildProductTruthContext(productTruth)
     : "";
 
+  const influencerUrls = resolveInfluencerImageUrls(input);
+
   // Build system prompt (encodes brand-level CocoLash truth)
-  const systemPrompt = buildVisionDirectorSystemPrompt(truthContext);
+  const systemPrompt = buildVisionDirectorSystemPrompt(
+    truthContext,
+    influencerUrls.length
+  );
 
   // Build user prompt (context for this specific task)
-  let userPrompt = buildVisionDirectorUserPrompt(input, productTruth);
+  let userPrompt = buildVisionDirectorUserPrompt(
+    input,
+    productTruth,
+    influencerUrls.length
+  );
 
   // Explicit regeneration: nudge the Director toward a distinctly different
   // scene so repeated clicks don't keep returning the same setup, and sample
@@ -113,11 +130,12 @@ export async function generateSeedanceVisionPrompt(
     userPrompt += `\n\nVARIATION REQUEST (the user clicked "Regenerate" for a fresh take): ${input.variationHint!.trim()} Keep the product identity, script, and on-screen actions accurate, but change the setting, location, time of day, props, framing, and overall vibe so this reads as a clearly different scene.`;
   }
 
-  // Call vision model
+  // Call vision model. Influencer references go first so @influencer_image1..N
+  // map to them in order, then products as @product_image1..N.
   const prompt = await callVisionModel(
     systemPrompt,
     userPrompt,
-    input.influencerImageUrl,
+    influencerUrls,
     input.productImageUrls,
     isVariation ? 0.9 : undefined
   );
@@ -151,10 +169,29 @@ function validateVisionInput(input: VisionPromptInput): void {
     );
   }
 
-  if (input.productImageUrls.length > 9) {
+  if (input.productImageUrls.length > SEEDANCE_25_LIMITS.maxImages) {
     throw new VisionDirectorError(
       "INVALID_INPUT",
-      "productImageUrls exceeds 9 images (API limit)"
+      `productImageUrls exceeds ${SEEDANCE_25_LIMITS.maxImages} images (API limit)`
+    );
+  }
+
+  if (
+    input.influencerImageUrls &&
+    input.influencerImageUrls.length > SEEDANCE_25_LIMITS.maxImages
+  ) {
+    throw new VisionDirectorError(
+      "INVALID_INPUT",
+      `influencerImageUrls exceeds ${SEEDANCE_25_LIMITS.maxImages} images (API limit)`
+    );
+  }
+
+  const totalImages =
+    (input.influencerImageUrls?.length ?? 1) + input.productImageUrls.length;
+  if (totalImages > SEEDANCE_25_LIMITS.maxImages) {
+    throw new VisionDirectorError(
+      "INVALID_INPUT",
+      `influencer + product images exceed ${SEEDANCE_25_LIMITS.maxImages} images combined (API limit)`
     );
   }
 
@@ -167,7 +204,11 @@ function validateVisionInput(input: VisionPromptInput): void {
   }
 
   // Validate all URLs are HTTPS (security: T-34-V5)
-  const allUrls = [input.influencerImageUrl, ...input.productImageUrls];
+  const allUrls = [
+    input.influencerImageUrl,
+    ...(input.influencerImageUrls ?? []),
+    ...input.productImageUrls,
+  ];
   for (const url of allUrls) {
     if (!url.startsWith("https://")) {
       throw new VisionDirectorError(
@@ -191,7 +232,8 @@ function validateVisionInput(input: VisionPromptInput): void {
 export async function callVisionModel(
   systemPrompt: string,
   userPrompt: string,
-  influencerImageUrl: string,
+  /** One influencer URL, or several (@influencer_image1..N, in order). */
+  influencerImageUrl: string | string[],
   productImageUrls: string[],
   /** Optional sampling temperature. Omitted = provider default (grounded
    *  initial run); a higher value is passed on explicit regeneration for
@@ -200,15 +242,15 @@ export async function callVisionModel(
 ): Promise<string> {
   const client = getOpenRouterClient();
 
-  // Image content parts — influencer first so @influencer_image1 maps to it,
-  // then products so @product_image1..N map in array order.
-  const imageParts = [
-    { type: "image_url" as const, image_url: { url: influencerImageUrl } },
-    ...productImageUrls.map((url) => ({
-      type: "image_url" as const,
-      image_url: { url },
-    })),
-  ];
+  // Image content parts — influencers first so @influencer_image1..N map to
+  // them in order, then products so @product_image1..N map in array order.
+  const influencerUrls = Array.isArray(influencerImageUrl)
+    ? influencerImageUrl
+    : [influencerImageUrl];
+  const imageParts = [...influencerUrls, ...productImageUrls].map((url) => ({
+    type: "image_url" as const,
+    image_url: { url },
+  }));
 
   const completion = await openrouterRequest(() =>
     client.chat.completions.create({
@@ -237,24 +279,54 @@ export async function callVisionModel(
   return prompt;
 }
 
+/**
+ * The influencer references in @influencer_image1..N order. Callers may pass
+ * either the single legacy field or the 2.5 array; when both are present the
+ * array wins and the single field is expected to be its first entry.
+ */
+function resolveInfluencerImageUrls(input: VisionPromptInput): string[] {
+  const many = input.influencerImageUrls?.filter(Boolean) ?? [];
+  if (many.length === 0) return [input.influencerImageUrl];
+  return many.includes(input.influencerImageUrl)
+    ? many
+    : [input.influencerImageUrl, ...many];
+}
+
 // ── System prompt construction ───────────────────────────────
 
-function buildVisionDirectorSystemPrompt(truthContext: string): string {
-  return `You are a Seedance 2.0 prompt specialist. Your job is to write a compelling, product-accurate UGC-style Seedance prompt that will drive an image-to-video AI model to generate a short video (4–15 seconds).
-
-You have access to the selected images submitted by the user (1 influencer + 2–9 product images). Analyze them carefully. Do NOT reference or process any images outside this set.
-
-KEY RULES FOR @-MENTION TOKENS:
-
-The images are submitted in this order:
-1. Image 1 (first image): The influencer/creator → reference as @influencer_image1
+function buildVisionDirectorSystemPrompt(
+  truthContext: string,
+  influencerCount = 1
+): string {
+  const n = Math.max(1, influencerCount);
+  const influencerTokens =
+    n === 1
+      ? "@influencer_image1"
+      : `@influencer_image1…@influencer_image${n}`;
+  const orderBlock =
+    n === 1
+      ? `1. Image 1 (first image): The influencer/creator → reference as @influencer_image1
 2. Image 2+ (subsequent images): Product angles → reference as @product_image1, @product_image2, etc.
 
 Example with 4 images total (1 influencer + 3 products):
 - Image 1 (influencer) = @influencer_image1
 - Image 2 (product) = @product_image1
 - Image 3 (product) = @product_image2
-- Image 4 (product) = @product_image3
+- Image 4 (product) = @product_image3`
+      : `1. Images 1–${n}: ${n} influencer references → reference as @influencer_image1 … @influencer_image${n}
+2. Images ${n + 1}+: Product angles → reference as @product_image1, @product_image2, etc.
+
+The influencer references show the SAME creator (different angles, outfits or lighting) unless the script clearly needs more than one person. Anchor identity on @influencer_image1 and use the others only to keep her face and build consistent.`;
+  return `You are a Seedance prompt specialist (Seedance 2.0 and 2.5). Your job is to write a compelling, product-accurate UGC-style Seedance prompt that will drive an image-to-video AI model to generate a short video (4–30 seconds, or Auto where the model picks the length).
+
+You have access to the selected images submitted by the user (${n} influencer reference${n === 1 ? "" : "s"} + up to 30 images in total, the rest being product angles). Analyze them carefully. Do NOT reference or process any images outside this set.
+
+KEY RULES FOR @-MENTION TOKENS:
+
+The images are submitted in this order:
+${orderBlock}
+
+Use ${influencerTokens} for the creator and @product_image1..N for the products.
 
 STYLE REQUIREMENTS:
 
@@ -311,13 +383,22 @@ REMEMBER: Your analysis of the images is PRIMARY. If the images contradict the d
 
 function buildVisionDirectorUserPrompt(
   input: VisionPromptInput,
-  productTruth: ProductTruthEntry | null
+  productTruth: ProductTruthEntry | null,
+  influencerCount = 1
 ): string {
   const lines: string[] = [];
+  const n = Math.max(1, influencerCount);
 
   lines.push("Here are the images the creator will use:");
-  lines.push("[Image 1: Influencer / Creator]");
-  lines.push("[Images 2+: Product images from different angles]");
+  if (n === 1) {
+    lines.push("[Image 1: Influencer / Creator]");
+    lines.push("[Images 2+: Product images from different angles]");
+  } else {
+    lines.push(
+      `[Images 1-${n}: ${n} influencer references (@influencer_image1…@influencer_image${n})]`
+    );
+    lines.push(`[Images ${n + 1}+: Product images from different angles]`);
+  }
   lines.push("");
 
   lines.push(`Creator's script (what they will say on camera):`);
@@ -341,7 +422,11 @@ function buildVisionDirectorUserPrompt(
 
   lines.push("");
   lines.push("Write the Seedance prompt. Remember:");
-  lines.push("- @influencer_image1 for the first image (creator)");
+  lines.push(
+    n === 1
+      ? "- @influencer_image1 for the first image (creator)"
+      : `- @influencer_image1…@influencer_image${n} for the first ${n} images (creator references, identity anchored on @influencer_image1)`
+  );
   lines.push("- @product_image1, @product_image2, etc. for product images (in order)");
   lines.push("- Explicit actions (hold, turn, open, demonstrate)");
   lines.push("- Scene and lighting description");
@@ -358,6 +443,7 @@ function summarizeVisionInput(
   productTruth: ProductTruthEntry | null
 ): string {
   const summary: string[] = [
+    `influencerCount=${resolveInfluencerImageUrls(input).length}`,
     `productCount=${input.productImageUrls.length}`,
     `scriptLength=${input.script.length}`,
     `campaign=${input.campaignType}`,

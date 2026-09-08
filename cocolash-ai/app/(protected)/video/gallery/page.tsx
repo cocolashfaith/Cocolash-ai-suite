@@ -17,6 +17,7 @@ import {
 import type {
   GeneratedVideo,
   HeyGenVideoStatus,
+  SeedanceEngine,
   VideoPipeline,
   VideoScript,
   VideoStatusResponse,
@@ -26,7 +27,18 @@ import type {
 const RECONCILE_INTERVAL_MS = 15_000;
 
 type StatusFilter = HeyGenVideoStatus | "all";
-type PipelineFilter = VideoPipeline | "all";
+
+/**
+ * D14: the pipeline chips split Seedance by engine, because "did 2.5 fix
+ * Faith's failure cases?" is answered by looking at the two sets side by side.
+ * `engine` is sent to /api/videos, which ignores it before the migration runs.
+ */
+interface PipelineFilterOption {
+  value: string;
+  label: string;
+  pipeline?: VideoPipeline;
+  engine?: SeedanceEngine;
+}
 
 const STATUS_FILTERS: { value: StatusFilter; label: string }[] = [
   { value: "all", label: "All" },
@@ -35,10 +47,12 @@ const STATUS_FILTERS: { value: StatusFilter; label: string }[] = [
   { value: "failed", label: "Failed" },
 ];
 
-const PIPELINE_FILTERS: { value: PipelineFilter; label: string }[] = [
+const PIPELINE_FILTERS: PipelineFilterOption[] = [
   { value: "all", label: "All Pipelines" },
-  { value: "heygen", label: "HeyGen" },
-  { value: "seedance", label: "Seedance" },
+  { value: "heygen", label: "HeyGen", pipeline: "heygen" },
+  { value: "seedance-2.5", label: "Seedance 2.5", pipeline: "seedance", engine: "2.5" },
+  { value: "seedance-2.0", label: "Seedance 2.0", pipeline: "seedance", engine: "2.0" },
+  { value: "seedance", label: "All Seedance", pipeline: "seedance" },
 ];
 
 export default function VideoGalleryPage() {
@@ -48,7 +62,7 @@ export default function VideoGalleryPage() {
   const [loadingMore, setLoadingMore] = useState(false);
   const [offset, setOffset] = useState(0);
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
-  const [pipelineFilter, setPipelineFilter] = useState<PipelineFilter>("all");
+  const [pipelineFilter, setPipelineFilter] = useState<string>("all");
 
   const [selectedVideo, setSelectedVideo] = useState<GeneratedVideo | null>(null);
   const [selectedScript, setSelectedScript] = useState<VideoScript | null>(null);
@@ -71,9 +85,9 @@ export default function VideoGalleryPage() {
           params.set("status", statusFilter);
         }
 
-        if (pipelineFilter !== "all") {
-          params.set("pipeline", pipelineFilter);
-        }
+        const selected = PIPELINE_FILTERS.find((f) => f.value === pipelineFilter);
+        if (selected?.pipeline) params.set("pipeline", selected.pipeline);
+        if (selected?.engine) params.set("engine", selected.engine);
 
         const res = await fetch(`/api/videos?${params}`);
         const data = await res.json();
@@ -87,8 +101,10 @@ export default function VideoGalleryPage() {
         }
         setTotal(data.total);
         setOffset(newOffset);
-      } catch {
-        toast.error("Failed to load videos");
+      } catch (err) {
+        toast.error(
+          err instanceof Error && err.message ? err.message : "Failed to load videos"
+        );
       } finally {
         setLoading(false);
         setLoadingMore(false);
@@ -177,6 +193,44 @@ export default function VideoGalleryPage() {
     }
   };
 
+  /** Fetch one row and show it in the modal (the "Re-rendered from" link). */
+  const openVideoById = useCallback(async (id: string) => {
+    const existing = videosRef.current.find((v) => v.id === id);
+    if (existing) {
+      void openModal(existing);
+      return;
+    }
+    try {
+      const res = await fetch(`/api/videos/${id}`);
+      const data = await res.json();
+      if (res.ok && data.video) {
+        setSelectedVideo(data.video as GeneratedVideo);
+        setSelectedScript(data.script ?? null);
+        setModalOpen(true);
+      }
+    } catch {
+      toast.error("Couldn't open the source video");
+    }
+  }, []);
+
+  /**
+   * A Final 1080p re-render was queued (D3). Prepend the new row so the user
+   * sees it immediately; it starts as "processing", so the reconcile poller
+   * picks it up and flips it to Ready on its own.
+   */
+  const handleRerendered = useCallback(async (newVideoId: string) => {
+    try {
+      const res = await fetch(`/api/videos/${newVideoId}`);
+      const data = await res.json();
+      if (!res.ok || !data.video) return;
+      const row = data.video as GeneratedVideo;
+      setVideos((prev) => (prev.some((v) => v.id === row.id) ? prev : [row, ...prev]));
+      setTotal((prev) => prev + 1);
+    } catch {
+      // Non-fatal — the next filter change / reload will show it.
+    }
+  }, []);
+
   const handleDelete = (id: string) => {
     setVideos((prev) => prev.filter((v) => v.id !== id));
     setTotal((prev) => prev - 1);
@@ -257,7 +311,12 @@ export default function VideoGalleryPage() {
           </div>
           <p className="mt-4 text-sm font-medium text-coco-brown-medium/50">
             {statusFilter !== "all" || pipelineFilter !== "all"
-              ? `No ${pipelineFilter !== "all" ? pipelineFilter + " " : ""}${statusFilter !== "all" ? statusFilter + " " : ""}videos`
+              ? `No ${
+                  pipelineFilter !== "all"
+                    ? (PIPELINE_FILTERS.find((f) => f.value === pipelineFilter)?.label ??
+                        pipelineFilter) + " "
+                    : ""
+                }${statusFilter !== "all" ? statusFilter + " " : ""}videos`
               : "No videos generated yet"}
           </p>
           <p className="mt-1 text-xs text-coco-brown-medium/30">
@@ -313,6 +372,8 @@ export default function VideoGalleryPage() {
           setSelectedScript(null);
         }}
         onDelete={handleDelete}
+        onOpenVideo={openVideoById}
+        onRerendered={handleRerendered}
       />
     </div>
   );

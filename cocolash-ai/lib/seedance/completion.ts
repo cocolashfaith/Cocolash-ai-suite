@@ -1,8 +1,10 @@
 import { createAdminClient } from "@/lib/supabase/server";
 import { recordActualCost } from "@/lib/costs/tracker";
+import { creditsToUsd } from "@/lib/seedance/pricing";
+import { getVideoSettings } from "@/lib/settings/video-settings";
 import { SEEDANCE_COSTS } from "@/lib/seedance/types";
 import { processVideo } from "@/lib/video/processor";
-import type { GeneratedVideo } from "@/lib/types";
+import type { GeneratedVideo, SeedanceEngine } from "@/lib/types";
 
 type SupabaseAdmin = Awaited<ReturnType<typeof createAdminClient>>;
 
@@ -11,6 +13,14 @@ interface CompleteSeedanceVideoParams {
   video: GeneratedVideo;
   rawVideoUrl: string;
   thumbnailUrl?: string | null;
+  /**
+   * Actual Enhancor credits from the 2.5 webhook / status `cost` field.
+   * When present the provisional `processing_cost` estimate is replaced by
+   * `credits × video_settings.usd_per_credit`; when absent the estimate stands.
+   */
+  creditsCost?: number | null;
+  /** Defaults to "2.0" so every existing caller keeps the legacy cost formula. */
+  engine?: SeedanceEngine;
 }
 
 export async function completeSeedanceVideo({
@@ -18,6 +28,8 @@ export async function completeSeedanceVideo({
   video,
   rawVideoUrl,
   thumbnailUrl: providerThumbnailUrl,
+  creditsCost = null,
+  engine = "2.0",
 }: CompleteSeedanceVideoParams): Promise<GeneratedVideo> {
   if (!isSafePublicHttpsUrl(rawVideoUrl)) {
     console.error("[seedance/complete] Unsafe result URL rejected:", rawVideoUrl);
@@ -102,12 +114,24 @@ export async function completeSeedanceVideo({
     console.error("[seedance/complete] Post-processing error:", processError);
   }
 
+  // Cost. Engine 2.5 reports the REAL credit spend on the callback — record it
+  // (and the USD it converts to at the live rate). Engine 2.0 never reports a
+  // cost, so its legacy per-second estimate formula is unchanged.
   try {
-    const durationSec = video.duration_seconds ?? 15;
-    const totalCost =
-      durationSec * SEEDANCE_COSTS.COST_PER_SECOND_720P_NO_VIDEO +
-      SEEDANCE_COSTS.POST_PROCESSING;
-    await recordActualCost(video.id, totalCost);
+    if (engine === "2.5") {
+      if (creditsCost != null && Number.isFinite(creditsCost)) {
+        const settings = await getVideoSettings(supabase);
+        const usd = Number(creditsToUsd(creditsCost, settings.usd_per_credit).toFixed(4));
+        await recordActualCost(video.id, usd, { credits: creditsCost });
+      }
+      // No cost in the callback → leave the provisional estimate written at insert.
+    } else {
+      const durationSec = video.duration_seconds ?? 15;
+      const totalCost =
+        durationSec * SEEDANCE_COSTS.COST_PER_SECOND_720P_NO_VIDEO +
+        SEEDANCE_COSTS.POST_PROCESSING;
+      await recordActualCost(video.id, totalCost);
+    }
   } catch (costError) {
     console.error("[seedance/complete] Cost recording failed (non-fatal):", costError);
   }
@@ -121,6 +145,7 @@ export async function completeSeedanceVideo({
     caption_srt: null,
     has_captions: false,
     completed_at: completedAt,
+    credits_cost: creditsCost ?? video.credits_cost ?? null,
   };
 }
 

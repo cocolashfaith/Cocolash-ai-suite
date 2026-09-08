@@ -3,6 +3,7 @@
 import { cn } from "@/lib/utils";
 import { Coins } from "lucide-react";
 import type { V4CostBreakdown } from "@/lib/costs/estimates";
+import { describeCostBreakdown } from "@/lib/costs/format";
 
 interface CostBreakdownProps {
   breakdown: V4CostBreakdown;
@@ -28,6 +29,10 @@ export function CostBreakdown({
   className,
   showEstimateBadge = true,
 }: CostBreakdownProps) {
+  // Engine 2.5 is billed in Enhancor credits (D4) — show credits AND ≈ USD.
+  // Engine 2.0 breakdowns get exactly the same strings as before.
+  const display = describeCostBreakdown(breakdown);
+
   if (variant === "headline") {
     return (
       <div
@@ -38,11 +43,18 @@ export function CostBreakdown({
       >
         <div className="flex items-center gap-2">
           <Coins className="h-4 w-4 text-coco-golden" />
-          <span className="text-xs font-semibold text-coco-brown">
-            Estimated cost
-          </span>
+          <div className="min-w-0">
+            <span className="block text-xs font-semibold text-coco-brown">
+              Estimated cost
+            </span>
+            {display.creditsLine && (
+              <span className="block truncate text-[10px] text-coco-brown-medium/60">
+                {display.creditsLine}
+              </span>
+            )}
+          </div>
         </div>
-        <div className="flex items-center gap-3">
+        <div className="flex shrink-0 items-center gap-3">
           <span className="text-base font-bold text-coco-brown">
             ~${breakdown.total.toFixed(2)}
           </span>
@@ -90,6 +102,12 @@ export function CostBreakdown({
                   {item.hint}
                 </p>
               )}
+              {item.id === "seedance" && display.creditsLine && (
+                <p className="mt-1 inline-flex items-center gap-1 rounded-full bg-coco-golden/10 px-2 py-0.5 text-[10px] font-medium text-coco-brown">
+                  <Coins className="h-2.5 w-2.5 text-coco-golden" />
+                  {display.creditsLine}
+                </p>
+              )}
             </div>
             <div className="shrink-0 text-right">
               <p className="text-xs font-mono text-coco-brown">
@@ -106,6 +124,10 @@ export function CostBreakdown({
           ${breakdown.total.toFixed(2)}
         </span>
       </div>
+
+      {display.note && (
+        <p className="text-[10px] text-amber-600">{display.note}</p>
+      )}
     </section>
   );
 }

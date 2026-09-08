@@ -5,7 +5,7 @@ import { ImageIcon, Loader2, Sparkles, Upload, Wand2, X } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
-import { uploadSeedanceMedia } from "../lib/upload";
+import { uploadVideoInput } from "../lib/upload";
 import type { SeedanceV4WizardState } from "../types";
 import { CapabilityCard } from "../CapabilityCard";
 
@@ -121,7 +121,7 @@ export function FirstAndLastFrameMode({
     }
     setUploading(true);
     try {
-      const { url } = await uploadSeedanceMedia(file, "image");
+      const { url } = await uploadVideoInput(file, "image");
       setState({ firstFrameUrl: url, lastFrameUrl: undefined, lastFramePrompt: undefined });
       toast.success("First frame uploaded");
     } catch (err) {
@@ -173,7 +173,10 @@ export function FirstAndLastFrameMode({
     }
   }
 
-  const canContinue = !!state.firstFrameUrl && !!state.lastFrameUrl;
+  // Seedance 2.5 only requires the FIRST frame — the last one is optional.
+  const lastFrameOptional = state.engine === "2.5";
+  const canContinue =
+    !!state.firstFrameUrl && (lastFrameOptional || !!state.lastFrameUrl);
 
   return (
     <div className="space-y-6">
@@ -347,13 +350,23 @@ export function FirstAndLastFrameMode({
       <section className="space-y-3 rounded-xl border-2 border-coco-beige-dark/50 bg-white/50 p-4">
         <div>
           <h3 className="text-sm font-semibold text-coco-brown">
-            Describe the destination scene
+            Describe the destination scene{" "}
+            {lastFrameOptional && (
+              <span className="font-normal text-coco-brown-medium/60">(optional)</span>
+            )}
           </h3>
           <p className="mt-0.5 text-[11px] text-coco-brown-medium/60">
-            Required. The Last-Frame Director (Claude Opus 4.7) will read your
+            {lastFrameOptional
+              ? "Optional on Seedance 2.5 — with a first frame only, Seedance improvises the ending. "
+              : "Required. "}
+            The Last-Frame Director (Claude Opus 4.7) will read your
             first frame and your description, then NanoBanana will generate
             the last frame with environmental consistency (lighting, palette,
             framing carry over).
+          </p>
+          <p className="text-[11px] text-coco-brown-medium/60">
+            The output aspect ratio follows your <strong>first frame</strong> — this mode always
+            runs adaptive.
           </p>
         </div>
         <textarea

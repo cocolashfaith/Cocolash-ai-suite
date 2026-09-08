@@ -40,7 +40,18 @@ export type ProductCategoryKey =
   | "full-kit-pouch"
   | "full-kit-box"
   | "storage-pouch"
-  | "branding-flatlay";
+  | "branding-flatlay"
+  // ── Seedance 2.5 (D7) — per-SKU categories seeded from live Shopify imagery
+  // by scripts/seed-shopify-references.ts. These three products are visually
+  // distinct enough that the packaging-based categories misrepresent them:
+  // Sorrel is DARK BROWN (the nude tray shots are black lashes) and Fern/Ivy
+  // are pre-glued half lashes, unlike any tray or kit already in the library.
+  | "sorrel"
+  | "fern"
+  | "ivy"
+  // Auto-created by POST /api/products/upload for user uploads. Not in
+  // KNOWN_PRODUCT_CATEGORY_KEYS: no SKU is ever authored against it.
+  | "custom-uploads";
 
 export const KNOWN_PRODUCT_CATEGORY_KEYS: ReadonlyArray<ProductCategoryKey> = [
   "single-black-tray",
@@ -50,6 +61,9 @@ export const KNOWN_PRODUCT_CATEGORY_KEYS: ReadonlyArray<ProductCategoryKey> = [
   "full-kit-box",
   "storage-pouch",
   "branding-flatlay",
+  "sorrel",
+  "fern",
+  "ivy",
 ];
 
 export interface ProductTruthEntry {
@@ -209,11 +223,14 @@ export const PRODUCT_TRUTH: ReadonlyArray<ProductTruthEntry> = [
 
   // Sorrel: Warm Radiance, dark brown, light-to-medium, versatile
   // CSV indicates: 10-16mm custom-map availability, dark brown shade
+  // categoryKey is "sorrel", NOT "single-nude-tray" (D7): Sorrel is Shopify's
+  // "Brown Volume Lash" and the nude-tray reference shots are black lashes, so
+  // the shared category made every Sorrel render the wrong colour.
   {
     sku: "sorrel",
     displayName: "Sorrel",
     productHandle: "sorrel",
-    categoryKey: "single-nude-tray",
+    categoryKey: "sorrel",
     lashType: "clusters",
     lengthRange: "10-16mm",
     volumeProfile: "medium",
@@ -237,6 +254,53 @@ export const PRODUCT_TRUTH: ReadonlyArray<ProductTruthEntry> = [
     packagingType: "four-pack box",
     colorTone: "dark warm brown",
     bestFor: "Sorrel warm-brown lash clusters, four-pack bundle",
+    retired: false,
+  },
+
+  // ========== ACTIVE HALF LASH KITS (D7) ==========
+  // Facts below come ONLY from the live Shopify descriptions (read 2026-09-08
+  // via the Storefront API by scripts/seed-shopify-references.ts --dry-run).
+  // Both are PRE-GLUED — "no lash glue or bond required" — and NEITHER
+  // description mentions a magnetic closure, so magneticClosure stays false and
+  // no packaging claim beyond "half lash kit box" is made.
+
+  // Fern — Shopify handle "fern", product type "Half Lashes", tag "classic".
+  // "the effortless classic half lash designed for a natural, lifted finish …
+  //  pre-glued half-lash design … applies in seconds with no lash glue or bond
+  //  required. Simply peel, place, and go."
+  {
+    sku: "fern",
+    displayName: "Fern Half Lash Kit",
+    productHandle: "fern",
+    categoryKey: "fern",
+    lashType: "kit",
+    volumeProfile: "natural",
+    bandMaterial: "cotton",
+    magneticClosure: false,
+    packagingType: "half lash kit box",
+    kitContents: ["pre-glued half lashes"],
+    colorTone: "black",
+    bestFor: "Effortless classic half lash — natural lifted finish, peel and place",
+    retired: false,
+  },
+
+  // Ivy — Shopify handle "ivy", product type "Half Lashes", tag "volume".
+  // "a fuller half lash created for soft volume and effortless glam. Designed
+  //  to enhance the outer corners of the eyes … Just peel, place, and enjoy
+  //  beautiful volume in seconds."
+  {
+    sku: "ivy",
+    displayName: "Ivy Half Lash Kit",
+    productHandle: "ivy",
+    categoryKey: "ivy",
+    lashType: "kit",
+    volumeProfile: "soft",
+    bandMaterial: "cotton",
+    magneticClosure: false,
+    packagingType: "half lash kit box",
+    kitContents: ["pre-glued half lashes"],
+    colorTone: "black",
+    bestFor: "Soft volume half lash — lifted outer corners, peel and place",
     retired: false,
   },
 

@@ -13,6 +13,11 @@ import {
   DollarSign,
   Tag,
   Layers,
+  Cpu,
+  Wand2,
+  Gauge,
+  Link2,
+  AlertTriangle,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -22,6 +27,16 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import type { GeneratedVideo, VideoScript } from "@/lib/types";
+import { RerenderButton } from "@/components/video/RerenderButton";
+import {
+  canRerenderAsFinal,
+  videoCostLabel,
+  videoDurationLabel,
+  videoEngineLabel,
+  videoModeLabel,
+  videoResolutionLabel,
+  videoTierLabel,
+} from "@/lib/video/display";
 import { toast } from "sonner";
 
 const CAMPAIGN_DISPLAY: Record<string, string> = {
@@ -46,7 +61,9 @@ const EDUCATIONAL_CAMPAIGNS = new Set([
 ]);
 
 function getPipelineLabel(video: GeneratedVideo): string {
-  if (video.pipeline === "seedance") return "Seedance 2.0";
+  // Seedance rows carry their engine (D1): "Seedance 2.5" for new jobs,
+  // "Seedance 2.0" for everything written before the migration.
+  if (video.pipeline === "seedance") return videoEngineLabel(video);
   const ct = video.background_type ?? "";
   return EDUCATIONAL_CAMPAIGNS.has(ct) ? "Brand Content Studio" : "HeyGen";
 }
@@ -57,6 +74,10 @@ interface VideoModalProps {
   isOpen: boolean;
   onClose: () => void;
   onDelete: (id: string) => void;
+  /** Open another row by id — used by the "Re-rendered from" link. */
+  onOpenVideo?: (id: string) => void;
+  /** A Final 1080p re-render was queued for this video. */
+  onRerendered?: (newVideoId: string) => void;
 }
 
 export function VideoModal({
@@ -65,6 +86,8 @@ export function VideoModal({
   isOpen,
   onClose,
   onDelete,
+  onOpenVideo,
+  onRerendered,
 }: VideoModalProps) {
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
@@ -72,6 +95,8 @@ export function VideoModal({
   const videoUrl = video?.final_video_url ?? video?.raw_video_url ?? null;
 
   if (!video) return null;
+
+  const isSeedance = video.pipeline === "seedance";
 
   const handleDownload = () => {
     window.open(`/api/videos/${video.id}/download`, "_blank");
@@ -169,13 +194,25 @@ export function VideoModal({
             <MetaItem
               icon={Clock}
               label="Duration"
-              value={video.duration_seconds ? `${video.duration_seconds}s` : "—"}
+              value={videoDurationLabel(video)}
             />
             <MetaItem
               icon={Ratio}
               label="Aspect Ratio"
               value={video.aspect_ratio ?? "—"}
             />
+            {isSeedance && (
+              <>
+                <MetaItem icon={Cpu} label="Engine" value={videoEngineLabel(video)} />
+                <MetaItem icon={Wand2} label="Mode" value={videoModeLabel(video)} />
+                <MetaItem icon={Gauge} label="Quality" value={videoTierLabel(video)} />
+                <MetaItem
+                  icon={Film}
+                  label="Resolution"
+                  value={videoResolutionLabel(video)}
+                />
+              </>
+            )}
             <MetaItem
               icon={Mic}
               label="Voice"
@@ -188,14 +225,43 @@ export function VideoModal({
             />
             <MetaItem
               icon={DollarSign}
-              label="Cost"
+              label={isSeedance ? "Credits / Cost" : "Cost"}
               value={
-                video.processing_cost
-                  ? `$${Number(video.processing_cost).toFixed(2)}`
-                  : "—"
+                isSeedance
+                  ? videoCostLabel(video)
+                  : video.processing_cost
+                    ? `$${Number(video.processing_cost).toFixed(2)}`
+                    : "—"
               }
             />
           </div>
+
+          {/* Provider error (2.5 rows persist it on the row) */}
+          {video.error_message && (
+            <div className="flex items-start gap-2 rounded-xl border border-red-200 bg-red-50 p-3">
+              <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-red-600" />
+              <div>
+                <p className="text-xs font-semibold text-red-900">Generation error</p>
+                <p className="mt-0.5 text-[11px] text-red-800">{video.error_message}</p>
+              </div>
+            </div>
+          )}
+
+          {/* D3: this row is the Final 1080p re-render of an earlier draft */}
+          {video.rerender_of && (
+            <button
+              type="button"
+              onClick={() => onOpenVideo?.(video.rerender_of as string)}
+              disabled={!onOpenVideo}
+              className="flex w-full items-center gap-2 rounded-xl border border-coco-beige-dark bg-coco-beige-light/30 px-3 py-2 text-left text-xs text-coco-brown-medium transition-colors hover:bg-coco-beige-light disabled:cursor-default disabled:hover:bg-coco-beige-light/30"
+            >
+              <Link2 className="h-3.5 w-3.5 shrink-0 text-coco-brown-medium/50" />
+              Re-rendered from an earlier draft
+              {onOpenVideo && (
+                <span className="ml-auto font-medium text-coco-golden">Open draft</span>
+              )}
+            </button>
+          )}
 
           {/* Script Text */}
           {(script || video.script_text_cache) && (
@@ -210,7 +276,17 @@ export function VideoModal({
           )}
 
           {/* Actions */}
-          <div className="flex gap-3 pt-2">
+          <div className="flex flex-wrap gap-3 pt-2">
+            {canRerenderAsFinal(video) && (
+              <RerenderButton
+                video={video}
+                onQueued={onRerendered}
+                size="lg"
+                variant="outline"
+                className="flex-1 border-coco-golden/40 text-sm"
+              />
+            )}
+
             {videoUrl && (
               <Button
                 onClick={handleDownload}

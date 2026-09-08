@@ -6,6 +6,7 @@
  */
 
 import { createAdminClient } from "@/lib/supabase/server";
+import { isMissingColumnError } from "@/lib/supabase/schema-errors";
 import { API_COSTS } from "./estimates";
 
 // Re-export client-safe utilities for server-side callers
@@ -36,20 +37,50 @@ export interface CostSummary {
 
 // ── Record Actual Cost ───────────────────────────────────────
 
+/**
+ * Persist the final cost of a video.
+ *
+ * `opts.credits` is the REAL Enhancor credit spend reported by a Seedance 2.5
+ * callback (`credits_cost`, NUMERIC(12,3)). It only exists after the 20260908
+ * migration, so a missing-column error retries with `processing_cost` alone —
+ * the Seedance 2.0 pipeline must keep working before the migration lands.
+ */
 export async function recordActualCost(
   videoId: string,
-  cost: number
+  cost: number,
+  opts?: { credits?: number | null }
 ): Promise<void> {
   const supabase = await createAdminClient();
 
+  const base = { processing_cost: Number(cost.toFixed(4)) };
+  const credits = opts?.credits;
+  const patch =
+    credits != null && Number.isFinite(credits)
+      ? { ...base, credits_cost: Number(credits.toFixed(3)) }
+      : base;
+
   const { error } = await supabase
     .from("generated_videos")
-    .update({ processing_cost: Number(cost.toFixed(4)) })
+    .update(patch)
     .eq("id", videoId);
 
-  if (error) {
-    console.error("[costs] Failed to record cost:", error);
+  if (!error) return;
+
+  if (patch !== base && isMissingColumnError(error)) {
+    console.warn(
+      "[costs] credits_cost column missing — recording processing_cost only (run the 20260908 migration)."
+    );
+    const { error: retryError } = await supabase
+      .from("generated_videos")
+      .update(base)
+      .eq("id", videoId);
+    if (retryError) {
+      console.error("[costs] Failed to record cost:", retryError);
+    }
+    return;
   }
+
+  console.error("[costs] Failed to record cost:", error);
 }
 
 // ── Monthly Cost Summary ─────────────────────────────────────

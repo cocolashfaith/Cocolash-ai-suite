@@ -2,7 +2,8 @@
  * Phase 15 — Director system prompt registry sanity tests.
  *
  * These tests do NOT call the Anthropic API. They verify that:
- *   1. Every Enhancor mode has a registered system prompt
+ *   1. Every Enhancor mode (all nine on Seedance 2.5) has a registered
+ *      system prompt
  *   2. The /admin/prompts viewer (Phase 19) sees every Director prompt
  *   3. The Director input validator rejects bad inputs
  */
@@ -20,6 +21,7 @@ import type { DirectorMode } from "@/lib/ai/director/types";
 
 describe("Director system-prompt registry", () => {
   it("registers a system prompt for every Enhancor mode", () => {
+    // All nine Seedance 2.5 modes (edit / extend / voice_clone are 2.5-only).
     const modes: DirectorMode[] = [
       "ugc",
       "multi_reference",
@@ -27,6 +29,9 @@ describe("Director system-prompt registry", () => {
       "lipsyncing",
       "first_n_last_frames",
       "text_to_video",
+      "edit",
+      "extend",
+      "voice_clone",
     ];
     for (const mode of modes) {
       const { id, text } = getSeedanceDirectorPrompt(mode);

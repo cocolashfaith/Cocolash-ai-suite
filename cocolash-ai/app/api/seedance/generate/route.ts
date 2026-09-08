@@ -2,6 +2,9 @@ import { NextRequest, NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/server";
 import { generateVideoScript } from "@/lib/openrouter/captions";
 import { createSeedanceTask } from "@/lib/seedance/client";
+import { getEnhancorWebhookUrl } from "@/lib/seedance/webhook-url";
+import { isSeedance25GenerateBody } from "@/lib/seedance/v25/schema";
+import { handleSeedance25Generate } from "@/lib/seedance/v25/generate";
 import { resolveSkuReferences } from "@/lib/seedance/reference-resolver";
 import { validateScriptAgainstProductTruth } from "@/lib/brand/product-truth";
 import {
@@ -143,6 +146,14 @@ export async function POST(request: NextRequest) {
       body = (await request.json()) as Partial<SeedanceGenerateBody>;
     } catch {
       return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
+    }
+
+    // ── Engine 2.5 branch (D1) ───────────────────────────────
+    // A 2.5 body is discriminated by `engine: "2.5"` and validated entirely by
+    // zod in lib/seedance/v25/schema.ts — the legacy validator below never sees
+    // it. Everything after this point is the untouched Seedance 2.0 path.
+    if (isSeedance25GenerateBody(body)) {
+      return handleSeedance25Generate(body);
     }
 
     const errors = validateRequest(body);
@@ -649,27 +660,6 @@ function validateRequest(body: Partial<SeedanceGenerateBody>): string[] {
   }
 
   return errors;
-}
-
-function getEnhancorWebhookUrl(): string {
-  const configuredUrl = process.env.ENHANCOR_WEBHOOK_URL;
-  const appUrl = process.env.NEXT_PUBLIC_APP_URL;
-  if (!configuredUrl && !appUrl) {
-    throw new Error("NEXT_PUBLIC_APP_URL is required to build the Enhancor webhook URL");
-  }
-
-  const webhookUrl =
-    configuredUrl ??
-    `${appUrl!.replace(/\/$/, "")}/api/seedance/webhook`;
-  const secret = process.env.ENHANCOR_WEBHOOK_SECRET;
-
-  if (!secret) {
-    return webhookUrl;
-  }
-
-  const url = new URL(webhookUrl);
-  url.searchParams.set("token", secret);
-  return url.toString();
 }
 
 function collectMediaUrls(body: Partial<SeedanceGenerateBody>): string[] {

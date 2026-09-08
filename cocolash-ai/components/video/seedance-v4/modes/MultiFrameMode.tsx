@@ -5,6 +5,9 @@ import { AlertCircle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import type { SeedanceV4WizardState } from "../types";
 import { CapabilityCard } from "../CapabilityCard";
+import { ImageMultiPicker } from "../pickers/ImageMultiPicker";
+import { MediaListPicker } from "../pickers/MediaListPicker";
+import { inputLimitsFor } from "../lib/mode-input-rules";
 
 interface MultiFrameModeProps {
   state: SeedanceV4WizardState;
@@ -36,6 +39,10 @@ export function MultiFrameMode(props: MultiFrameModeProps) {
 
   const subjectBriefTrimmed = state.subjectBrief?.trim() ?? "";
   const isValid = subjectBriefTrimmed.length >= 10;
+  // Seedance 2.5 DOES accept images/videos/audios for multi_frame (2.0 dropped
+  // them silently), so the reference pickers only appear on 2.5.
+  const isV25 = state.engine === "2.5";
+  const limits = inputLimitsFor(state.engine, "multi_frame");
 
   const handleContinue = () => {
     setValidationError(null);
@@ -50,12 +57,14 @@ export function MultiFrameMode(props: MultiFrameModeProps) {
     <div className="space-y-4">
       <CapabilityCard mode="multi_frame" />
 
-      {/* D-26-03: Inline banner — verbatim copy */}
-      <div className="rounded-xl border-2 border-blue-300 bg-blue-50 p-4">
-        <p className="text-xs leading-relaxed text-blue-900">
-          <strong>Multi-Frame builds a multi-shot sequence from text only.</strong> No avatar or product images are attached — the Director describes your subject inside each shot. For image-anchored continuity, use UGC or Multi-Reference.
-        </p>
-      </div>
+      {/* D-26-03: Inline banner — verbatim copy (2.0 only; 2.5 takes references) */}
+      {!isV25 && (
+        <div className="rounded-xl border-2 border-blue-300 bg-blue-50 p-4">
+          <p className="text-xs leading-relaxed text-blue-900">
+            <strong>Multi-Frame builds a multi-shot sequence from text only.</strong> No avatar or product images are attached — the Director describes your subject inside each shot. For image-anchored continuity, use UGC or Multi-Reference.
+          </p>
+        </div>
+      )}
 
       {/* Subject Brief textarea */}
       <div className="space-y-2">
@@ -82,6 +91,36 @@ export function MultiFrameMode(props: MultiFrameModeProps) {
           )}
         </p>
       </div>
+
+      {/* Optional references — Seedance 2.5 only */}
+      {isV25 && (
+        <>
+          <ImageMultiPicker
+            title="Reference images (optional)"
+            help="Anchor the subject or product across every shot. Up to 30."
+            max={limits.images}
+            sources={["upload", "library", "gallery", "url"]}
+            urls={state.inputImageUrls ?? []}
+            onChange={(urls) => setState({ inputImageUrls: urls })}
+          />
+          <MediaListPicker
+            kind="video"
+            title="Reference videos (optional)"
+            help="Up to 10, combined length under 30 s."
+            max={limits.videos}
+            urls={state.inputVideoUrls ?? []}
+            onChange={(urls) => setState({ inputVideoUrls: urls })}
+          />
+          <MediaListPicker
+            kind="audio"
+            title="Reference audio (optional)"
+            help="Up to 10, combined length under 30 s."
+            max={limits.audios}
+            urls={state.inputAudioUrls ?? []}
+            onChange={(urls) => setState({ inputAudioUrls: urls })}
+          />
+        </>
+      )}
 
       {/* Validation error */}
       {validationError && (

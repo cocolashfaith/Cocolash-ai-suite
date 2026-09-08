@@ -1,10 +1,14 @@
 /**
  * Phase 34.1 Group B — R-34.1-02 acceptance.
  *
- * The script must be sized to the real Seedance clip duration (4–15s), not the
- * legacy 15/30/60/90 buckets. buildSeedanceDurationRule turns a seconds value
- * into a concrete word band (~2.5–3 words/sec) + structure guidance, and is the
- * single source the script generator and word-count hints rely on.
+ * The script must be sized to the real Seedance clip duration, not the legacy
+ * 15/30/60/90 buckets. buildSeedanceDurationRule turns a seconds value into a
+ * concrete word band (~2.5–3 words/sec) + structure guidance, and is the single
+ * source the script generator and word-count hints rely on.
+ *
+ * Seedance 2.5 (D10) widened the range to 4–30s plus Auto (-1); the old 15s cap
+ * assertions below were updated deliberately when that shipped. Range-specific
+ * coverage lives in tests/seedance-v25/script-sizing-30s.test.ts.
  */
 
 import { describe, it, expect } from "vitest";
@@ -28,10 +32,19 @@ describe("buildSeedanceDurationRule", () => {
     expect(buildSeedanceDurationRule(15)).toMatch(/two quick beats/i);
   });
 
-  it("clamps to the 4–15s Seedance range", () => {
-    // 30s no longer exists — it must be treated as the 15s cap.
-    expect(buildSeedanceDurationRule(30)).toContain("15 seconds");
+  it("clamps to the 4–30s Seedance 2.5 range", () => {
+    // Was pinned to a 15s cap in the 2.0 era; 2.5 goes to 30s (D10).
+    expect(buildSeedanceDurationRule(30)).toContain("30 seconds");
+    expect(buildSeedanceDurationRule(30)).toContain("69-90 words");
+    expect(buildSeedanceDurationRule(45)).toContain("30 seconds");
     expect(buildSeedanceDurationRule(2)).toContain("4 seconds");
+  });
+
+  it("plans Auto (-1) as ~10 seconds", () => {
+    const rule = buildSeedanceDurationRule(-1);
+    expect(rule).toMatch(/Auto/);
+    expect(rule).toContain("10 seconds");
+    expect(rule).toContain("23-30 words");
   });
 
   it("rounds fractional seconds", () => {

@@ -1,6 +1,7 @@
 import { getOpenRouterClient, openrouterRequest } from "@/lib/openrouter/client";
 import type { CampaignType } from "@/lib/types";
 import type { SeedanceMode } from "./types";
+import type { Seedance25Mode } from "./v25/types";
 import type { UGCScene, UGCVibe } from "./ugc-image-prompt";
 import {
   buildSeedanceVideoPrompt,
@@ -18,7 +19,8 @@ export interface SeedanceDirectorPromptParams {
   vibe: UGCVibe;
   duration: number;
   aspectRatio: string;
-  mode: SeedanceMode | "text-to-video";
+  /** 2.0 modes, the nine 2.5 modes, or the legacy hyphenated t2v label. */
+  mode: SeedanceMode | Seedance25Mode | "text-to-video";
   audioMode: "script-in-prompt" | "uploaded-audio";
   hasProductReference: boolean;
   hasCharacterReference: boolean;

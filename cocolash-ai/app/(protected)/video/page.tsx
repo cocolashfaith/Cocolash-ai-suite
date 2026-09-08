@@ -227,7 +227,7 @@ function VideoWizard() {
                   ? "Create Video"
                   : pipeline === "heygen"
                     ? "Brand Content Studio"
-                    : "Create Video — Seedance 2.0"}
+                    : "Create Video — Seedance"}
               </h1>
             </div>
             <p className="mt-1 text-sm text-coco-brown-medium">

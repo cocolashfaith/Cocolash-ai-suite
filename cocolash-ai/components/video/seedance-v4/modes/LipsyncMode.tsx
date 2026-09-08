@@ -1,14 +1,14 @@
 "use client";
 
-import { useRef, useState } from "react";
-import { Upload, Loader2, X } from "lucide-react";
-import { toast } from "sonner";
+import { Info } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { uploadSeedanceMedia } from "../lib/upload";
-import type { SeedanceV4WizardState } from "../types";
 import { CapabilityCard } from "../CapabilityCard";
+import { ImageMultiPicker } from "../pickers/ImageMultiPicker";
+import { MediaListPicker } from "../pickers/MediaListPicker";
+import { inputLimitsFor } from "../lib/mode-input-rules";
+import type { SeedanceV4WizardState } from "../types";
 
-interface LipsyncModeProps {
+export interface LipsyncBaseModeProps {
   state: SeedanceV4WizardState;
   setState: (
     update:
@@ -18,83 +18,75 @@ interface LipsyncModeProps {
   onReady: () => void;
 }
 
-export function LipsyncMode({ state, setState, onReady }: LipsyncModeProps) {
-  const imgInputRef = useRef<HTMLInputElement>(null);
-  const audioInputRef = useRef<HTMLInputElement>(null);
-  const [uploadingImg, setUploadingImg] = useState(false);
-  const [uploadingAudio, setUploadingAudio] = useState(false);
+interface SpeakerAudioModeProps extends LipsyncBaseModeProps {
+  mode: "lipsyncing" | "voice_clone";
+}
 
-  async function handleImg(e: React.ChangeEvent<HTMLInputElement>) {
-    const f = e.target.files?.[0];
-    if (!f) return;
-    if (!f.type.startsWith("image/")) {
-      toast.error("Please pick an image file");
-      return;
-    }
-    setUploadingImg(true);
-    try {
-      const { url } = await uploadSeedanceMedia(f, "image");
-      setState({ lipsyncImageUrl: url });
-      toast.success("Image uploaded");
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Image upload failed");
-    } finally {
-      setUploadingImg(false);
-      if (imgInputRef.current) imgInputRef.current.value = "";
-    }
-  }
+const COPY = {
+  lipsyncing: {
+    imagesTitle: "Speaker images",
+    imagesHelp:
+      "Photos of the person who will speak — mouth visible, front-facing works best. The first one is the primary reference.",
+    audioTitle: "Voice track",
+    audioHelp: "The audio the speaker lip-syncs to. One file, ≤ 30 s.",
+    note: "The finished clip runs as long as your audio — Seedance drives the mouth from the track.",
+  },
+  voice_clone: {
+    imagesTitle: "Speaker images",
+    imagesHelp:
+      "Photos of the person who should speak. The first one is the primary reference.",
+    audioTitle: "Voice to clone",
+    audioHelp:
+      "A clean recording of the voice to reproduce. One file, ≤ 30 s — no music or background chatter.",
+    note: "Seedance clones the voice from this recording and speaks your prompt with it.",
+  },
+} as const;
 
-  async function handleAudio(e: React.ChangeEvent<HTMLInputElement>) {
-    const f = e.target.files?.[0];
-    if (!f) return;
-    if (!f.type.startsWith("audio/")) {
-      toast.error("Please pick an audio file");
-      return;
-    }
-    if (f.size > 15 * 1024 * 1024) {
-      toast.error("Audio must be under 15 MB");
-      return;
-    }
-    setUploadingAudio(true);
-    try {
-      const { url } = await uploadSeedanceMedia(f, "audio");
-      setState({ lipsyncAudioUrl: url });
-      toast.success("Audio uploaded");
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Audio upload failed");
-    } finally {
-      setUploadingAudio(false);
-      if (audioInputRef.current) audioInputRef.current.value = "";
-    }
-  }
-
-  const canContinue = !!state.lipsyncImageUrl && !!state.lipsyncAudioUrl;
+/**
+ * Shared Step 2 for the two speaker+audio modes (D2, D13).
+ *
+ * Both take `images[]` (≥1, ≤30) plus a single `lipsyncing_audio` URL. Voice
+ * generation (ElevenLabs) is explicitly out of scope for this pass — the audio
+ * is uploaded, picked or pasted.
+ *
+ * `lipsyncImageUrl` is kept in sync with `inputImageUrls[0]` because Step 3's
+ * vision path still keys on the single-image field.
+ */
+export function LipsyncBaseMode({ mode, state, setState, onReady }: SpeakerAudioModeProps) {
+  const copy = COPY[mode];
+  const limits = inputLimitsFor(state.engine, mode);
+  const images = state.inputImageUrls ?? [];
+  const audioUrls = state.lipsyncAudioUrl ? [state.lipsyncAudioUrl] : [];
+  const canContinue = images.length > 0 && !!state.lipsyncAudioUrl;
 
   return (
     <div className="space-y-6">
-      <CapabilityCard mode="lipsyncing" />
+      <CapabilityCard mode={mode} />
 
-      <UploadCard
-        title="Speaker image (required)"
-        description="A photo of the person who will speak. Mouth should be visible."
-        url={state.lipsyncImageUrl}
-        uploading={uploadingImg}
-        accept="image/*"
-        inputRef={imgInputRef}
-        onUpload={handleImg}
-        onClear={() => setState({ lipsyncImageUrl: undefined })}
+      <ImageMultiPicker
+        required
+        title={copy.imagesTitle}
+        help={copy.imagesHelp}
+        max={limits.images}
+        sources={["upload", "gallery", "url"]}
+        urls={images}
+        onChange={(urls) => setState({ inputImageUrls: urls, lipsyncImageUrl: urls[0] })}
       />
-      <UploadCard
-        title="Audio (required)"
-        description="The voice the speaker should lip-sync to. MP3 / WAV up to 15 MB."
-        url={state.lipsyncAudioUrl}
-        uploading={uploadingAudio}
-        accept="audio/*"
-        inputRef={audioInputRef}
-        onUpload={handleAudio}
-        onClear={() => setState({ lipsyncAudioUrl: undefined })}
-        isAudio
+
+      <MediaListPicker
+        kind="audio"
+        required
+        title={copy.audioTitle}
+        help={copy.audioHelp}
+        max={1}
+        urls={audioUrls}
+        onChange={(urls) => setState({ lipsyncAudioUrl: urls[0] })}
       />
+
+      <div className="flex items-start gap-2 rounded-lg border border-coco-beige-dark bg-coco-beige-light/40 px-3 py-2">
+        <Info className="mt-0.5 h-3.5 w-3.5 shrink-0 text-coco-brown-medium/50" />
+        <p className="text-[11px] text-coco-brown-medium/70">{copy.note}</p>
+      </div>
 
       <Button
         onClick={onReady}
@@ -108,74 +100,7 @@ export function LipsyncMode({ state, setState, onReady }: LipsyncModeProps) {
   );
 }
 
-function UploadCard({
-  title,
-  description,
-  url,
-  uploading,
-  accept,
-  inputRef,
-  onUpload,
-  onClear,
-  isAudio,
-}: {
-  title: string;
-  description: string;
-  url?: string;
-  uploading: boolean;
-  accept: string;
-  inputRef: React.RefObject<HTMLInputElement | null>;
-  onUpload: (e: React.ChangeEvent<HTMLInputElement>) => void;
-  onClear: () => void;
-  isAudio?: boolean;
-}) {
-  return (
-    <section className="space-y-3 rounded-xl border-2 border-coco-beige-dark/50 bg-white/50 p-4">
-      <div>
-        <h3 className="text-sm font-semibold text-coco-brown">{title}</h3>
-        <p className="mt-0.5 text-[11px] text-coco-brown-medium/60">{description}</p>
-      </div>
-      <input
-        ref={inputRef}
-        type="file"
-        accept={accept}
-        onChange={onUpload}
-        className="hidden"
-      />
-      {url ? (
-        <div className="flex items-center gap-3 rounded-xl border-2 border-coco-golden/30 bg-white p-3">
-          {isAudio ? (
-            <audio src={url} controls className="flex-1" />
-          ) : (
-            <img src={url} alt="Uploaded" className="h-16 w-16 rounded object-cover" />
-          )}
-          <button
-            type="button"
-            onClick={onClear}
-            className="text-coco-brown-medium/40 hover:text-red-500"
-          >
-            <X className="h-4 w-4" />
-          </button>
-        </div>
-      ) : (
-        <button
-          type="button"
-          onClick={() => inputRef.current?.click()}
-          disabled={uploading}
-          className="flex w-full flex-col items-center justify-center gap-2 rounded-xl border-2 border-dashed border-coco-beige-dark bg-white p-6 transition-colors hover:border-coco-golden/40"
-        >
-          {uploading ? (
-            <Loader2 className="h-5 w-5 animate-spin text-coco-golden" />
-          ) : (
-            <>
-              <Upload className="h-5 w-5 text-coco-brown-medium/30" />
-              <span className="text-xs font-medium text-coco-brown-medium">
-                Click to upload
-              </span>
-            </>
-          )}
-        </button>
-      )}
-    </section>
-  );
+/** Lip-sync: speaker images + the voice track their mouth follows. */
+export function LipsyncMode(props: LipsyncBaseModeProps) {
+  return <LipsyncBaseMode mode="lipsyncing" {...props} />;
 }
