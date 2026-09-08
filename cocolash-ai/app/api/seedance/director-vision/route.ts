@@ -34,26 +34,35 @@ import {
   VisionDirectorError,
 } from "@/lib/ai/director/seedance-vision-director";
 import { SEEDANCE_25_LIMITS } from "@/lib/seedance/v25/types";
+import { isPublicHttpsUrl } from "@/lib/seedance/v25/schema";
 
 // ── Zod schema for request validation ────────────────────────
+
+/**
+ * These URLs are fetched server-side and handed to the vision model, so
+ * `z.string().url()` is not enough: it happily accepts `http://`, `file:` and
+ * `https://127.0.0.1/…`. Reuse the ONE SSRF guard the 2.5 request schema uses.
+ */
+const VisionImageUrl = z
+  .string()
+  .trim()
+  .max(2048)
+  .refine(isPublicHttpsUrl, { message: "must be a public https:// image URL" });
 
 const VisionDirectorBodySchema = z
   .object({
     /** Single-influencer contract (still the common case). */
-    influencerImageUrl: z
-      .string()
-      .url("influencerImageUrl must be a valid HTTPS URL")
-      .optional(),
+    influencerImageUrl: VisionImageUrl.optional(),
     /** Seedance 2.5: several influencer references (@influencer_image1…N). */
     influencerImageUrls: z
-      .array(z.string().url("Each influencer image URL must be valid HTTPS"))
+      .array(VisionImageUrl)
       .max(
         SEEDANCE_25_LIMITS.maxImages,
         `Maximum ${SEEDANCE_25_LIMITS.maxImages} influencer images allowed`
       )
       .optional(),
     productImageUrls: z
-      .array(z.string().url("Each product image URL must be valid HTTPS"))
+      .array(VisionImageUrl)
       .min(1, "At least one product image is required")
       .max(
         SEEDANCE_25_LIMITS.maxImages,

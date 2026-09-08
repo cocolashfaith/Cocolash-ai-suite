@@ -4,6 +4,7 @@ import { generateVideoScript } from "@/lib/openrouter/captions";
 import { createSeedanceTask } from "@/lib/seedance/client";
 import { getEnhancorWebhookUrl } from "@/lib/seedance/webhook-url";
 import { isSeedance25GenerateBody } from "@/lib/seedance/v25/schema";
+import { checkSeedanceSubmitRateLimit } from "@/lib/seedance/submit-rate-limit";
 import { handleSeedance25Generate } from "@/lib/seedance/v25/generate";
 import { resolveSkuReferences } from "@/lib/seedance/reference-resolver";
 import { validateScriptAgainstProductTruth } from "@/lib/brand/product-truth";
@@ -147,6 +148,11 @@ export async function POST(request: NextRequest) {
     } catch {
       return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
     }
+
+    // Every branch below can bill an Enhancor job, so throttle the session
+    // BEFORE any provider call (per-instance; see submit-rate-limit.ts).
+    const throttled = checkSeedanceSubmitRateLimit(request);
+    if (throttled) return throttled;
 
     // ── Engine 2.5 branch (D1) ───────────────────────────────
     // A 2.5 body is discriminated by `engine: "2.5"` and validated entirely by

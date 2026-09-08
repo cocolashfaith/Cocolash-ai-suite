@@ -5,6 +5,10 @@ import { createAdminClient } from "@/lib/supabase/server";
 import { createSeedanceTask } from "@/lib/seedance/client";
 import { resolveSkuReferences } from "@/lib/seedance/reference-resolver";
 import { MIGRATION_REQUIRED_CODE } from "@/lib/supabase/schema-errors";
+import {
+  SEEDANCE_SUBMIT_RATE_LIMIT,
+  resetSeedanceSubmitRateLimit,
+} from "@/lib/seedance/submit-rate-limit";
 
 /**
  * POST /api/seedance/generate — the engine-2.5 branch (03-PLAN.md §1.2).
@@ -142,6 +146,7 @@ function ugcBody(overrides: Record<string, unknown> = {}) {
 describe("POST /api/seedance/generate — engine 2.5", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    resetSeedanceSubmitRateLimit();
     process.env.ENHANCOR_API_KEY = "test_enhancor_key";
     process.env.ENHANCOR_WEBHOOK_SECRET = "webhook-secret";
     process.env.NEXT_PUBLIC_APP_URL = "https://app.example.com";
@@ -379,6 +384,7 @@ describe("POST /api/seedance/generate — engine 2.5", () => {
 describe("POST /api/seedance/generate — legacy 2.0 body still works", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    resetSeedanceSubmitRateLimit();
     process.env.ENHANCOR_API_KEY = "test_enhancor_key";
     process.env.NEXT_PUBLIC_APP_URL = "https://app.example.com";
     vi.spyOn(console, "log").mockImplementation(() => {});
@@ -426,5 +432,110 @@ describe("POST /api/seedance/generate — legacy 2.0 body still works", () => {
     const row = harness.inserts[0].row as Record<string, unknown>;
     expect(row.engine).toBeUndefined();
     expect(row.pipeline).toBe("seedance");
+  });
+});
+
+/**
+ * Two abuse controls on the public submit door:
+ *   - a per-session token bucket, so a stuck client cannot bill N jobs;
+ *   - `rerenderOf` is INTERNAL — a browser cannot forge a re-render link.
+ */
+describe("POST /api/seedance/generate — abuse controls", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    resetSeedanceSubmitRateLimit();
+    process.env.ENHANCOR_API_KEY = "test_enhancor_key";
+    process.env.ENHANCOR_WEBHOOK_SECRET = "webhook-secret";
+    process.env.NEXT_PUBLIC_APP_URL = "https://app.example.com";
+    vi.spyOn(console, "log").mockImplementation(() => {});
+    vi.spyOn(console, "warn").mockImplementation(() => {});
+    vi.spyOn(console, "error").mockImplementation(() => {});
+  });
+
+  afterEach(() => {
+    global.fetch = realFetch;
+    vi.restoreAllMocks();
+    delete process.env.ENHANCOR_API_KEY;
+    delete process.env.ENHANCOR_WEBHOOK_SECRET;
+    delete process.env.NEXT_PUBLIC_APP_URL;
+  });
+
+  it("429s rate_limited after the session's submissions are spent, queueing nothing more", async () => {
+    const harness = makeSupabase();
+    vi.mocked(createAdminClient).mockResolvedValue(harness.client as never);
+    const { calls } = mockQueueFetch(() => ({
+      ok: true,
+      json: { success: true, requestId: "req-rl" },
+    }));
+
+    for (let i = 0; i < SEEDANCE_SUBMIT_RATE_LIMIT.capacity; i++) {
+      expect((await POST(post(ugcBody()))).status).toBe(200);
+    }
+
+    const blocked = await POST(post(ugcBody()));
+    const json = (await blocked.json()) as { error: string; code: string };
+
+    expect(blocked.status).toBe(429);
+    expect(json.code).toBe("rate_limited");
+    expect(calls).toHaveLength(SEEDANCE_SUBMIT_RATE_LIMIT.capacity);
+    expect(harness.inserts).toHaveLength(SEEDANCE_SUBMIT_RATE_LIMIT.capacity);
+  });
+
+  it("separate sessions get separate buckets", async () => {
+    const harness = makeSupabase();
+    vi.mocked(createAdminClient).mockResolvedValue(harness.client as never);
+    mockQueueFetch(() => ({ ok: true, json: { success: true, requestId: "req-rl" } }));
+
+    const asSession = (token: string) =>
+      new NextRequest("https://app.example.com/api/seedance/generate", {
+        method: "POST",
+        headers: { "content-type": "application/json", cookie: `cocolash-auth=${token}` },
+        body: JSON.stringify(ugcBody()),
+      });
+
+    for (let i = 0; i < SEEDANCE_SUBMIT_RATE_LIMIT.capacity; i++) {
+      expect((await POST(asSession("alice"))).status).toBe(200);
+    }
+    expect((await POST(asSession("alice"))).status).toBe(429);
+    expect((await POST(asSession("bob"))).status).toBe(200);
+  });
+
+  it("strips a client-supplied rerenderOf (only the rerender route may set it)", async () => {
+    const harness = makeSupabase();
+    vi.mocked(createAdminClient).mockResolvedValue(harness.client as never);
+    mockQueueFetch(() => ({ ok: true, json: { success: true, requestId: "req-forge" } }));
+
+    const forged = "11111111-1111-4111-8111-111111111111";
+    const response = await POST(post(ugcBody({ rerenderOf: forged })));
+    const json = (await response.json()) as Record<string, unknown>;
+
+    expect(response.status).toBe(200);
+    expect(json.rerenderOf).toBeUndefined();
+    expect((harness.inserts[0].row as Record<string, unknown>).rerender_of).toBeNull();
+  });
+
+  it("never echoes ENHANCOR_WEBHOOK_SECRET back to the client or into error_message", async () => {
+    const harness = makeSupabase();
+    vi.mocked(createAdminClient).mockResolvedValue(harness.client as never);
+    // Enhancor echoes the offending request back — webhook_url + token included.
+    mockQueueFetch(() => ({
+      ok: false,
+      status: 422,
+      json: {
+        error:
+          "invalid request: webhook_url=https://app.example.com/api/seedance/webhook?token=webhook-secret",
+      },
+    }));
+
+    const response = await POST(post(ugcBody()));
+    const raw = await response.text();
+
+    expect(response.status).toBe(500);
+    expect(raw).not.toContain("webhook-secret");
+    expect(raw).toContain("[redacted]");
+
+    const failure = harness.updates.find((u) => u.patch?.error_message);
+    expect(String(failure?.patch?.error_message)).not.toContain("webhook-secret");
+    expect(String(failure?.patch?.error_message)).toContain("[redacted]");
   });
 });

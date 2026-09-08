@@ -44,22 +44,157 @@ import {
   type Seedance25TaskStatus,
 } from "./types";
 
-// ── URL safety (same rules as generate/completion SSRF guards) ─────────
+// ── URL safety (the ONE SSRF guard; lib/seedance/completion.ts imports it) ──
+//
+// Client-safe on purpose: no `node:` imports, so the wizard can pre-validate a
+// pasted URL with exactly the rules the server enforces.
+//
+// The WHATWG `URL` parser already folds `127.1` / `2130706433` / `0x7f.0.0.1`
+// into a dotted quad, but we re-derive the address from the raw host anyway:
+// the same string is handed to Enhancor, whose fetcher does its own parsing,
+// and `isPublicHostname` is callable on a bare host that never saw `new URL`.
 
-function isPrivateIpv4(hostname: string): boolean {
-  const parts = hostname.split(".").map((part) => Number(part));
-  if (parts.length !== 4 || parts.some((p) => !Number.isInteger(p) || p < 0 || p > 255)) {
-    return false;
-  }
-  const [first, second] = parts;
+/** Private / loopback / link-local / unspecified IPv4 space. */
+function isPrivateIpv4Octets(octets: readonly number[]): boolean {
+  const [first, second] = octets;
   return (
+    first === 0 || // 0.0.0.0/8 "this network"
     first === 10 ||
     first === 127 ||
+    (first === 100 && second >= 64 && second <= 127) || // CGNAT 100.64/10
+    (first === 169 && second === 254) ||
     (first === 172 && second >= 16 && second <= 31) ||
     (first === 192 && second === 168) ||
-    (first === 169 && second === 254) ||
-    first === 0
+    first >= 224 // multicast + reserved
   );
+}
+
+/**
+ * inet_aton-style parse: 1–4 parts, each decimal, 0-prefixed octal or 0x hex.
+ * Returns 4 octets, or null when the host is not a numeric IPv4 at all.
+ */
+function parseNumericIpv4(host: string): number[] | null {
+  const parts = host.split(".");
+  if (parts.length < 1 || parts.length > 4) return null;
+
+  const values: number[] = [];
+  for (const part of parts) {
+    if (part === "") return null;
+    let value: number;
+    if (/^0[xX][0-9a-fA-F]+$/.test(part)) value = parseInt(part.slice(2), 16);
+    else if (/^0[0-7]+$/.test(part)) value = parseInt(part.slice(1), 8);
+    else if (/^[0-9]+$/.test(part)) value = Number(part);
+    else return null;
+    if (!Number.isSafeInteger(value) || value < 0) return null;
+    values.push(value);
+  }
+
+  // The LAST part absorbs the remaining octets (127.1 ⇒ 127.0.0.1).
+  const last = values[values.length - 1];
+  const leading = values.slice(0, -1);
+  if (leading.some((v) => v > 255)) return null;
+  const remaining = 4 - leading.length;
+  if (last > Math.pow(256, remaining) - 1) return null;
+
+  const octets = [...leading];
+  for (let i = remaining - 1; i >= 0; i--) {
+    octets.push(Math.floor(last / Math.pow(256, i)) % 256);
+  }
+  return octets;
+}
+
+/** Expand any IPv6 text (compressed, embedded IPv4, mixed case) to 8 groups. */
+function parseIpv6(raw: string): number[] | null {
+  let text = raw.toLowerCase();
+  if (text.includes("%")) text = text.slice(0, text.indexOf("%")); // zone id
+
+  // A trailing dotted quad (::ffff:127.0.0.1) becomes two 16-bit groups.
+  const embedded = /(\d{1,3}(?:\.\d{1,3}){3})$/.exec(text);
+  if (embedded) {
+    const octets = embedded[1].split(".").map(Number);
+    if (octets.some((o) => !Number.isInteger(o) || o < 0 || o > 255)) return null;
+    text =
+      text.slice(0, embedded.index) +
+      (((octets[0] << 8) | octets[1]) >>> 0).toString(16) +
+      ":" +
+      (((octets[2] << 8) | octets[3]) >>> 0).toString(16);
+  }
+
+  const halves = text.split("::");
+  if (halves.length > 2) return null;
+  const head = halves[0] ? halves[0].split(":") : [];
+  const tail = halves.length === 2 && halves[1] ? halves[1].split(":") : [];
+  const fill = halves.length === 2 ? 8 - head.length - tail.length : 0;
+  if (fill < 0) return null;
+  const groups = [...head, ...new Array<string>(fill).fill("0"), ...tail];
+  if (groups.length !== 8) return null;
+
+  const out: number[] = [];
+  for (const group of groups) {
+    if (!/^[0-9a-f]{1,4}$/.test(group)) return null;
+    out.push(parseInt(group, 16));
+  }
+  return out;
+}
+
+/** Loopback, unspecified, link-local (fe80::/10), ULA (fc00::/7), mapped IPv4, multicast. */
+function isPrivateIpv6(groups: readonly number[]): boolean {
+  if (groups.every((g) => g === 0)) return true; // ::
+  const topFiveZero = groups.slice(0, 5).every((g) => g === 0);
+  if (topFiveZero && groups[5] === 0) return true; // ::1 and ::a.b.c.d
+  if (topFiveZero && groups[5] === 0xffff) return true; // ::ffff:a.b.c.d (mapped)
+  const first = groups[0];
+  if ((first & 0xffc0) === 0xfe80) return true; // link-local
+  if ((first & 0xffc0) === 0xfec0) return true; // deprecated site-local
+  if ((first & 0xfe00) === 0xfc00) return true; // unique-local
+  if ((first & 0xff00) === 0xff00) return true; // multicast
+  return false;
+}
+
+/**
+ * True when `host` is a hostname we are willing to fetch: a real DNS name or a
+ * public IP literal. Rejects loopback/private/link-local in every notation.
+ */
+export function isPublicHostname(host: string): boolean {
+  const hostname = host.trim().toLowerCase();
+  if (!hostname) return false;
+
+  if (
+    hostname === "localhost" ||
+    hostname.endsWith(".localhost") ||
+    hostname.endsWith(".local") ||
+    hostname === "metadata.google.internal"
+  ) {
+    return false;
+  }
+
+  // IPv6 literal, bracketed (as `URL.hostname` reports it) or bare.
+  if (hostname.startsWith("[") || hostname.includes(":")) {
+    const inner =
+      hostname.startsWith("[") && hostname.endsWith("]")
+        ? hostname.slice(1, -1)
+        : hostname.startsWith("[")
+        ? null
+        : hostname;
+    if (inner === null) return false;
+    const groups = parseIpv6(inner);
+    return groups !== null && !isPrivateIpv6(groups);
+  }
+
+  // A plain dotted quad is the only IPv4 notation we accept at face value.
+  const dotted = /^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/.exec(hostname);
+  if (dotted) {
+    const octets = dotted.slice(1).map(Number);
+    if (octets.some((o) => o > 255)) return false;
+    return !isPrivateIpv4Octets(octets);
+  }
+
+  // Anything else that still parses as a number is an obfuscated IPv4
+  // (127.1, 2130706433, 0x7f.0.0.1, 0177.0.0.1) — never a real host.
+  if (parseNumericIpv4(hostname) !== null) return false;
+  if (/^[0-9]+$/.test(hostname) || /^0x[0-9a-f]+$/.test(hostname)) return false;
+
+  return true;
 }
 
 /** Public https:// only — rejects localhost, private ranges, cloud metadata hosts. */
@@ -67,18 +202,7 @@ export function isPublicHttpsUrl(value: string): boolean {
   try {
     const url = new URL(value);
     if (url.protocol !== "https:") return false;
-    const hostname = url.hostname.toLowerCase();
-    if (
-      hostname === "localhost" ||
-      hostname.endsWith(".localhost") ||
-      hostname.endsWith(".local") ||
-      hostname === "metadata.google.internal"
-    ) {
-      return false;
-    }
-    const ipv6Mapped = hostname.match(/^\[?::ffff:(\d+\.\d+\.\d+\.\d+)\]?$/)?.[1];
-    if (ipv6Mapped && isPrivateIpv4(ipv6Mapped)) return false;
-    return !isPrivateIpv4(hostname) && hostname !== "::1" && hostname !== "[::1]";
+    return isPublicHostname(url.hostname);
   } catch {
     return false;
   }
@@ -349,7 +473,12 @@ export const Seedance25GenerateBodySchema = z
     campaignType: z.string().max(64).optional(),
     tone: z.string().max(32).optional(),
     productSku: z.string().max(64).optional(),
-    /** Set by POST /api/seedance/[id]/rerender, never by the wizard. */
+    /**
+     * Set by POST /api/seedance/[id]/rerender, NEVER by the wizard — the public
+     * route strips it with `stripInternalGenerateFields` before parsing, so a
+     * client cannot forge a re-render link (and thereby mislabel someone else's
+     * video as the source of its own spend).
+     */
     rerenderOf: z.uuid().optional(),
   })
   .superRefine((body, ctx) => {
@@ -363,6 +492,19 @@ export const Seedance25GenerateBodySchema = z
   });
 
 export type Seedance25GenerateBody = z.output<typeof Seedance25GenerateBodySchema>;
+
+/**
+ * Drop the fields only an INTERNAL caller may set. `POST /api/seedance/generate`
+ * is public, so `rerenderOf` coming from a browser is silently discarded rather
+ * than trusted; the rerender route calls `runSeedance25Generation` directly and
+ * therefore keeps its own value.
+ */
+export function stripInternalGenerateFields(body: unknown): unknown {
+  if (!body || typeof body !== "object" || Array.isArray(body)) return body;
+  const rest: Record<string, unknown> = { ...(body as Record<string, unknown>) };
+  delete rest.rerenderOf;
+  return rest;
+}
 
 /** Cheap pre-check so the generate route can branch before full parsing. */
 export function isSeedance25GenerateBody(body: unknown): boolean {

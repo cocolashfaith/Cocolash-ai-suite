@@ -265,4 +265,21 @@ describe("GET /api/seedance/[id]/status — engine branch", () => {
     expect(json.error).toBe("Failed to check video status");
     expect(json.status).toBe("processing");
   });
+
+  it("500s with a fixed string — the internal detail stays in the server log", async () => {
+    // The body used to be `error.message`, leaking hostnames/stack text.
+    vi.mocked(createAdminClient).mockRejectedValue(
+      new Error("connect ECONNREFUSED 10.0.0.7:5432 — db.internal")
+    );
+    const spy = vi.spyOn(console, "error").mockImplementation(() => {});
+
+    const response = await GET(get(), { params });
+    const json = (await response.json()) as { error: string };
+
+    expect(response.status).toBe(500);
+    expect(json.error).toBe("Failed to check video status");
+    expect(JSON.stringify(json)).not.toContain("ECONNREFUSED");
+    expect(JSON.stringify(json)).not.toContain("db.internal");
+    expect(spy).toHaveBeenCalled();
+  });
 });

@@ -56,9 +56,11 @@ export async function GET(request: NextRequest) {
 
     return NextResponse.json({ videos });
   } catch (error: unknown) {
-    const message =
-      error instanceof Error ? error.message : "Failed to list your videos";
-    console.error("[videos/inputs] Error:", message);
-    return NextResponse.json({ error: message }, { status: 500 });
+    // Detail stays in the server log; the client gets a fixed string.
+    console.error("[videos/inputs] Error:", error);
+    return NextResponse.json(
+      { error: "Failed to list your videos" },
+      { status: 500 }
+    );
   }
 }

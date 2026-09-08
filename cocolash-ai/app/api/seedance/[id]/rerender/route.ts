@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/server";
+import { isMissingColumnError } from "@/lib/supabase/schema-errors";
+import { checkSeedanceSubmitRateLimit } from "@/lib/seedance/submit-rate-limit";
 import { runSeedance25Generation } from "@/lib/seedance/v25/generate";
 import {
   RerenderBodySchema,
@@ -21,6 +23,12 @@ export const runtime = "nodejs";
  *
  * A source row is re-renderable only when it is a COMPLETED Seedance 2.5 job
  * that stored its payload and was not already 1080p — anything else is a 409.
+ *
+ * Idempotency: a source that already has a live (pending/processing/completed)
+ * re-render is a 409 `already_rerendered` carrying the existing video id. A
+ * double-clicked button, a retried fetch or a replayed request therefore costs
+ * ONE 1080p job, not two. A per-session token bucket throttles the route on
+ * top of that (see lib/seedance/submit-rate-limit.ts).
  */
 export async function POST(
   request: NextRequest,
@@ -31,6 +39,9 @@ export async function POST(
     if (!id) {
       return NextResponse.json({ error: "Video ID is required" }, { status: 400 });
     }
+
+    const throttled = checkSeedanceSubmitRateLimit(request);
+    if (throttled) return throttled;
 
     const rawBody = await request.json().catch(() => ({}));
     const parsedBody = RerenderBodySchema.safeParse(rawBody ?? {});
@@ -54,6 +65,18 @@ export async function POST(
     if (blocked) {
       return NextResponse.json(
         { error: blocked, code: "not_rerenderable" },
+        { status: 409 }
+      );
+    }
+
+    const existing = await findLiveRerender(supabase, source.id);
+    if (existing) {
+      return NextResponse.json(
+        {
+          error: "This video has already been re-rendered as Final 1080p",
+          code: "already_rerendered",
+          existingVideoId: existing,
+        },
         { status: 409 }
       );
     }
@@ -95,6 +118,35 @@ export async function POST(
       { status: 500 }
     );
   }
+}
+
+/**
+ * The id of an existing pending/processing/completed re-render of `sourceId`,
+ * or null when there is none. A pre-migration database has no `rerender_of`
+ * column — that is "none", not an error (2.5 rows cannot exist there anyway).
+ * Any other query failure is logged and treated as "none" so a transient DB
+ * hiccup cannot permanently block a legitimate re-render.
+ */
+async function findLiveRerender(
+  supabase: Awaited<ReturnType<typeof createAdminClient>>,
+  sourceId: string
+): Promise<string | null> {
+  const { data, error } = await supabase
+    .from("generated_videos")
+    .select("id")
+    .eq("rerender_of", sourceId)
+    .in("heygen_status", ["pending", "processing", "completed"])
+    .limit(1);
+
+  if (error) {
+    if (!isMissingColumnError(error)) {
+      console.error("[seedance/rerender] Existing re-render lookup failed:", error);
+    }
+    return null;
+  }
+
+  const rows = (data ?? []) as Array<{ id?: string }>;
+  return rows[0]?.id ?? null;
 }
 
 /** null = re-renderable. Otherwise the human reason for the 409. */

@@ -21,6 +21,7 @@
 import { SEEDANCE_25_API_BASE } from "../engines";
 import { pickAllowed } from "../mode-allowlist";
 import { SeedanceError } from "../types";
+import { redactWebhookSecret } from "../webhook-url";
 import { parseSeedance25Callback } from "./schema";
 import type {
   Seedance25QueuePayload,
@@ -58,30 +59,54 @@ export function buildSeedance25QueuePayload(
   return pickAllowed(draft, request.mode, "2.5") as unknown as Seedance25QueuePayload;
 }
 
-/** Log line for the /queue body with the secret-bearing webhook_url redacted. */
-function redactedPayload(payload: Seedance25QueuePayload): Record<string, unknown> {
+/**
+ * One-line summary of the /queue body. The full payload (prompt text + every
+ * signed input URL) is NOT logged on the happy path — it is large, it is
+ * per-request PII-adjacent, and the interesting failure detail already comes
+ * back in the error branch. Set SEEDANCE_DEBUG_PAYLOAD=1 to dump the whole
+ * body (still without the secret-bearing webhook_url) while debugging.
+ */
+function payloadSummary(payload: Seedance25QueuePayload): string {
   const rest: Record<string, unknown> = { ...payload };
   delete rest.webhook_url;
-  const prompt = typeof rest.prompt === "string" ? rest.prompt : undefined;
-  delete rest.prompt;
-  return {
-    ...rest,
-    webhook_url: "[redacted]",
-    prompt_chars: prompt?.length ?? 0,
-    prompt_head: prompt?.slice(0, 240) ?? null,
-    prompt_tail: prompt && prompt.length > 240 ? prompt.slice(-160) : null,
-  };
+  const prompt = typeof rest.prompt === "string" ? rest.prompt : "";
+
+  if (process.env.SEEDANCE_DEBUG_PAYLOAD === "1") {
+    return JSON.stringify({ ...rest, webhook_url: "[redacted]" });
+  }
+
+  const counted = (key: string) =>
+    Array.isArray(rest[key]) ? `${key}=${(rest[key] as unknown[]).length}` : null;
+  const parts = [
+    `mode=${String(rest.mode ?? "?")}`,
+    `resolution=${String(rest.resolution ?? "?")}`,
+    `duration=${String(rest.duration ?? "?")}`,
+    `prompt_chars=${prompt.length}`,
+    ...["products", "influencers", "images", "videos", "audios", "multi_frame_prompts"]
+      .map(counted)
+      .filter((part): part is string => part !== null),
+  ];
+  return parts.join(" ");
 }
 
+/**
+ * The provider error text, with ENHANCOR_WEBHOOK_SECRET scrubbed. Enhancor
+ * echoes the offending request (including `webhook_url?token=<secret>`) in some
+ * 4xx bodies, and this string is logged, stored in `error_message` and shown to
+ * the user — so the scrub happens at the single point where it is read.
+ */
 async function readErrorMessage(response: Response): Promise<string | null> {
-  try {
-    const body = (await response.json()) as { error?: unknown; message?: unknown };
-    if (typeof body.error === "string") return body.error;
-    if (typeof body.message === "string") return body.message;
-    return JSON.stringify(body);
-  } catch {
-    return await response.text().catch(() => null);
-  }
+  const raw = await (async () => {
+    try {
+      const body = (await response.json()) as { error?: unknown; message?: unknown };
+      if (typeof body.error === "string") return body.error;
+      if (typeof body.message === "string") return body.message;
+      return JSON.stringify(body);
+    } catch {
+      return await response.text().catch(() => null);
+    }
+  })();
+  return raw === null ? null : redactWebhookSecret(raw);
 }
 
 /**
@@ -119,7 +144,7 @@ export async function createSeedance25Task(
   const apiKey = getApiKey();
   const payload = buildSeedance25QueuePayload(request, webhookUrl);
 
-  console.log("[seedance2.5] /queue payload:", JSON.stringify(redactedPayload(payload)));
+  console.log("[seedance2.5] /queue", payloadSummary(payload));
 
   const { signal, cleanup } = withTimeout(QUEUE_TIMEOUT_MS, opts?.signal);
   let response: Response;
@@ -132,7 +157,9 @@ export async function createSeedance25Task(
     });
   } catch (error) {
     // Network failure / timeout. We do NOT retry: the job may already be queued.
-    const message = error instanceof Error ? error.message : String(error);
+    const message = redactWebhookSecret(
+      error instanceof Error ? error.message : String(error)
+    );
     throw new SeedanceError(`Enhancor 2.5 API error (0): ${message}`, 0, message);
   } finally {
     cleanup();

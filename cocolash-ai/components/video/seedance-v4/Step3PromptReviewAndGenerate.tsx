@@ -259,6 +259,12 @@ export function Step3PromptReviewAndGenerate({ state, setState, onReset, goToSte
    * If user goes back to Step 2, changes images, and returns, we regenerate.
    */
   useEffect(() => {
+    // Once a job is queued this step IS the live progress card. Re-running the
+    // Director here would flip `isWriting` / `visionLoading` on, hit the
+    // loading early-return below, unmount <SeedanceGenerationProgress> and kill
+    // its poll — the user would watch the card vanish mid-render.
+    if (generation) return;
+
     if (isEnhancorParityMode) {
       if (visionLoading) return;
       const haveCachedOutput = !!state.directorPrompt;
@@ -285,7 +291,7 @@ export function Step3PromptReviewAndGenerate({ state, setState, onReset, goToSte
       }
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [state.inputsVersion, state.directorPromptVersion, isEnhancorParityMode]);
+  }, [state.inputsVersion, state.directorPromptVersion, isEnhancorParityMode, generation]);
 
   async function handleApproveAndGenerate() {
     setIsGenerating(true);
@@ -348,8 +354,9 @@ export function Step3PromptReviewAndGenerate({ state, setState, onReset, goToSte
     }
   }
 
-  // Loading states
-  if (isEnhancorParityMode && visionLoading) {
+  // Loading states — never while a generation is in flight (see the effect
+  // above): the progress card must stay mounted so its poll survives.
+  if (!generation && isEnhancorParityMode && visionLoading) {
     return (
       <div className="space-y-4 rounded-xl border-2 border-coco-golden/30 bg-coco-golden/5 p-8 text-center">
         <Loader2 className="mx-auto h-8 w-8 animate-spin text-coco-golden" />
@@ -365,7 +372,7 @@ export function Step3PromptReviewAndGenerate({ state, setState, onReset, goToSte
     );
   }
 
-  if (!isEnhancorParityMode && isWriting) {
+  if (!generation && !isEnhancorParityMode && isWriting) {
     return (
       <div className="space-y-4 rounded-xl border-2 border-coco-golden/30 bg-coco-golden/5 p-8 text-center">
         <Loader2 className="mx-auto h-8 w-8 animate-spin text-coco-golden" />
@@ -559,10 +566,15 @@ export function Step3PromptReviewAndGenerate({ state, setState, onReset, goToSte
         </section>
       )}
 
-      {/* Enhancor settings — read-only for Enhancor-parity, editable for others */}
+      {/* Enhancor settings — read-only recap on engine 2.5 (Step 1's
+          OutputSettingsPanel owns 2.5 output settings; this panel's legacy
+          Resolution control writes `resolution` and would NOT update
+          `qualityTier`, so an interactive panel here could bill a 2.5 job at a
+          resolution the rest of the UI never shows) and for Enhancor-parity
+          UGC. Editable only on engine 2.0. */}
       <EnhancorSettingsPanel
         state={state}
-        setState={isEnhancorParityMode ? undefined : setState}
+        setState={state.engine === "2.5" || isEnhancorParityMode ? undefined : setState}
         hideDuration={state.mode === "lipsyncing"}
         hideTopLevelDuration={state.mode === "multi_frame"}
       />

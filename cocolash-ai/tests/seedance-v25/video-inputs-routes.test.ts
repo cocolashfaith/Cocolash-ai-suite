@@ -16,7 +16,13 @@ import { GET as VIDEO_INPUTS } from "@/app/api/videos/inputs/route";
  */
 
 vi.mock("@/lib/supabase/server");
-vi.mock("@/lib/image-processing/enhancor-image");
+// Keep the real `UnsupportedImageError` class so the route's `instanceof`
+// check (which turns bad bytes into a 400) is exercised for real.
+vi.mock("@/lib/image-processing/enhancor-image", async (importOriginal) => {
+  const actual =
+    await importOriginal<typeof import("@/lib/image-processing/enhancor-image")>();
+  return { ...actual, toEnhancorCompatibleImage: vi.fn() };
+});
 
 const PUBLIC_BASE =
   "https://exkdmmxbrsgefpciyqkz.supabase.co/storage/v1/object/public/video-inputs";
@@ -214,6 +220,31 @@ describe("POST /api/video-inputs/upload", () => {
     expect(enhancorImage.toEnhancorCompatibleImage).not.toHaveBeenCalled();
   });
 
+  it("400s (never stores) when the bytes are not a decodable image", async () => {
+    vi.mocked(enhancorImage.toEnhancorCompatibleImage).mockRejectedValue(
+      new enhancorImage.UnsupportedImageError(
+        "That file is not a readable PNG, JPEG or WebP image (bad seek)."
+      )
+    );
+
+    const form = new FormData();
+    form.append(
+      "file",
+      // Declared PNG, actually HTML — the classic stored-XSS upload.
+      new File([new TextEncoder().encode("<script>alert(1)</script>")], "evil.png", {
+        type: "image/png",
+      })
+    );
+    form.append("kind", "image");
+
+    const res = await UPLOAD(uploadReq(form));
+    const json = (await res.json()) as { error: string };
+
+    expect(res.status).toBe(400);
+    expect(json.error).toContain("not a readable PNG");
+    expect(storage.upload).not.toHaveBeenCalled();
+  });
+
   it("returns 500 when the storage upload fails", async () => {
     mockStorage({
       upload: vi.fn().mockResolvedValue({ data: null, error: { message: "boom" } }),
@@ -314,5 +345,22 @@ describe("GET /api/videos/inputs", () => {
       new NextRequest("http://localhost/api/videos/inputs")
     );
     expect(res.status).toBe(500);
+  });
+
+  it("never leaks the internal error text to the client", async () => {
+    // The route body used to be `error.message`, so a Postgres/PostgREST detail
+    // (table names, connection strings) reached the browser verbatim.
+    vi.mocked(supabaseServer.createAdminClient).mockRejectedValue(
+      new Error("connect ECONNREFUSED 10.0.0.7:5432 — db.internal")
+    );
+    const res = await VIDEO_INPUTS(
+      new NextRequest("http://localhost/api/videos/inputs")
+    );
+    const json = (await res.json()) as { error: string };
+
+    expect(res.status).toBe(500);
+    expect(json.error).toBe("Failed to list your videos");
+    expect(JSON.stringify(json)).not.toContain("ECONNREFUSED");
+    expect(JSON.stringify(json)).not.toContain("db.internal");
   });
 });

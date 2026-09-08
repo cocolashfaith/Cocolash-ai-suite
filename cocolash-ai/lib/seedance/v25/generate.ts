@@ -29,7 +29,7 @@ import {
 } from "@/lib/supabase/schema-errors";
 import { estimateCredits } from "../pricing";
 import { SeedanceError } from "../types";
-import { getEnhancorWebhookUrl } from "../webhook-url";
+import { getEnhancorWebhookUrl, redactWebhookSecret } from "../webhook-url";
 import { createSeedance25Task } from "./client";
 import { insertSeedance25Row, safeUpdateVideo, truncateErrorMessage } from "./db";
 import {
@@ -38,6 +38,7 @@ import {
   formatZodIssues,
   hasVideoInputs,
   resolveQualityTier,
+  stripInternalGenerateFields,
   type Seedance25GenerateBody,
 } from "./schema";
 import { AUTO_DURATION, type Seedance25Request } from "./types";
@@ -78,9 +79,15 @@ export function buildSeedancePrompt(request: Seedance25Request): string {
   return "";
 }
 
-/** POST /api/seedance/generate entry point once `engine === "2.5"` is detected. */
+/**
+ * POST /api/seedance/generate entry point once `engine === "2.5"` is detected.
+ * PUBLIC: `rerenderOf` is stripped here — only the rerender route may set it,
+ * and it reaches `runSeedance25Generation` without passing through this door.
+ */
 export async function handleSeedance25Generate(rawBody: unknown): Promise<NextResponse> {
-  const parsed = Seedance25GenerateBodySchema.safeParse(rawBody);
+  const parsed = Seedance25GenerateBodySchema.safeParse(
+    stripInternalGenerateFields(rawBody)
+  );
   if (!parsed.success) {
     return NextResponse.json({ error: formatZodIssues(parsed.error) }, { status: 400 });
   }
@@ -188,7 +195,9 @@ export async function runSeedance25Generation(
     taskId = queued.requestId;
   } catch (submitError) {
     const detail = describeSubmitError(submitError);
-    console.error("[seedance2.5/generate] Enhancor submit error:", submitError);
+    // Log the SCRUBBED detail, never the raw error object — its message and
+    // `apiError` can echo back `webhook_url?token=<ENHANCOR_WEBHOOK_SECRET>`.
+    console.error("[seedance2.5/generate] Enhancor submit error:", detail);
 
     await safeUpdateVideo(supabase, videoId, {
       heygen_status: "failed",
@@ -227,19 +236,28 @@ export async function runSeedance25Generation(
   });
 }
 
-/** Surface the actionable Enhancor reason (mirrors the 2.0 route's style). */
-function describeSubmitError(error: unknown): string {
-  if (error instanceof SeedanceError) {
-    let detail = error.message;
-    try {
-      if (error.apiError) {
-        const parsed = JSON.parse(error.apiError) as { error?: { message?: string } };
-        detail = parsed?.error?.message || detail;
+/**
+ * Surface the actionable Enhancor reason (mirrors the 2.0 route's style).
+ *
+ * The result is logged, written to `error_message` and returned to the browser,
+ * so ENHANCOR_WEBHOOK_SECRET is scrubbed here as well as in the client — the
+ * error may have been assembled from a body the client never parsed.
+ */
+export function describeSubmitError(error: unknown): string {
+  const detail = (() => {
+    if (error instanceof SeedanceError) {
+      let message = error.message;
+      try {
+        if (error.apiError) {
+          const parsed = JSON.parse(error.apiError) as { error?: { message?: string } };
+          message = parsed?.error?.message || message;
+        }
+      } catch {
+        // keep error.message
       }
-    } catch {
-      // keep error.message
+      return message;
     }
-    return detail;
-  }
-  return error instanceof Error ? error.message : "Unknown error";
+    return error instanceof Error ? error.message : "Unknown error";
+  })();
+  return redactWebhookSecret(detail);
 }

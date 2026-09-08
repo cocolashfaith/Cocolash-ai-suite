@@ -64,10 +64,14 @@ export function videoEngineLabel(video: VideoDisplayLike): string {
   return engineLabel(video.engine ?? null);
 }
 
-/** "UGC", "Edit", "First + Last Frame" … 2.0 rows have no mode column → "UGC". */
+/**
+ * "UGC", "Edit", "First + Last Frame" … A missing `seedance_mode` is UNKNOWN,
+ * not UGC: engine 2.0 never writes the column, so claiming "UGC" would mislabel
+ * every pre-2.5 row (lipsync, multi-frame, first+last frame included).
+ */
 export function videoModeLabel(video: VideoDisplayLike): string {
   const mode = video.seedance_mode;
-  if (!mode) return SEEDANCE_25_MODE_LABELS.ugc;
+  if (!mode) return EM_DASH;
   return SEEDANCE_25_MODE_LABELS[mode as Seedance25Mode] ?? mode;
 }
 

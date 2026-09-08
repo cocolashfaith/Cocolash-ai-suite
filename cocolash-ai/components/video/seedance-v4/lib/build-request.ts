@@ -297,8 +297,11 @@ export function buildSeedance20Body(
         ...common,
         type: "image-to-video",
         images: state.multiReferenceImages?.map((r) => r.url) ?? [],
-        videos: state.multiReferenceVideoUrl ? [state.multiReferenceVideoUrl] : [],
-        audios: state.multiReferenceAudioUrl ? [state.multiReferenceAudioUrl] : [],
+        // Step 2 writes the shared `inputVideoUrls` / `inputAudioUrls` arrays;
+        // the `multiReference*Url` singles are legacy state kept only as a
+        // fallback for a wizard restored from an older draft.
+        videos: urls(state.inputVideoUrls, [state.multiReferenceVideoUrl ?? ""]) ?? [],
+        audios: urls(state.inputAudioUrls, [state.multiReferenceAudioUrl ?? ""]) ?? [],
       };
     case "lipsyncing":
       return {

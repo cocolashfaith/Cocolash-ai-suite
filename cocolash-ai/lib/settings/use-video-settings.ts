@@ -9,7 +9,7 @@
  * mounted consumers (module-level cache, 60 s TTL); `refresh()` bypasses it.
  */
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   DEFAULT_VIDEO_SETTINGS,
   mergeVideoSettings,
@@ -76,9 +76,15 @@ export function useVideoSettings(): UseVideoSettingsResult {
     error: null,
   });
 
+  // The fetch outlives a wizard step that unmounts mid-flight; without this the
+  // resolve path calls setState on a dead component (a React warning today, a
+  // real leak once the hook is used inside a modal that opens repeatedly).
+  const mounted = useRef(true);
+
   const load = useCallback(async (force: boolean) => {
     try {
       const value = await fetchVideoSettings(force);
+      if (!mounted.current) return;
       setState({
         settings: value.settings,
         loading: false,
@@ -87,6 +93,7 @@ export function useVideoSettings(): UseVideoSettingsResult {
         error: null,
       });
     } catch (err) {
+      if (!mounted.current) return;
       setState((prev) => ({
         ...prev,
         loading: false,
@@ -96,7 +103,11 @@ export function useVideoSettings(): UseVideoSettingsResult {
   }, []);
 
   useEffect(() => {
+    mounted.current = true;
     void load(false);
+    return () => {
+      mounted.current = false;
+    };
   }, [load]);
 
   const refresh = useCallback(() => load(true), [load]);

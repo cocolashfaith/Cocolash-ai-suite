@@ -56,6 +56,11 @@ export class RateLimiter {
     return { allowed: false, remaining: 0, resetMs: waitMs };
   }
 
+  /** Drop every bucket. Test hook / manual reset; never called in a request. */
+  reset(): void {
+    this.buckets.clear();
+  }
+
   private evictIfNeeded(): void {
     while (this.buckets.size > this.maxBuckets) {
       const oldest = this.buckets.keys().next().value;

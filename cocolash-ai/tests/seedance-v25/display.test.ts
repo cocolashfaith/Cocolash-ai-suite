@@ -88,8 +88,11 @@ describe("videoEngineLabel — pre-migration rows read as 2.0", () => {
 });
 
 describe("videoModeLabel", () => {
-  it("falls back to UGC for a 2.0 row with no seedance_mode", () => {
-    expect(videoModeLabel(makeVideo())).toBe("UGC");
+  it("shows an em-dash for a 2.0 row with no seedance_mode", () => {
+    // 2.0 never wrote the column, and those rows are not all UGC — a lipsync or
+    // multi-frame 2.0 video labelled "UGC" is a lie the gallery used to tell.
+    expect(videoModeLabel(makeVideo())).toBe("—");
+    expect(videoModeLabel(make25({ seedance_mode: null }))).toBe("—");
   });
 
   it("uses the 2.5 mode labels", () => {

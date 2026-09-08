@@ -181,4 +181,74 @@ describe("completeSeedanceVideo — 2.5 credit cost", () => {
     expect(vi.mocked(recordActualCost)).not.toHaveBeenCalled();
     expect(result.heygen_status).toBe("completed");
   });
+
+  // ── The wizard card renders `processing_cost` off THIS return value ──
+
+  it("returns the real USD as processing_cost, replacing the estimate", async () => {
+    const result = await completeSeedanceVideo({
+      supabase: makeSupabaseMock(),
+      // The row still carries the provisional estimate written at insert time.
+      video: baseVideo({ engine: "2.5", processing_cost: 3.09 }),
+      rawVideoUrl: RAW_URL,
+      creditsCost: 1615.8,
+      engine: "2.5",
+    });
+
+    expect(result.processing_cost).toBe(1.6158);
+  });
+
+  it("keeps the provisional estimate when the callback carried no cost", async () => {
+    const result = await completeSeedanceVideo({
+      supabase: makeSupabaseMock(),
+      video: baseVideo({ engine: "2.5", processing_cost: 3.09 }),
+      rawVideoUrl: RAW_URL,
+      creditsCost: null,
+      engine: "2.5",
+    });
+
+    expect(result.processing_cost).toBe(3.09);
+  });
+
+  it("returns the legacy 2.0 cost as processing_cost too", async () => {
+    const result = await completeSeedanceVideo({
+      supabase: makeSupabaseMock(),
+      video: baseVideo({ duration_seconds: 15, processing_cost: 99 }),
+      rawVideoUrl: RAW_URL,
+    });
+
+    expect(result.processing_cost).toBeCloseTo(
+      15 * SEEDANCE_COSTS.COST_PER_SECOND_720P_NO_VIDEO + SEEDANCE_COSTS.POST_PROCESSING,
+      5
+    );
+  });
+
+  // ── The thumbnail is rendered in an <img>: same guard as the video URL ──
+
+  it("drops a provider thumbnail that is not a public https URL", async () => {
+    const result = await completeSeedanceVideo({
+      supabase: makeSupabaseMock(),
+      video: baseVideo({ engine: "2.5" }),
+      rawVideoUrl: RAW_URL,
+      thumbnailUrl: "http://169.254.169.254/latest/meta-data/",
+      creditsCost: 1000,
+      engine: "2.5",
+    });
+
+    // Cloudinary post-processing supplies its own thumbnail; the unsafe one is
+    // never the value we fall back to.
+    expect(result.thumbnail_url).toBe("https://cloud.example.com/thumb.jpg");
+  });
+
+  it("rejects an unsafe result URL outright", async () => {
+    const result = await completeSeedanceVideo({
+      supabase: makeSupabaseMock(),
+      video: baseVideo({ engine: "2.5" }),
+      rawVideoUrl: "https://[::ffff:127.0.0.1]/pwn.mp4",
+      creditsCost: 1000,
+      engine: "2.5",
+    });
+
+    expect(result.heygen_status).toBe("failed");
+    expect(vi.mocked(recordActualCost)).not.toHaveBeenCalled();
+  });
 });

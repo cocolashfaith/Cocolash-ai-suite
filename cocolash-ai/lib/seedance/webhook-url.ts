@@ -30,3 +30,23 @@ export function getEnhancorWebhookUrl(): string {
   url.searchParams.set("token", secret);
   return url.toString();
 }
+
+/**
+ * Remove ENHANCOR_WEBHOOK_SECRET from any text that is about to be logged,
+ * persisted to `error_message`, or returned to the browser.
+ *
+ * Enhancor echoes the offending request back in some 4xx bodies — and that
+ * request contains `webhook_url=…?token=<secret>`. Without this scrub the
+ * shared secret would land in a Vercel log line, in a database column and in
+ * the wizard's error toast. Also covers the URL-encoded form, since the secret
+ * usually arrives back inside a serialized query string.
+ */
+export function redactWebhookSecret(text: string): string {
+  const secret = process.env.ENHANCOR_WEBHOOK_SECRET;
+  if (!secret || !text) return text;
+
+  let out = text.split(secret).join("[redacted]");
+  const encoded = encodeURIComponent(secret);
+  if (encoded !== secret) out = out.split(encoded).join("[redacted]");
+  return out;
+}

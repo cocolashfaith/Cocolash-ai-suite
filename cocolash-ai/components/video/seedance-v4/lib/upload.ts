@@ -127,8 +127,3 @@ export async function uploadVideoInput(file: File, kind: VideoInputKind): Promis
   return uploadMediaViaSignedUrl(file, kind);
 }
 
-/**
- * @deprecated Use `uploadVideoInput`. Kept so the pre-2.5 mode components
- * compile until Wave 1 (package D) migrates them. Same signature.
- */
-export const uploadSeedanceMedia = uploadVideoInput;

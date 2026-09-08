@@ -120,6 +120,21 @@ describe("engine registry", () => {
     expect(isAdaptiveOnlyMode("ugc")).toBe(false);
   });
 
+  it("2.0 only advertises ratios its own UI can render", () => {
+    // A 2.5 → 2.0 engine switch coerces to a supported ratio. If 1:1 / 21:9
+    // stayed in this list the coercion would keep a value the 2.0 aspect-ratio
+    // control has no button for, leaving nothing selected.
+    expect(getEngine("2.0").capabilities.aspectRatios).toEqual([
+      "9:16",
+      "16:9",
+      "3:4",
+      "4:3",
+    ]);
+    expect(engineSupportsAspectRatio("2.0", "1:1")).toBe(false);
+    expect(engineSupportsAspectRatio("2.0", "21:9")).toBe(false);
+    expect(engineSupportsAspectRatio("2.0", "9:16")).toBe(true);
+  });
+
   it("capability flags reflect the 2.0 vs 2.5 parameter differences", () => {
     const c25 = getEngine("2.5").capabilities;
     expect(c25.supportsPassFaces).toBe(true);

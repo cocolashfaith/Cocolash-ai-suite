@@ -2,6 +2,10 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { NextRequest } from "next/server";
 import { POST } from "@/app/api/seedance/[id]/rerender/route";
 import { createAdminClient } from "@/lib/supabase/server";
+import {
+  resetSeedanceSubmitRateLimit,
+  SEEDANCE_SUBMIT_RATE_LIMIT,
+} from "@/lib/seedance/submit-rate-limit";
 import type { GeneratedVideo } from "@/lib/types";
 
 /**
@@ -66,18 +70,31 @@ interface Harness {
   updates: Array<Record<string, unknown>>;
 }
 
-function makeSupabase(source: GeneratedVideo | null): Harness {
+function makeSupabase(
+  source: GeneratedVideo | null,
+  /** Rows returned by the `rerender_of = source.id` idempotency lookup. */
+  existingRerenders: Array<{ id: string }> = [],
+  /** Error returned by that lookup instead of rows (e.g. a missing column). */
+  existingRerendersError: { code: string; message: string } | null = null
+): Harness {
   const inserts: Array<Record<string, unknown>> = [];
   const updates: Array<Record<string, unknown>> = [];
 
   const client = {
     from(table: string) {
-      const state: { op?: "insert" | "update" } = {};
+      const state: { op?: "insert" | "update"; inFilter?: boolean } = {};
       const chain: Record<string, unknown> = {
         select: () => chain,
         order: () => chain,
-        limit: async () => ({ data: [], error: null }),
+        limit: async () =>
+          state.inFilter
+            ? { data: existingRerendersError ? null : existingRerenders, error: existingRerendersError }
+            : { data: [], error: null },
         eq: () => chain,
+        in() {
+          state.inFilter = true;
+          return chain;
+        },
         insert(rowValue: Record<string, unknown>) {
           state.op = "insert";
           inserts.push(rowValue);
@@ -144,6 +161,7 @@ const params = Promise.resolve({ id: SOURCE_ID });
 describe("POST /api/seedance/[id]/rerender", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    resetSeedanceSubmitRateLimit();
     process.env.ENHANCOR_API_KEY = "test_enhancor_key";
     process.env.ENHANCOR_WEBHOOK_SECRET = "webhook-secret";
     process.env.NEXT_PUBLIC_APP_URL = "https://app.example.com";
@@ -304,5 +322,79 @@ describe("POST /api/seedance/[id]/rerender", () => {
     const response = await POST(request, { params });
 
     expect(response.status).toBe(200);
+  });
+
+  // ── Idempotency: one source ⇒ at most one live 1080p re-render ──
+
+  it("409s already_rerendered when a live re-render of the source exists", async () => {
+    const harness = makeSupabase(sourceRow(), [{ id: NEW_ID }]);
+    vi.mocked(createAdminClient).mockResolvedValue(harness.client as never);
+    const { calls } = mockQueueFetch();
+
+    const response = await POST(post(), { params });
+    const json = (await response.json()) as {
+      error: string;
+      code: string;
+      existingVideoId: string;
+    };
+
+    expect(response.status).toBe(409);
+    expect(json.code).toBe("already_rerendered");
+    expect(json.existingVideoId).toBe(NEW_ID);
+    // The whole point: no second billed job, no second row.
+    expect(calls).toHaveLength(0);
+    expect(harness.inserts).toHaveLength(0);
+  });
+
+  it("treats a missing `rerender_of` column as 'no existing re-render'", async () => {
+    const harness = makeSupabase(sourceRow(), [], {
+      code: "42703",
+      message: 'column "rerender_of" does not exist',
+    });
+    vi.mocked(createAdminClient).mockResolvedValue(harness.client as never);
+    const { calls } = mockQueueFetch();
+
+    const response = await POST(post(), { params });
+
+    expect(response.status).toBe(200);
+    expect(calls).toHaveLength(1);
+  });
+
+  it("a double-clicked button bills once: the second call is a 409", async () => {
+    const live: Array<{ id: string }> = [];
+    const harness = makeSupabase(sourceRow(), live);
+    vi.mocked(createAdminClient).mockResolvedValue(harness.client as never);
+    const { calls } = mockQueueFetch();
+
+    const first = await POST(post(), { params });
+    expect(first.status).toBe(200);
+    // The row the first call inserted is now visible to the lookup.
+    live.push({ id: NEW_ID });
+
+    const second = await POST(post(), { params });
+    expect(second.status).toBe(409);
+    expect(((await second.json()) as { code: string }).code).toBe("already_rerendered");
+    expect(calls).toHaveLength(1);
+  });
+
+  // ── Per-session throttle ──
+
+  it("429s rate_limited once the session's submissions are spent", async () => {
+    const harness = makeSupabase(sourceRow());
+    vi.mocked(createAdminClient).mockResolvedValue(harness.client as never);
+    const { calls } = mockQueueFetch();
+
+    for (let i = 0; i < SEEDANCE_SUBMIT_RATE_LIMIT.capacity; i++) {
+      const ok = await POST(post(), { params });
+      expect(ok.status).toBe(200);
+    }
+    const blocked = await POST(post(), { params });
+    const json = (await blocked.json()) as { error: string; code: string };
+
+    expect(blocked.status).toBe(429);
+    expect(json.code).toBe("rate_limited");
+    expect(blocked.headers.get("Retry-After")).toBeTruthy();
+    // Nothing extra was queued once the bucket ran dry.
+    expect(calls).toHaveLength(SEEDANCE_SUBMIT_RATE_LIMIT.capacity);
   });
 });

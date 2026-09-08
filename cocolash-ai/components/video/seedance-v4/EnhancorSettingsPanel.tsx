@@ -3,6 +3,7 @@
 import { cn } from "@/lib/utils";
 import {
   QUALITY_TIERS,
+  SEEDANCE_ENGINES,
   engineLabel,
   qualityTierToResolution,
 } from "@/lib/seedance/engines";
@@ -47,6 +48,9 @@ export function EnhancorSettingsPanel({
 }: EnhancorSettingsPanelProps) {
   const isReadOnly = !setState;
   const fastModeDisabled = state.resolution === "1080p";
+  // Multi-frame segments must sum to a range the SELECTED engine accepts
+  // (2.0 → 4–15 s, 2.5 → 4–30 s). Never hard-code the 2.0 cap here.
+  const engineCaps = SEEDANCE_ENGINES[state.engine].capabilities;
 
   if (isReadOnly) {
     // Read-only recap format (Step 3 review)
@@ -256,7 +260,7 @@ export function EnhancorSettingsPanel({
       {hideTopLevelDuration && (
         <p className="text-[11px] text-coco-brown-medium/60">
           Multi-frame: duration is the sum of your individual segment durations
-          (4–15 s total).
+          ({engineCaps.durationMin}–{engineCaps.durationMax} s total).
         </p>
       )}
       {hideDuration && (

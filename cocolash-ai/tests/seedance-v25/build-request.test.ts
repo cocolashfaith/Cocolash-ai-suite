@@ -387,4 +387,60 @@ describe("buildSeedance20Body — the legacy 2.0 payload is unchanged", () => {
     expect(body.type).toBe("text-to-video");
     expect(body.seedanceMode).toBe("ugc");
   });
+
+  // ── multi_reference reads the arrays Step 2 actually writes ──
+
+  it("multi_reference sends the video/audio Step 2 wrote into inputVideoUrls/inputAudioUrls", () => {
+    const body = buildSeedance20Body(
+      {
+        ...legacyState,
+        mode: "multi_reference",
+        multiReferenceImages: [{ url: IMG, role: "product" as const }],
+        inputVideoUrls: [VID],
+        inputAudioUrls: [AUD],
+      } as SeedanceV4WizardState,
+      "PROMPT",
+      []
+    ) as Record<string, unknown>;
+
+    // Before the fix these read `multiReferenceVideoUrl` / `multiReferenceAudioUrl`,
+    // which Step 2 stopped writing — so the reference clip was silently dropped.
+    expect(body.videos).toEqual([VID]);
+    expect(body.audios).toEqual([AUD]);
+    expect(body.images).toEqual([IMG]);
+  });
+
+  it("multi_reference still honours the legacy single-URL keys as a fallback", () => {
+    const body = buildSeedance20Body(
+      {
+        ...legacyState,
+        mode: "multi_reference",
+        multiReferenceImages: [{ url: IMG, role: "product" as const }],
+        inputVideoUrls: [],
+        inputAudioUrls: [],
+        multiReferenceVideoUrl: VID,
+        multiReferenceAudioUrl: AUD,
+      } as SeedanceV4WizardState,
+      "PROMPT",
+      []
+    ) as Record<string, unknown>;
+
+    expect(body.videos).toEqual([VID]);
+    expect(body.audios).toEqual([AUD]);
+  });
+
+  it("multi_reference sends empty arrays when there is no clip at all", () => {
+    const body = buildSeedance20Body(
+      {
+        ...legacyState,
+        mode: "multi_reference",
+        multiReferenceImages: [{ url: IMG, role: "product" as const }],
+      } as SeedanceV4WizardState,
+      "PROMPT",
+      []
+    ) as Record<string, unknown>;
+
+    expect(body.videos).toEqual([]);
+    expect(body.audios).toEqual([]);
+  });
 });

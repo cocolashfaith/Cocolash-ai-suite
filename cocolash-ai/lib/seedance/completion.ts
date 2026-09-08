@@ -3,6 +3,7 @@ import { recordActualCost } from "@/lib/costs/tracker";
 import { creditsToUsd } from "@/lib/seedance/pricing";
 import { getVideoSettings } from "@/lib/settings/video-settings";
 import { SEEDANCE_COSTS } from "@/lib/seedance/types";
+import { isPublicHttpsUrl } from "@/lib/seedance/v25/schema";
 import { processVideo } from "@/lib/video/processor";
 import type { GeneratedVideo, SeedanceEngine } from "@/lib/types";
 
@@ -31,7 +32,7 @@ export async function completeSeedanceVideo({
   creditsCost = null,
   engine = "2.0",
 }: CompleteSeedanceVideoParams): Promise<GeneratedVideo> {
-  if (!isSafePublicHttpsUrl(rawVideoUrl)) {
+  if (!isPublicHttpsUrl(rawVideoUrl)) {
     console.error("[seedance/complete] Unsafe result URL rejected:", rawVideoUrl);
     await supabase
       .from("generated_videos")
@@ -50,6 +51,17 @@ export async function completeSeedanceVideo({
 
   const completedAt = new Date().toISOString();
 
+  // A provider thumbnail is rendered in an <img> on our pages, so it gets the
+  // SAME SSRF/scheme guard as the video URL — an unusable one is simply dropped
+  // (Cloudinary post-processing below usually replaces it anyway).
+  const safeProviderThumbnailUrl =
+    providerThumbnailUrl && isPublicHttpsUrl(providerThumbnailUrl)
+      ? providerThumbnailUrl
+      : null;
+  if (providerThumbnailUrl && !safeProviderThumbnailUrl) {
+    console.warn("[seedance/complete] Dropped unsafe thumbnail URL for video", video.id);
+  }
+
   // Atomic claim → completed. Only one poll/webhook wins. Seedance videos carry
   // NO captions (captions are a HeyGen-only feature), so there is no
   // "captioning" step — the video goes straight to completed. We also accept a
@@ -61,7 +73,7 @@ export async function completeSeedanceVideo({
       heygen_status: "completed",
       raw_video_url: rawVideoUrl,
       final_video_url: rawVideoUrl, // provisional; upgraded to Cloudinary below
-      thumbnail_url: providerThumbnailUrl ?? null,
+      thumbnail_url: safeProviderThumbnailUrl,
       has_captions: false,
       caption_srt: null,
       completed_at: completedAt,
@@ -88,7 +100,7 @@ export async function completeSeedanceVideo({
   // + thumbnail. No captions are ever burned for Seedance. On failure the video
   // is still playable on the raw provider URL set in the claim above.
   let finalVideoUrl = rawVideoUrl;
-  let thumbnailUrl = providerThumbnailUrl ?? null;
+  let thumbnailUrl = safeProviderThumbnailUrl;
   try {
     const processed = await processVideo({
       rawVideoUrl,
@@ -100,7 +112,7 @@ export async function completeSeedanceVideo({
     });
 
     finalVideoUrl = processed.videoUrl;
-    thumbnailUrl = processed.thumbnailUrl ?? providerThumbnailUrl ?? null;
+    thumbnailUrl = processed.thumbnailUrl ?? safeProviderThumbnailUrl;
 
     const { error: updateError } = await supabase
       .from("generated_videos")
@@ -117,12 +129,14 @@ export async function completeSeedanceVideo({
   // Cost. Engine 2.5 reports the REAL credit spend on the callback — record it
   // (and the USD it converts to at the live rate). Engine 2.0 never reports a
   // cost, so its legacy per-second estimate formula is unchanged.
+  let recordedCostUsd: number | null = null;
   try {
     if (engine === "2.5") {
       if (creditsCost != null && Number.isFinite(creditsCost)) {
         const settings = await getVideoSettings(supabase);
         const usd = Number(creditsToUsd(creditsCost, settings.usd_per_credit).toFixed(4));
         await recordActualCost(video.id, usd, { credits: creditsCost });
+        recordedCostUsd = usd;
       }
       // No cost in the callback → leave the provisional estimate written at insert.
     } else {
@@ -131,6 +145,7 @@ export async function completeSeedanceVideo({
         durationSec * SEEDANCE_COSTS.COST_PER_SECOND_720P_NO_VIDEO +
         SEEDANCE_COSTS.POST_PROCESSING;
       await recordActualCost(video.id, totalCost);
+      recordedCostUsd = totalCost;
     }
   } catch (costError) {
     console.error("[seedance/complete] Cost recording failed (non-fatal):", costError);
@@ -146,53 +161,9 @@ export async function completeSeedanceVideo({
     has_captions: false,
     completed_at: completedAt,
     credits_cost: creditsCost ?? video.credits_cost ?? null,
+    // The in-wizard card renders `processing_cost`. When the real spend was
+    // just recorded it must replace the provisional estimate here too,
+    // otherwise the card shows the estimate until the page is reloaded.
+    processing_cost: recordedCostUsd ?? video.processing_cost ?? null,
   };
-}
-
-function isSafePublicHttpsUrl(value: string): boolean {
-  try {
-    const url = new URL(value);
-    if (url.protocol !== "https:") {
-      return false;
-    }
-
-    const hostname = url.hostname.toLowerCase();
-    if (
-      hostname === "localhost" ||
-      hostname.endsWith(".localhost") ||
-      hostname.endsWith(".local") ||
-      hostname === "metadata.google.internal"
-    ) {
-      return false;
-    }
-
-    const ipv6Mapped = hostname.match(/^\[?::ffff:(\d+\.\d+\.\d+\.\d+)\]?$/)?.[1];
-    if (ipv6Mapped && isPrivateIpv4(ipv6Mapped)) {
-      return false;
-    }
-
-    return !isPrivateIpv4(hostname) && hostname !== "::1" && hostname !== "[::1]";
-  } catch {
-    return false;
-  }
-}
-
-function isPrivateIpv4(hostname: string): boolean {
-  const parts = hostname.split(".").map((part) => Number(part));
-  if (
-    parts.length !== 4 ||
-    parts.some((part) => !Number.isInteger(part) || part < 0 || part > 255)
-  ) {
-    return false;
-  }
-
-  const [first, second] = parts;
-  return (
-    first === 10 ||
-    first === 127 ||
-    (first === 172 && second >= 16 && second <= 31) ||
-    (first === 192 && second === 168) ||
-    (first === 169 && second === 254) ||
-    first === 0
-  );
 }

@@ -159,10 +159,13 @@ export async function GET(
       })
     );
   } catch (error: unknown) {
+    // Log the detail server-side; the client gets a fixed string so an internal
+    // message (provider host, SQL, stack text) never reaches the browser.
     console.error("[seedance/status] Error:", error);
-    const message =
-      error instanceof Error ? error.message : "Failed to check video status";
-    return NextResponse.json({ error: message }, { status: 500 });
+    return NextResponse.json(
+      { error: "Failed to check video status" },
+      { status: 500 }
+    );
   }
 }
 

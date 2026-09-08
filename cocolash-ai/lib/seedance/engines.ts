@@ -61,7 +61,13 @@ export const SEEDANCE_20_MODES = [
 ] as const;
 export type Seedance20Mode = (typeof SEEDANCE_20_MODES)[number];
 
-export const SEEDANCE_20_ASPECT_RATIOS = ["9:16", "16:9", "3:4", "4:3", "1:1", "21:9"] as const;
+/**
+ * Only the four ratios the 2.0 wizard can actually render. `1:1` and `21:9` are
+ * deliberately absent: they exist on 2.5, and if they stayed here a 2.5 → 2.0
+ * engine switch would keep a ratio the 2.0 UI has no button for, leaving the
+ * control with nothing selected.
+ */
+export const SEEDANCE_20_ASPECT_RATIOS = ["9:16", "16:9", "3:4", "4:3"] as const;
 
 // ── Capability model ─────────────────────────────────────────
 

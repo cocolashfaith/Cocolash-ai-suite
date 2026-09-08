@@ -22,7 +22,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/server";
 import { BUCKETS } from "@/lib/supabase/storage";
-import { toEnhancorCompatibleImage } from "@/lib/image-processing/enhancor-image";
+import {
+  UnsupportedImageError,
+  toEnhancorCompatibleImage,
+} from "@/lib/image-processing/enhancor-image";
 import {
   buildVideoInputPath,
   isVideoInputKind,
@@ -79,8 +82,11 @@ export async function POST(request: NextRequest) {
 
   try {
     // Images become Seedance references, so normalise to PNG/JPEG first. The
-    // transcode can change the MIME (webp → png), so the stored extension and
-    // the reported contentType come from the RESULT, not the upload.
+    // declared MIME is never trusted: `toEnhancorCompatibleImage` sniffs the
+    // magic bytes and re-encodes (or rejects) anything that disagrees, so a
+    // "PNG" that is really a script can't be stored as-is. The transcode can
+    // change the MIME (webp → png), so the stored extension and the reported
+    // contentType come from the RESULT, not the upload.
     const payload = kind === "image" ? await toEnhancorCompatibleImage(file) : file;
     const finalContentType =
       kind === "image" ? normalizeContentType(payload.type) || contentType : contentType;
@@ -121,6 +127,11 @@ export async function POST(request: NextRequest) {
       size: payload.size || file.size,
     });
   } catch (error: unknown) {
+    // Bytes that are not a decodable image are the CLIENT's problem (400), not
+    // a server failure — and they are never stored.
+    if (error instanceof UnsupportedImageError) {
+      return NextResponse.json({ error: error.message }, { status: 400 });
+    }
     const message = error instanceof Error ? error.message : "Upload failed";
     console.error("[video-inputs/upload] error:", message);
     return NextResponse.json({ error: "Upload failed. Try again." }, { status: 500 });
