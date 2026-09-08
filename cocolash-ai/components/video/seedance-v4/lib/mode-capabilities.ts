@@ -1,6 +1,7 @@
+import type { SeedanceEngine } from "@/lib/types";
 import type { SeedanceV4Mode } from "../types";
 
-interface ModeCapability {
+export interface ModeCapability {
   /** What you have to give it. */
   inputs: string;
   /** What it is good at. */
@@ -54,6 +55,9 @@ export const MODE_CAPABILITIES: Record<
     limits:
       "The aspect ratio always follows the starting frame — you cannot set it here. The prompt describes the journey between the two frames, not the frames themselves.",
   },
+  // NOTE: this is the SEEDANCE 2.0 wording — 2.0 silently drops images[] /
+  // videos[] / audios[] for multi_frame, so the flow really is text-only there.
+  // Engine 2.5 accepts (and sends) optional references — see MODE_CAPABILITIES_25.
   multi_frame: {
     inputs:
       "A script and a written description of the subject. Text only — no images are sent.",
@@ -94,3 +98,34 @@ export const MODE_CAPABILITIES: Record<
       "Seedance 2.5 only. The audio must be 30 seconds or shorter, and the clip runs as long as the audio. No video input. Do not describe the voice in the prompt — it comes from the audio. Keep the mouth visible.",
   },
 };
+
+/**
+ * Engine 2.5 copy overrides. Only the modes whose behaviour actually differs
+ * from 2.0 appear here.
+ *
+ * `multi_frame` is the one that matters: on 2.5 the Step-2 form offers
+ * "Reference images (optional) 0/30" and those references ARE sent, so the 2.0
+ * "text only — no images are sent" wording contradicted the form in front of
+ * the user.
+ */
+export const MODE_CAPABILITIES_25: Partial<
+  Record<SeedanceV4Mode | "text_to_video", ModeCapability>
+> = {
+  multi_frame: {
+    inputs:
+      "A script and a written description of the subject. Reference images, videos and audio are optional — anything you add is sent with the request.",
+    bestFor:
+      "Short multi-shot sequences (wide → close-up → reaction) that share one subject and product.",
+    limits:
+      "Up to 10 segments, each 3–8 seconds, adding up to 4–30 seconds. With no references attached the person and product are described in words in every segment — expect some drift between shots; add reference images to anchor them.",
+  },
+};
+
+/** The capability copy to show for `mode` on `engine` (2.5 overrides win). */
+export function capabilityFor(
+  mode: SeedanceV4Mode | "text_to_video",
+  engine?: SeedanceEngine
+): ModeCapability | undefined {
+  if (engine === "2.5") return MODE_CAPABILITIES_25[mode] ?? MODE_CAPABILITIES[mode];
+  return MODE_CAPABILITIES[mode];
+}

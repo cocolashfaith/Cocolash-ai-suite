@@ -18,6 +18,7 @@ import {
   isEnhancorParityUgc,
   multiFrameTotalSeconds,
 } from "./lib/build-request";
+import { hasRequiredInputs } from "./lib/mode-input-rules";
 import type { SeedanceV4WizardState } from "./types";
 import type {
   DirectorInput,
@@ -48,6 +49,10 @@ interface Step3Props {
       | ((prev: SeedanceV4WizardState) => Partial<SeedanceV4WizardState>)
   ) => void;
   onReset: () => void;
+  /** True only while the wizard is actually showing Step 3. The wizard keeps
+   *  this step mounted (hidden) so navigation preserves state, so without this
+   *  flag the auto-Director effect fires while the user is still on Step 1/2. */
+  isActive?: boolean;
   goToStep?: (step: number) => void;
   /** Jump back to Step 1 for a new clip while KEEPING all uploaded images and
    *  settings (so the user doesn't re-upload product images each time). */
@@ -69,7 +74,7 @@ interface Step3Props {
  *   2. Display prompt in editable textarea
  *   3. User clicks [Approve & Generate]
  */
-export function Step3PromptReviewAndGenerate({ state, setState, onReset, goToStep, onStartAnother }: Step3Props) {
+export function Step3PromptReviewAndGenerate({ state, setState, onReset, isActive = true, goToStep, onStartAnother }: Step3Props) {
   const [isWriting, setIsWriting] = useState(false);
   const [writeError, setWriteError] = useState<string | null>(null);
   const [editedPrompt, setEditedPrompt] = useState<string>(state.directorPrompt ?? "");
@@ -101,6 +106,15 @@ export function Step3PromptReviewAndGenerate({ state, setState, onReset, goToSte
   const segmentsOutOfRange =
     state.mode === "multi_frame" &&
     (segmentTotal < engineCaps.durationMin || segmentTotal > segmentMax);
+
+  // Director attribution. Both are optional: the vision path reports no
+  // system-prompt id on older responses, and a restored draft has no
+  // diagnostics at all. Missing ⇒ the segment is dropped, never rendered as "?".
+  const directorPromptId = state.directorDiagnostics?.systemPromptId?.trim() || null;
+  const directorDurationMs =
+    typeof state.directorDiagnostics?.durationMs === "number"
+      ? state.directorDiagnostics.durationMs
+      : null;
 
   // videos[] on multi_reference / edit / extend / multi_frame bills at the
   // cheaper "reduced" credit rate — the estimate has to know.
@@ -265,6 +279,15 @@ export function Step3PromptReviewAndGenerate({ state, setState, onReset, goToSte
     // its poll — the user would watch the card vanish mid-render.
     if (generation) return;
 
+    // The wizard keeps this step mounted while the user is on Step 1 / Step 2,
+    // so an `inputsVersion` bump (a mode change, a new upload) reached the
+    // Director before the mode's inputs existed — /api/seedance/director
+    // answers 400 for those states and the user got a "Director failed" card
+    // for a step they had not opened yet. Only write a prompt when Step 3 is on
+    // screen AND the mode's required inputs are actually present.
+    if (!isActive) return;
+    if (!hasRequiredInputs(state)) return;
+
     if (isEnhancorParityMode) {
       if (visionLoading) return;
       const haveCachedOutput = !!state.directorPrompt;
@@ -291,7 +314,7 @@ export function Step3PromptReviewAndGenerate({ state, setState, onReset, goToSte
       }
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [state.inputsVersion, state.directorPromptVersion, isEnhancorParityMode, generation]);
+  }, [state.inputsVersion, state.directorPromptVersion, isEnhancorParityMode, generation, isActive]);
 
   async function handleApproveAndGenerate() {
     setIsGenerating(true);
@@ -549,9 +572,17 @@ export function Step3PromptReviewAndGenerate({ state, setState, onReset, goToSte
               Regenerate with Director
             </button>
           </div>
+          {/* The system-prompt id is only shown when the Director actually
+              reported one — a bare "?" told the user nothing. */}
           <p className="text-[11px] text-coco-brown-medium/60">
-            The Seedance Director (Claude Opus 4.7,{" "}
-            <code className="rounded bg-coco-beige px-1">{state.directorDiagnostics?.systemPromptId ?? "?"}</code>) wrote this for you. Edit anything you want before approving.
+            The Seedance Director (Claude Opus 4.7
+            {directorPromptId ? (
+              <>
+                ,{" "}
+                <code className="rounded bg-coco-beige px-1">{directorPromptId}</code>
+              </>
+            ) : null}
+            ) wrote this for you. Edit anything you want before approving.
           </p>
           <textarea
             value={editedPrompt}
@@ -560,8 +591,10 @@ export function Step3PromptReviewAndGenerate({ state, setState, onReset, goToSte
             className="w-full rounded-xl border-2 border-coco-beige-dark bg-white p-3 text-xs text-coco-brown outline-none focus:border-coco-golden focus:ring-1 focus:ring-coco-golden"
           />
           <p className="text-[10px] text-coco-brown-medium/50">
-            {editedPrompt.length} characters. Director took{" "}
-            {state.directorDiagnostics?.durationMs ?? "?"}ms.
+            {editedPrompt.length} characters.
+            {typeof directorDurationMs === "number"
+              ? ` Director took ${directorDurationMs}ms.`
+              : ""}
           </p>
         </section>
       )}

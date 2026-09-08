@@ -5,6 +5,7 @@ import {
   videoCostLabel,
   videoDurationLabel,
   videoEngineLabel,
+  videoMetaLabel,
   videoModeLabel,
   videoResolutionLabel,
   videoTierLabel,
@@ -128,6 +129,30 @@ describe("videoTierLabel / videoResolutionLabel", () => {
 
   it("shows the raw resolution", () => {
     expect(videoResolutionLabel(make25())).toBe("720p");
+  });
+});
+
+describe("videoMetaLabel — the gallery card's mode · tier chip", () => {
+  it("is null for a pre-migration row so the card can omit the chip", () => {
+    // Every pre-2.5 row has neither column, and "— · —" on every card is noise.
+    expect(videoMetaLabel(makeVideo())).toBeNull();
+    expect(
+      videoMetaLabel(make25({ seedance_mode: null, quality_tier: null, resolution: null }))
+    ).toBeNull();
+  });
+
+  it("joins mode and tier when both are known", () => {
+    expect(videoMetaLabel(make25())).toBe("UGC · Draft 720p");
+  });
+
+  it("shows just the mode when the tier is unknown", () => {
+    expect(
+      videoMetaLabel(make25({ quality_tier: null, resolution: null }))
+    ).toBe("UGC");
+  });
+
+  it("shows just the tier when the mode is unknown", () => {
+    expect(videoMetaLabel(make25({ seedance_mode: null }))).toBe("Draft 720p");
   });
 });
 

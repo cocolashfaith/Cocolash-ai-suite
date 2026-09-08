@@ -7,10 +7,12 @@ import {
   effectiveDuration,
   effectiveResolution,
   effectiveScriptDuration,
+  hasRequiredInputs,
   inputLimitsFor,
   isModeAvailable,
   needsScript,
 } from "@/components/video/seedance-v4/lib/mode-input-rules";
+import { capabilityFor } from "@/components/video/seedance-v4/lib/mode-capabilities";
 import {
   DEFAULT_V4_STATE,
   type SeedanceV4Mode,
@@ -247,5 +249,116 @@ describe("coerceStateForMode", () => {
     expect(coerceStateForMode(s({ mode: "ugc" }), "multi_reference")).toEqual({
       mode: "multi_reference",
     });
+  });
+});
+
+/**
+ * QA defect 32: Step 3 stays mounted while the user is back on Step 1/2, so its
+ * auto-Director effect fired on every `inputsVersion` bump — including right
+ * after a mode change, when the new mode's inputs do not exist yet. The
+ * Director route answers 400 for exactly those states. `hasRequiredInputs`
+ * mirrors its per-mode required-input rules so the effect can stay quiet.
+ */
+describe("hasRequiredInputs", () => {
+  it("text_to_video is always ready (no media inputs at all)", () => {
+    expect(hasRequiredInputs(s({ mode: "text_to_video" }))).toBe(true);
+  });
+
+  it("a freshly-switched mode with no inputs is NOT ready", () => {
+    for (const mode of [
+      "ugc",
+      "multi_reference",
+      "first_n_last_frames",
+      "edit",
+      "extend",
+      "lipsyncing",
+      "voice_clone",
+    ] as const) {
+      expect(hasRequiredInputs(s({ mode, subjectBrief: "" })), mode).toBe(false);
+    }
+  });
+
+  it("ugc needs at least one product or influencer image", () => {
+    expect(hasRequiredInputs(s({ mode: "ugc", ugcProductImageUrls: ["p1"] }))).toBe(true);
+    expect(hasRequiredInputs(s({ mode: "ugc", ugcInfluencerImageUrls: ["i1"] }))).toBe(true);
+    expect(hasRequiredInputs(s({ mode: "ugc", ugcInfluencerImageUrl: "i1" }))).toBe(true);
+    expect(hasRequiredInputs(s({ mode: "ugc", ugcComposedImageUrl: "c1" }))).toBe(true);
+    expect(hasRequiredInputs(s({ mode: "ugc", ugcProductImageUrls: [] }))).toBe(false);
+  });
+
+  it("multi_reference accepts any one of image / video / audio", () => {
+    expect(hasRequiredInputs(s({ mode: "multi_reference", inputImageUrls: ["a"] }))).toBe(true);
+    expect(hasRequiredInputs(s({ mode: "multi_reference", inputVideoUrls: ["a"] }))).toBe(true);
+    expect(hasRequiredInputs(s({ mode: "multi_reference", inputAudioUrls: ["a"] }))).toBe(true);
+    expect(
+      hasRequiredInputs(
+        s({
+          mode: "multi_reference",
+          multiReferenceImages: [{ url: "a", role: "product" }],
+        })
+      )
+    ).toBe(true);
+  });
+
+  it("first_n_last_frames needs the first frame", () => {
+    expect(hasRequiredInputs(s({ mode: "first_n_last_frames", firstFrameUrl: "f" }))).toBe(true);
+  });
+
+  it("edit and extend need at least one source video", () => {
+    for (const mode of ["edit", "extend"] as const) {
+      expect(hasRequiredInputs(s({ mode, inputVideoUrls: ["v"] })), mode).toBe(true);
+      expect(hasRequiredInputs(s({ mode, inputImageUrls: ["i"] })), mode).toBe(false);
+    }
+  });
+
+  it("lipsyncing / voice_clone need BOTH an image and the audio", () => {
+    for (const mode of ["lipsyncing", "voice_clone"] as const) {
+      expect(hasRequiredInputs(s({ mode, lipsyncImageUrl: "i" })), mode).toBe(false);
+      expect(hasRequiredInputs(s({ mode, lipsyncAudioUrl: "a" })), mode).toBe(false);
+      expect(
+        hasRequiredInputs(s({ mode, lipsyncImageUrl: "i", lipsyncAudioUrl: "a" })),
+        mode
+      ).toBe(true);
+      expect(
+        hasRequiredInputs(s({ mode, inputImageUrls: ["i"], lipsyncAudioUrl: "a" })),
+        mode
+      ).toBe(true);
+    }
+  });
+
+  it("multi_frame needs the subject brief (segments are Director OUTPUT, not input)", () => {
+    expect(hasRequiredInputs(s({ mode: "multi_frame", subjectBrief: "" }))).toBe(false);
+    expect(hasRequiredInputs(s({ mode: "multi_frame", subjectBrief: "   " }))).toBe(false);
+    expect(
+      hasRequiredInputs(s({ mode: "multi_frame", subjectBrief: "a woman in her late 20s" }))
+    ).toBe(true);
+  });
+});
+
+/**
+ * QA defect 30: on engine 2.5 the Multi-Frame Step-2 form offers "Reference
+ * images (optional) 0/30" AND sends them, so the card above it must not say
+ * "text only — no images are sent". That wording is true on 2.0 only.
+ */
+describe("capabilityFor — multi_frame copy follows the engine", () => {
+  it("2.0 keeps the text-only wording", () => {
+    const cap = capabilityFor("multi_frame", "2.0")!;
+    expect(cap.inputs).toContain("Text only");
+    expect(cap.limits).toContain("no reference image is sent");
+  });
+
+  it("2.5 says references are optional and are sent", () => {
+    const cap = capabilityFor("multi_frame", "2.5")!;
+    expect(cap.inputs).not.toContain("Text only");
+    expect(cap.inputs).not.toContain("no images are sent");
+    expect(cap.inputs).toMatch(/optional/i);
+    expect(cap.inputs).toMatch(/sent/i);
+    expect(cap.limits).not.toContain("no reference image is sent");
+  });
+
+  it("modes without an engine-specific difference read the same on both engines", () => {
+    for (const mode of ["ugc", "multi_reference", "text_to_video"] as const) {
+      expect(capabilityFor(mode, "2.5")).toEqual(capabilityFor(mode, "2.0"));
+    }
   });
 });

@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState, useCallback } from "react";
-import { Film, Loader2 } from "lucide-react";
+import { AlertTriangle, Film, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { toast } from "sonner";
@@ -14,6 +14,10 @@ import {
   inFlightKey,
   statusEndpoint,
 } from "@/lib/video/reconcile";
+import {
+  MIGRATION_REQUIRED_CODE,
+  SEEDANCE25_MIGRATION_FILE,
+} from "@/lib/supabase/schema-errors";
 import type {
   GeneratedVideo,
   HeyGenVideoStatus,
@@ -63,6 +67,16 @@ export default function VideoGalleryPage() {
   const [offset, setOffset] = useState(0);
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
   const [pipelineFilter, setPipelineFilter] = useState<string>("all");
+  /**
+   * Set when /api/videos answers 503 `migration_required`: the `engine` column
+   * does not exist yet, so an engine chip cannot be applied. The chip is
+   * reverted to the last one that actually loaded and this banner says which
+   * SQL file to run — previously the request failed silently behind a toast
+   * while the chip stayed lit over the unfiltered list.
+   */
+  const [migrationBlocked, setMigrationBlocked] = useState(false);
+  /** The last pipeline chip whose fetch succeeded — what a 503 reverts to. */
+  const appliedPipelineRef = useRef<string>("all");
 
   const [selectedVideo, setSelectedVideo] = useState<GeneratedVideo | null>(null);
   const [selectedScript, setSelectedScript] = useState<VideoScript | null>(null);
@@ -72,8 +86,13 @@ export default function VideoGalleryPage() {
 
   const fetchVideos = useCallback(
     async (newOffset = 0, append = false) => {
-      if (newOffset === 0) setLoading(true);
-      else setLoadingMore(true);
+      if (newOffset === 0) {
+        setLoading(true);
+        // Drop the previous filter's rows immediately: without this the old
+        // list stays on screen while the new one loads (and stays for good if
+        // the new filter errors), which reads as "the filter did nothing".
+        if (!append) setVideos([]);
+      } else setLoadingMore(true);
 
       try {
         const params = new URLSearchParams({
@@ -90,9 +109,21 @@ export default function VideoGalleryPage() {
         if (selected?.engine) params.set("engine", selected.engine);
 
         const res = await fetch(`/api/videos?${params}`);
-        const data = await res.json();
+        const data = await res.json().catch(() => ({}));
 
-        if (!res.ok) throw new Error(data.error);
+        if (!res.ok) {
+          // 503: the 20260908 migration has not been applied, so `engine` is
+          // not a column yet. Revert to the chip that last loaded and explain
+          // in-page instead of leaving an un-appliable filter selected.
+          if (data?.code === MIGRATION_REQUIRED_CODE) {
+            setMigrationBlocked(true);
+            setPipelineFilter(appliedPipelineRef.current);
+            return;
+          }
+          throw new Error(data.error);
+        }
+
+        appliedPipelineRef.current = pipelineFilter;
 
         if (append) {
           setVideos((prev) => [...prev, ...data.videos]);
@@ -275,7 +306,10 @@ export default function VideoGalleryPage() {
           <button
             key={f.value}
             type="button"
-            onClick={() => setPipelineFilter(f.value)}
+            onClick={() => {
+              setMigrationBlocked(false);
+              setPipelineFilter(f.value);
+            }}
             className={cn(
               "rounded-full px-4 py-1.5 text-xs font-medium transition-all",
               pipelineFilter === f.value
@@ -287,6 +321,18 @@ export default function VideoGalleryPage() {
           </button>
         ))}
       </div>
+
+      {/* Pre-migration: the engine chips can't be applied yet (same wording as
+          Settings → Video defaults). */}
+      {migrationBlocked && (
+        <div className="mb-6 flex items-start gap-2 rounded-lg border border-amber-300 bg-amber-50 px-3 py-2">
+          <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-500" />
+          <p className="text-xs text-amber-700">
+            Run <code className="font-mono">{SEEDANCE25_MIGRATION_FILE}</code> to filter by
+            engine — showing the previous filter until then.
+          </p>
+        </div>
+      )}
 
       {/* Loading skeletons */}
       {loading && (

@@ -75,9 +75,9 @@ describe("Step 3 — the live progress card survives", () => {
     );
   });
 
-  it("lists `generation` in that effect's dependencies", () => {
+  it("lists `generation` (and the step-visibility flag) in that effect's dependencies", () => {
     expect(step3).toContain(
-      "}, [state.inputsVersion, state.directorPromptVersion, isEnhancorParityMode, generation]);"
+      "}, [state.inputsVersion, state.directorPromptVersion, isEnhancorParityMode, generation, isActive]);"
     );
   });
 
@@ -93,5 +93,73 @@ describe("Step 3 — the live progress card survives", () => {
     expect(step3).toContain("{generation ? (");
     expect(step3).toContain("<SeedanceGenerationProgress");
     expect(step3).toContain("videoId={generation.videoId}");
+  });
+});
+
+/**
+ * QA defect 32 — the auto-Director effect used to fire from a hidden Step 3.
+ *
+ * SeedanceV4Wizard keeps every reached step mounted (`className={step === 2 ?
+ * "" : "hidden"}`) so navigation preserves state. That meant changing the mode
+ * back on Step 1 bumped `inputsVersion`, the hidden Step 3 immediately POSTed
+ * /api/seedance/director with none of the new mode's inputs, and the route
+ * answered 400. The effect now needs BOTH the step to be visible and the
+ * mode's required inputs to exist.
+ */
+describe("Step 3 — the Director only runs for the visible step with real inputs", () => {
+  const wizard = readFileSync(
+    resolve(ROOT, "components/video/seedance-v4/SeedanceV4Wizard.tsx"),
+    "utf8"
+  );
+
+  it("takes an `isActive` prop and the wizard passes `step === 2`", () => {
+    expect(step3).toContain("isActive?: boolean;");
+    expect(wizard).toContain("isActive={step === 2}");
+  });
+
+  it("bails out of the effect when the step is hidden", () => {
+    const effect = step3.slice(step3.indexOf("useEffect(() => {\n    // Once a job is queued"));
+    expect(effect).toContain("if (!isActive) return;");
+    expect(effect.indexOf("if (!isActive) return;")).toBeLessThan(
+      effect.indexOf("isEnhancorParityMode")
+    );
+  });
+
+  it("bails out when the mode's required inputs are missing", () => {
+    const effect = step3.slice(step3.indexOf("useEffect(() => {\n    // Once a job is queued"));
+    expect(effect).toContain("if (!hasRequiredInputs(state)) return;");
+    expect(step3).toContain('import { hasRequiredInputs } from "./lib/mode-input-rules";');
+  });
+});
+
+/**
+ * QA defect 19 — the attribution line rendered "(Claude Opus 4.7, ? )" whenever
+ * the Director reported no `systemPromptId` (the vision path did not send one).
+ * A "?" is not information: the segment is dropped instead.
+ */
+describe("Step 3 — Director attribution never renders a bare '?'", () => {
+  it("does not fall back to '?' for the system prompt id or the duration", () => {
+    expect(step3).not.toContain('state.directorDiagnostics?.systemPromptId ?? "?"');
+    expect(step3).not.toContain('state.directorDiagnostics?.durationMs ?? "?"');
+  });
+
+  it("renders the prompt-id chip only when there is an id", () => {
+    expect(step3).toContain("{directorPromptId ? (");
+    expect(step3).toContain(
+      "const directorPromptId = state.directorDiagnostics?.systemPromptId?.trim() || null;"
+    );
+  });
+
+  it("renders the Director timing only when it is a number", () => {
+    expect(step3).toContain('typeof directorDurationMs === "number"');
+  });
+
+  it("the vision route now reports a system prompt id, so the chip has a value", () => {
+    const vision = readFileSync(
+      resolve(ROOT, "lib/ai/director/seedance-vision-director.ts"),
+      "utf8"
+    );
+    expect(vision).toContain("SEEDANCE_VISION_DIRECTOR_PROMPT_ID");
+    expect(vision).toContain("systemPromptId: SEEDANCE_VISION_DIRECTOR_PROMPT_ID,");
   });
 });

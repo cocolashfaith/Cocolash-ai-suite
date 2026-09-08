@@ -55,7 +55,9 @@ export function MultiFrameMode(props: MultiFrameModeProps) {
 
   return (
     <div className="space-y-4">
-      <CapabilityCard mode="multi_frame" />
+      {/* Engine-aware copy: on 2.5 the references below ARE sent, so the card
+          must not claim "text only — no images are sent". */}
+      <CapabilityCard mode="multi_frame" engine={state.engine} />
 
       {/* D-26-03: Inline banner — verbatim copy (2.0 only; 2.5 takes references) */}
       {!isV25 && (

@@ -297,6 +297,9 @@ export function SeedanceV4Wizard({ initialPersonImageUrl: _ }: SeedanceV4WizardP
             <Step3PromptReviewAndGenerate
               state={state}
               setState={setState}
+              // Kept mounted for state preservation — the auto-Director effect
+              // must only run while Step 3 is the visible step.
+              isActive={step === 2}
               onReset={handleReset}
               onStartAnother={handleStartAnother}
             />

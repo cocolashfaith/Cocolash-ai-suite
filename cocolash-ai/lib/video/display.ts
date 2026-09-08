@@ -82,6 +82,19 @@ export function videoTierLabel(video: VideoDisplayLike): string {
   return tier ? QUALITY_TIERS[tier].label : EM_DASH;
 }
 
+/**
+ * The gallery card's "mode · tier" chip. Returns `null` when NEITHER value is
+ * known, so the card can omit the chip instead of rendering a literal "— · —"
+ * (every pre-migration row has both columns missing). With only one of the two
+ * known, just that one is returned.
+ */
+export function videoMetaLabel(video: VideoDisplayLike): string | null {
+  const parts = [videoModeLabel(video), videoTierLabel(video)].filter(
+    (part) => part !== EM_DASH
+  );
+  return parts.length > 0 ? parts.join(" · ") : null;
+}
+
 /** The raw output resolution ("720p") — shown next to the tier in the modal. */
 export function videoResolutionLabel(video: VideoDisplayLike): string {
   if (video.resolution) return video.resolution;

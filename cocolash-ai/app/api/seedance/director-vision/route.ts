@@ -22,7 +22,7 @@
  * Response:
  *   {
  *     prompt: "Using @influencer_image1 @product_image1...", // Seedance-ready prompt
- *     diagnostics?: { model, durationMs, inputSummary }
+ *     diagnostics?: { model, systemPromptId, durationMs, inputSummary }
  *   }
  */
 

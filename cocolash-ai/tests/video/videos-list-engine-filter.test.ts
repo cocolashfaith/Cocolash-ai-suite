@@ -3,6 +3,8 @@ import { NextRequest } from "next/server";
 import { GET } from "@/app/api/videos/route";
 import { createAdminClient } from "@/lib/supabase/server";
 import { MIGRATION_REQUIRED_CODE } from "@/lib/supabase/schema-errors";
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
 
 vi.mock("@/lib/supabase/server");
 
@@ -111,5 +113,53 @@ describe("GET /api/videos — pre-migration tolerance", () => {
     expect(res.status).toBe(500);
     const body = await res.json();
     expect(body.error).toBe("Failed to fetch videos");
+  });
+});
+
+/**
+ * The gallery page's half of the same contract (QA defects 39/41/42).
+ *
+ * Before this, a 503 from the engine chips was swallowed by a toast: the chip
+ * stayed lit, the previous filter's rows stayed on screen, and the user was
+ * left believing the filter had been applied to what they were looking at.
+ * There is no DOM environment in this suite (vitest runs `environment: "node"`),
+ * so the wiring is asserted on the page source — the same approach
+ * tests/seedance-v25/step3-settings-and-progress.test.ts uses.
+ */
+describe("gallery page — a pre-migration engine filter fails visibly", () => {
+  const page = readFileSync(
+    resolve(__dirname, "../..", "app/(protected)/video/gallery/page.tsx"),
+    "utf8"
+  );
+
+  it("recognises the 503 by the shared migration_required code", () => {
+    expect(page).toContain(
+      'import {\n  MIGRATION_REQUIRED_CODE,\n  SEEDANCE25_MIGRATION_FILE,\n} from "@/lib/supabase/schema-errors";'
+    );
+    expect(page).toContain("if (data?.code === MIGRATION_REQUIRED_CODE) {");
+  });
+
+  it("reverts the chip to the last filter that actually loaded", () => {
+    expect(page).toContain("setPipelineFilter(appliedPipelineRef.current);");
+    expect(page).toContain("appliedPipelineRef.current = pipelineFilter;");
+  });
+
+  it("shows an inline amber banner naming the SQL file, not just a toast", () => {
+    expect(page).toContain("setMigrationBlocked(true);");
+    expect(page).toContain("{migrationBlocked && (");
+    expect(page).toContain("border-amber-300 bg-amber-50");
+    expect(page).toContain("{SEEDANCE25_MIGRATION_FILE}");
+  });
+
+  it("clears the banner when the user picks another chip", () => {
+    expect(page).toContain("setMigrationBlocked(false);");
+  });
+
+  it("drops the previous filter's rows while a new filter loads", () => {
+    expect(page).toContain("if (!append) setVideos([]);");
+  });
+
+  it("tolerates a non-JSON error body instead of throwing over it", () => {
+    expect(page).toContain("await res.json().catch(() => ({}))");
   });
 });

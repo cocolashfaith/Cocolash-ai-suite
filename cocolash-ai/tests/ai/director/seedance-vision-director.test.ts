@@ -12,9 +12,26 @@
  */
 
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+
+// The OpenRouter client is stubbed for the whole file: no test here may reach
+// the network. Every pre-existing test throws in validation before the call,
+// so only the diagnostics test below actually exercises the stub.
+const visionCompletion = vi.fn(async () => ({
+  choices: [{ message: { content: "Using @influencer_image1 she holds the product." } }],
+}));
+
+vi.mock("@/lib/openrouter/client", () => ({
+  getOpenRouterClient: () => ({
+    chat: { completions: { create: visionCompletion } },
+  }),
+  openrouterRequest: <T,>(run: () => Promise<T>) => run(),
+}));
+
 import {
   generateSeedanceVisionPrompt,
   callVisionModel,
+  SEEDANCE_VISION_DIRECTOR_MODEL,
+  SEEDANCE_VISION_DIRECTOR_PROMPT_ID,
   type VisionPromptInput,
   VisionDirectorError,
 } from "@/lib/ai/director/seedance-vision-director";
@@ -332,5 +349,26 @@ describe("Seedance Vision Director", () => {
       expect(summaryWithSku).toContain("product");
       expect(summaryWithoutSku).not.toContain("product=");
     });
+  });
+});
+
+/**
+ * QA defect 19 — Step 3 showed "(Claude Opus 4.7, ? )" because this director
+ * reported no `systemPromptId` at all. The UI now hides a missing id, and this
+ * path supplies one so the attribution stays informative.
+ */
+describe("vision diagnostics carry a system prompt id", () => {
+  it("reports the model AND the system prompt id", async () => {
+    const result = await generateSeedanceVisionPrompt({
+      influencerImageUrl: "https://example.com/influencer.jpg",
+      productImageUrls: ["https://example.com/product1.jpg"],
+      script: "These lashes feel like nothing at all.",
+      campaignType: "product-showcase",
+    });
+
+    expect(result.diagnostics.model).toBe(SEEDANCE_VISION_DIRECTOR_MODEL);
+    expect(result.diagnostics.systemPromptId).toBe(SEEDANCE_VISION_DIRECTOR_PROMPT_ID);
+    expect(result.diagnostics.systemPromptId.trim().length).toBeGreaterThan(0);
+    expect(typeof result.diagnostics.durationMs).toBe("number");
   });
 });

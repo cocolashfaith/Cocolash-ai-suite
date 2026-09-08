@@ -1,14 +1,18 @@
 "use client";
 
+import type { SeedanceEngine } from "@/lib/types";
 import type { SeedanceV4Mode } from "./types";
-import { MODE_CAPABILITIES } from "./lib/mode-capabilities";
+import { capabilityFor } from "./lib/mode-capabilities";
 
 interface CapabilityCardProps {
   mode: SeedanceV4Mode | "text_to_video";
+  /** The engine the wizard is on. Some modes behave differently on 2.5
+   *  (multi_frame accepts references there) and the copy has to follow. */
+  engine?: SeedanceEngine;
 }
 
-export function CapabilityCard({ mode }: CapabilityCardProps) {
-  const cap = MODE_CAPABILITIES[mode];
+export function CapabilityCard({ mode, engine }: CapabilityCardProps) {
+  const cap = capabilityFor(mode, engine);
   if (!cap) return null;
 
   return (

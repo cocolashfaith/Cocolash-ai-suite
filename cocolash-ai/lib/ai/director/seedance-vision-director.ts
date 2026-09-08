@@ -25,6 +25,13 @@ import { SEEDANCE_25_LIMITS } from "@/lib/seedance/v25/types";
 export const SEEDANCE_VISION_DIRECTOR_MODEL = "anthropic/claude-opus-4.7";
 
 /**
+ * Stable id for the system prompt this director builds, reported in
+ * `diagnostics.systemPromptId` so Step 3 can attribute the prompt the same way
+ * the text Director's output is attributed (instead of rendering a bare "?").
+ */
+export const SEEDANCE_VISION_DIRECTOR_PROMPT_ID = "seedance-vision-director-ugc";
+
+/**
  * Input to the vision director. Images are the PRIMARY source of product truth.
  * productSku is OPTIONAL and used only for supplementary grounding.
  */
@@ -69,6 +76,8 @@ export interface VisionPromptOutput {
   /** Diagnostics for debugging and cost tracking */
   diagnostics: {
     model: string;
+    /** Which system prompt wrote this — surfaced in the Step 3 attribution line. */
+    systemPromptId: string;
     durationMs: number;
     inputSummary: string;
   };
@@ -146,6 +155,7 @@ export async function generateSeedanceVisionPrompt(
     prompt,
     diagnostics: {
       model: SEEDANCE_VISION_DIRECTOR_MODEL,
+      systemPromptId: SEEDANCE_VISION_DIRECTOR_PROMPT_ID,
       durationMs,
       inputSummary: summarizeVisionInput(input, productTruth),
     },

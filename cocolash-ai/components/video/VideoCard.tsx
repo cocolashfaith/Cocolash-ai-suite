@@ -8,8 +8,7 @@ import {
   videoCostLabel,
   videoDurationLabel,
   videoEngineLabel,
-  videoModeLabel,
-  videoTierLabel,
+  videoMetaLabel,
 } from "@/lib/video/display";
 import { cn } from "@/lib/utils";
 
@@ -65,7 +64,9 @@ export function VideoCard({ video, onClick, eager = false }: VideoCardProps) {
   const isSeedance = video.pipeline === "seedance";
   const durationStr = videoDurationLabel(video);
   const engineStr = videoEngineLabel(video);
-  const metaStr = `${videoModeLabel(video)} · ${videoTierLabel(video)}`;
+  // null when neither mode nor tier is known (every pre-2.5 row) — the chip is
+  // then omitted instead of rendering a meaningless "— · —".
+  const metaStr = videoMetaLabel(video);
   const costStr = videoCostLabel(video);
 
   return (
@@ -143,9 +144,11 @@ export function VideoCard({ video, onClick, eager = false }: VideoCardProps) {
                 <Sparkles className="mr-0.5 h-2.5 w-2.5" />
                 {engineStr}
               </Badge>
-              <Badge className="bg-coco-beige text-[9px] text-coco-brown-medium">
-                {metaStr}
-              </Badge>
+              {metaStr && (
+                <Badge className="bg-coco-beige text-[9px] text-coco-brown-medium">
+                  {metaStr}
+                </Badge>
+              )}
             </>
           ) : isEducational ? (
             <Badge className="bg-indigo-100 text-[9px] text-indigo-700">

@@ -155,6 +155,68 @@ export function needsScript(mode: SeedanceV4Mode): boolean {
 }
 
 /**
+ * Does the wizard state carry the media the CURRENT mode cannot run without?
+ *
+ * Step 3 is kept mounted (hidden) once the user has reached it, so its
+ * auto-Director effect used to fire on every `inputsVersion` bump — including
+ * while the user was back on Step 1 flipping modes with none of the new mode's
+ * inputs collected yet. `POST /api/seedance/director` answers 400 for exactly
+ * those states (see `validateDirectorInput`), so the wizard would show a red
+ * "Director failed" card for a step the user had not reached.
+ *
+ * This mirrors the server's required-input rules per mode (it deliberately does
+ * NOT re-check the script / free-text fields — those are Step 1 / Step 2 gates):
+ *
+ *   ugc                    ≥1 product or influencer image (or the composed one)
+ *   multi_reference        ≥1 image, video or audio reference
+ *   first_n_last_frames    a first frame
+ *   edit / extend          ≥1 source video
+ *   lipsyncing/voice_clone a person image AND the lip-sync audio
+ *   multi_frame            a subject brief (the mode's only required input —
+ *                          segments are Director OUTPUT, not state)
+ *   text_to_video          nothing (always ready)
+ */
+export function hasRequiredInputs(state: SeedanceV4WizardState): boolean {
+  const count = (list?: readonly unknown[]) => list?.length ?? 0;
+
+  switch (state.mode) {
+    case "text_to_video":
+      return true;
+    case "ugc":
+      return (
+        count(state.ugcProductImageUrls) > 0 ||
+        count(state.ugcInfluencerImageUrls) > 0 ||
+        !!state.ugcInfluencerImageUrl ||
+        !!state.ugcComposedImageUrl
+      );
+    case "multi_reference":
+      return (
+        count(state.inputImageUrls) > 0 ||
+        count(state.multiReferenceImages) > 0 ||
+        count(state.inputVideoUrls) > 0 ||
+        count(state.inputAudioUrls) > 0 ||
+        !!state.multiReferenceVideoUrl ||
+        !!state.multiReferenceAudioUrl
+      );
+    case "first_n_last_frames":
+      return !!state.firstFrameUrl;
+    case "edit":
+    case "extend":
+      return count(state.inputVideoUrls) > 0;
+    case "lipsyncing":
+    case "voice_clone":
+      return (
+        (!!state.lipsyncImageUrl || count(state.inputImageUrls) > 0) &&
+        !!state.lipsyncAudioUrl
+      );
+    case "multi_frame":
+      return !!state.subjectBrief?.trim();
+    default:
+      return true;
+  }
+}
+
+/**
  * Repair the wizard state for a new engine. Returns a PATCH (always contains
  * `engine`); extra keys are exactly the things that had to change, so the
  * caller can tell the user what moved.

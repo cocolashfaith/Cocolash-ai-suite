@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useState, useEffect, useRef } from "react";
+import { useCallback, useMemo, useState, useEffect, useRef } from "react";
 import Link from "next/link";
 import { toast } from "sonner";
 import { Loader2, Upload, Check, Package, Settings, Store, X } from "lucide-react";
@@ -29,6 +29,51 @@ interface ProductRef {
   id: string;
   image_url: string;
   category_name: string;
+}
+
+/** One heading + its thumbnails in the Library tab. */
+interface LibraryGroup {
+  name: string;
+  images: ProductRef[];
+}
+
+/** Fallback heading for a library image whose category came back empty. */
+const UNCATEGORIZED = "Uncategorized";
+
+/**
+ * Group the flat library list by product category, preserving the order the
+ * images arrived in (newest upload first). Without this the Library tab is one
+ * undifferentiated wall of ~100 thumbnails with no way to tell a Sorrel photo
+ * from a Fern one — the Store tab has grouped headings, and so should this.
+ */
+export function groupLibraryByCategory(images: readonly ProductRef[]): LibraryGroup[] {
+  const groups: LibraryGroup[] = [];
+  const byName = new Map<string, LibraryGroup>();
+  for (const img of images) {
+    const name = img.category_name?.trim() || UNCATEGORIZED;
+    let group = byName.get(name);
+    if (!group) {
+      group = { name, images: [] };
+      byName.set(name, group);
+      groups.push(group);
+    }
+    group.images.push(img);
+  }
+  return groups;
+}
+
+/**
+ * Store products that actually have a thumbnail to click.
+ *
+ * `GET /api/shopify/product-images` deliberately keeps products whose images
+ * are all WebP/GIF (Enhancor rejects those formats), so the picker has to do
+ * the filtering — otherwise a product like "Fan" renders as a heading above an
+ * empty grid.
+ */
+export function productsWithUsableImages<T extends { images?: unknown[] }>(
+  products: readonly T[]
+): T[] {
+  return products.filter((p) => (p.images?.length ?? 0) > 0);
 }
 
 interface ShopifyProduct {
@@ -290,6 +335,7 @@ export function ProductReferencePicker({ state, setState }: ProductReferencePick
   }
 
   const showEmptyState = !loading && images.length === 0;
+  const libraryGroups = useMemo(() => groupLibraryByCategory(images), [images]);
 
   return (
     <section className="space-y-3 rounded-xl border-2 border-coco-beige-dark/50 bg-white/50 p-4">
@@ -342,73 +388,90 @@ export function ProductReferencePicker({ state, setState }: ProductReferencePick
           </div>
         ) : (
           <>
-            <div className="grid grid-cols-3 gap-2 sm:grid-cols-4">
-              {/* Upload tile — always first so it's discoverable */}
-              <button
-                type="button"
-                onClick={() => fileRef.current?.click()}
-                disabled={uploading}
-                className={cn(
-                  "flex aspect-square flex-col items-center justify-center gap-1 rounded-lg border-2 border-dashed border-coco-beige-dark bg-white text-coco-brown-medium/60 transition-all hover:border-coco-golden/40 hover:bg-coco-golden/5",
-                  uploading && "opacity-50"
-                )}
-                title="Upload one or more product images"
-              >
-                {uploading ? (
-                  <Loader2 className="h-5 w-5 animate-spin text-coco-golden" />
-                ) : (
-                  <>
-                    <Upload className="h-5 w-5" />
-                    <span className="text-[10px] font-medium">Upload</span>
-                  </>
-                )}
-              </button>
-              {images.map((img) => {
-                const isSelected = selected.includes(img.image_url);
-                return (
-                  <div key={img.id} className="group relative aspect-square">
-                    <button
-                      type="button"
-                      onClick={() => toggle(img.image_url)}
-                      className={cn(
-                        "relative h-full w-full overflow-hidden rounded-lg border-2 transition-all",
-                        isSelected
-                          ? "border-coco-golden ring-2 ring-coco-golden/30"
-                          : "border-transparent hover:border-coco-golden/40"
-                      )}
-                      title={img.category_name}
-                    >
-                      {/* Supabase / CDN hosts are not in next.config remotePatterns. */}
-                      {/* eslint-disable-next-line @next/next/no-img-element */}
-                      <img
-                        src={img.image_url}
-                        alt={img.category_name}
-                        className="h-full w-full object-cover"
-                      />
-                      {isSelected && (
-                        <div className="absolute inset-0 flex items-center justify-center bg-coco-golden/20">
-                          <div className="flex h-6 w-6 items-center justify-center rounded-full bg-coco-golden">
-                            <Check className="h-3.5 w-3.5 text-white" />
-                          </div>
-                        </div>
-                      )}
-                    </button>
-                    {/* Remove from this list only (stays saved in Settings). */}
-                    <button
-                      type="button"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        removeImage(img);
-                      }}
-                      className="absolute right-1 top-1 z-10 flex h-5 w-5 items-center justify-center rounded-full bg-coco-brown/70 text-white shadow-sm backdrop-blur-sm transition-all hover:bg-red-500 focus:opacity-100 sm:opacity-0 sm:group-hover:opacity-100"
-                      title="Remove from this list (stays in Settings)"
-                      aria-label={`Remove ${img.category_name || "image"} from this list`}
-                    >
-                      <X className="h-3 w-3" />
-                    </button>
+            {/* Grouped by category, and height-capped with its own scroll so a
+                100-image library doesn't push the rest of Step 1 off-screen. */}
+            <div className="max-h-[60vh] space-y-4 overflow-y-auto pr-1">
+              <div className="grid grid-cols-3 gap-2 sm:grid-cols-4">
+                {/* Upload tile — always first so it's discoverable */}
+                <button
+                  type="button"
+                  onClick={() => fileRef.current?.click()}
+                  disabled={uploading}
+                  className={cn(
+                    "flex aspect-square flex-col items-center justify-center gap-1 rounded-lg border-2 border-dashed border-coco-beige-dark bg-white text-coco-brown-medium/60 transition-all hover:border-coco-golden/40 hover:bg-coco-golden/5",
+                    uploading && "opacity-50"
+                  )}
+                  title="Upload one or more product images"
+                >
+                  {uploading ? (
+                    <Loader2 className="h-5 w-5 animate-spin text-coco-golden" />
+                  ) : (
+                    <>
+                      <Upload className="h-5 w-5" />
+                      <span className="text-[10px] font-medium">Upload</span>
+                    </>
+                  )}
+                </button>
+              </div>
+
+              {libraryGroups.map((group) => (
+                <div key={group.name} className="space-y-2">
+                  <div className="flex items-baseline justify-between gap-2">
+                    <p className="text-xs font-semibold text-coco-brown">{group.name}</p>
+                    <p className="text-[10px] text-coco-brown-medium/50">
+                      {group.images.length} image{group.images.length === 1 ? "" : "s"}
+                    </p>
                   </div>
-                );
-              })}
+                  <div className="grid grid-cols-3 gap-2 sm:grid-cols-4">
+                    {group.images.map((img) => {
+                      const isSelected = selected.includes(img.image_url);
+                      return (
+                        <div key={img.id} className="group relative aspect-square">
+                          <button
+                            type="button"
+                            onClick={() => toggle(img.image_url)}
+                            className={cn(
+                              "relative h-full w-full overflow-hidden rounded-lg border-2 transition-all",
+                              isSelected
+                                ? "border-coco-golden ring-2 ring-coco-golden/30"
+                                : "border-transparent hover:border-coco-golden/40"
+                            )}
+                            title={img.category_name}
+                          >
+                            {/* Supabase / CDN hosts are not in next.config remotePatterns. */}
+                            {/* eslint-disable-next-line @next/next/no-img-element */}
+                            <img
+                              src={img.image_url}
+                              alt={img.category_name}
+                              className="h-full w-full object-cover"
+                            />
+                            {isSelected && (
+                              <div className="absolute inset-0 flex items-center justify-center bg-coco-golden/20">
+                                <div className="flex h-6 w-6 items-center justify-center rounded-full bg-coco-golden">
+                                  <Check className="h-3.5 w-3.5 text-white" />
+                                </div>
+                              </div>
+                            )}
+                          </button>
+                          {/* Remove from this list only (stays saved in Settings). */}
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              removeImage(img);
+                            }}
+                            className="absolute right-1 top-1 z-10 flex h-5 w-5 items-center justify-center rounded-full bg-coco-brown/70 text-white shadow-sm backdrop-blur-sm transition-all hover:bg-red-500 focus:opacity-100 sm:opacity-0 sm:group-hover:opacity-100"
+                            title="Remove from this list (stays in Settings)"
+                            aria-label={`Remove ${img.category_name || "image"} from this list`}
+                          >
+                            <X className="h-3 w-3" />
+                          </button>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              ))}
             </div>
 
             {showEmptyState && (
@@ -483,6 +546,10 @@ function StoreProductsGrid({
   onToggle: (url: string) => void;
   onRetry: () => void;
 }) {
+  // A Shopify product with no usable images (e.g. "Fan") rendered as a heading
+  // with an empty grid under it — a group the user can't do anything with.
+  const withImages = productsWithUsableImages(products);
+
   if (loading) {
     return (
       <div className="flex items-center justify-center rounded-xl border-2 border-dashed border-coco-beige-dark p-6">
@@ -510,7 +577,7 @@ function StoreProductsGrid({
     );
   }
 
-  if (products.length === 0) {
+  if (withImages.length === 0) {
     return (
       <div className="flex flex-col items-center justify-center rounded-xl border-2 border-dashed border-coco-beige-dark p-6">
         <Store className="h-6 w-6 text-coco-brown-medium/30" />
@@ -522,8 +589,8 @@ function StoreProductsGrid({
   }
 
   return (
-    <div className="space-y-4">
-      {products.map((product) => (
+    <div className="max-h-[60vh] space-y-4 overflow-y-auto pr-1">
+      {withImages.map((product) => (
         <div key={product.handle} className="space-y-2">
           <div className="flex items-baseline justify-between gap-2">
             <p className="text-xs font-semibold text-coco-brown">{product.title}</p>
