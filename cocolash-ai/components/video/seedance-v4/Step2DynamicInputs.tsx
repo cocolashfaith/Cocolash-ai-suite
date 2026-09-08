@@ -45,10 +45,12 @@ export function Step2DynamicInputs({ state, setState, onAdvance }: Step2Props) {
       return <MultiFrameMode {...props} />;
     case "first_n_last_frames":
       return <FirstAndLastFrameMode {...props} />;
-    default: {
-      const _exhaustive: never = state.mode;
-      void _exhaustive;
-      return null;
-    }
+    // edit / extend / voice_clone panels arrive in Wave 1 (package D).
+    default:
+      return (
+        <div className="rounded-xl border-2 border-dashed border-coco-beige-dark bg-coco-beige-light/40 p-6 text-center text-sm text-coco-brown-medium">
+          The <strong>{state.mode}</strong> inputs panel is not available yet.
+        </div>
+      );
   }
 }

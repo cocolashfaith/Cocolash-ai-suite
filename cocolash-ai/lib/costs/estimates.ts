@@ -3,7 +3,19 @@
  *
  * Pure functions with no server dependencies — safe to import
  * from client components.
+ *
+ * Seedance pricing: engine "2.0" uses the legacy USD/sec constants below;
+ * engine "2.5" uses the REAL Enhancor credit tables in lib/seedance/pricing.ts
+ * (1 credit = $0.001, editable in video_settings).
  */
+
+import type { SeedanceEngine } from "@/lib/types";
+import type { Seedance25Mode } from "@/lib/seedance/v25/types";
+import {
+  estimateCredits,
+  formatCredits,
+  type Seedance25RateTable,
+} from "@/lib/seedance/pricing";
 
 // ── Per-call cost estimates (USD) ────────────────────────────
 
@@ -25,7 +37,11 @@ export const API_COSTS = {
     videoGeneration90s: 3.00,
   },
   seedance: {
-    /** Per-second cost by resolution (Enhancor pricing approx). */
+    /**
+     * ENGINE 2.0 ONLY — legacy per-second USD by resolution (approximate).
+     * Mirrored by SEEDANCE_20_USD_PER_SECOND in lib/seedance/pricing.ts (a
+     * test pins them equal). Engine 2.5 uses real credit tables instead.
+     */
     videoGeneration480pPerSecond: 0.10,
     videoGeneration720pPerSecond: 0.205,
     videoGeneration1080pPerSecond: 0.41,
@@ -59,16 +75,21 @@ export interface V4CostLineItem {
 export interface V4CostBreakdown {
   items: V4CostLineItem[];
   total: number;
+  // ── Seedance 2.5 extras (undefined for engine 2.0) ──
+  engine?: SeedanceEngine;
+  /** Enhancor credits for the video line item (2.5). */
+  credits?: number;
+  /** USD value of `credits` at the active usd_per_credit (2.5). */
+  creditsUsd?: number;
+  usdPerCredit?: number;
+  /** True when duration was Auto (-1) and the estimate assumed 10 s. */
+  assumedAutoDuration?: boolean;
 }
 
 export interface V4CostInput {
-  mode:
-    | "ugc"
-    | "multi_reference"
-    | "multi_frame"
-    | "lipsyncing"
-    | "first_n_last_frames"
-    | "text_to_video";
+  /** Any Seedance 2.5 mode (superset of the six 2.0 modes). */
+  mode: Seedance25Mode;
+  /** Output seconds; -1 = Auto (2.5) → estimated on 10 s. */
   durationSeconds: number;
   resolution: "480p" | "720p" | "1080p";
   /** Whether the user generated a fresh UGC avatar in the wizard. */
@@ -79,6 +100,20 @@ export interface V4CostInput {
   generatesLastFrame: boolean;
   /** When script-generation is part of this run. */
   generatesScript: boolean;
+
+  // ── Seedance 2.5 (all optional; omitted ⇒ engine 2.0 legacy pricing) ──
+  engine?: SeedanceEngine;
+  isUncensored?: boolean;
+  /** videos[] will be sent (reduced rate for multi_reference/edit/extend/multi_frame). */
+  hasVideoInputs?: boolean;
+  /** Known combined input video seconds (adds to billable time on the reduced rate). */
+  inputVideoSeconds?: number;
+  /** multi_frame per-segment durations; sum overrides durationSeconds. */
+  multiFrameDurations?: number[];
+  /** Live rate table from video_settings (defaults to the seed table). */
+  rates?: Seedance25RateTable;
+  /** Live usd_per_credit from video_settings (default 0.001). */
+  usdPerCredit?: number;
 }
 
 /**
@@ -133,7 +168,42 @@ export function estimateV4Cost(input: V4CostInput): V4CostBreakdown {
     });
   }
 
-  // Seedance / Enhancor — the dominant line item. Per-second × resolution.
+  // Seedance / Enhancor — the dominant line item.
+  if (input.engine === "2.5") {
+    // Real credit pricing (D4): credits/sec × billable seconds, live rates.
+    const est = estimateCredits({
+      engine: "2.5",
+      mode: input.mode,
+      resolution: input.resolution,
+      durationSeconds: input.durationSeconds,
+      hasVideoInputs: input.hasVideoInputs,
+      inputVideoSeconds: input.inputVideoSeconds,
+      isUncensored: input.isUncensored,
+      multiFrameDurations: input.multiFrameDurations,
+      rates: input.rates,
+      usdPerCredit: input.usdPerCredit,
+    });
+    const durationLabel = est.assumedAutoDuration ? "Auto ≈ 10s" : `${est.outputSeconds}s`;
+    items.push({
+      id: "seedance",
+      label: `Seedance 2.5 video (${input.resolution} × ${durationLabel})`,
+      cost: est.usdExact,
+      hint: `${formatCredits(est.credits)} credits · ${est.note}`,
+    });
+
+    const total = items.reduce((sum, it) => sum + it.cost * (it.count ?? 1), 0);
+    return {
+      items,
+      total: Number(total.toFixed(4)),
+      engine: "2.5",
+      credits: est.credits,
+      creditsUsd: est.usd,
+      usdPerCredit: est.usdPerCredit,
+      assumedAutoDuration: est.assumedAutoDuration,
+    };
+  }
+
+  // Engine 2.0 (legacy): per-second USD × resolution — numbers unchanged (D4).
   const perSecond =
     input.resolution === "1080p"
       ? API_COSTS.seedance.videoGeneration1080pPerSecond
@@ -156,6 +226,7 @@ export function estimateV4Cost(input: V4CostInput): V4CostBreakdown {
   return {
     items,
     total: Number(total.toFixed(4)),
+    engine: input.engine ?? "2.0",
   };
 }
 

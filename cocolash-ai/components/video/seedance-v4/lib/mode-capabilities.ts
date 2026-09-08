@@ -53,4 +53,20 @@ export const MODE_CAPABILITIES: Record<
     limits:
       "No image, video, or audio input. Highest variance — iterate.",
   },
+  // ── Seedance 2.5 only (Wave 0 placeholders — package F writes the real copy) ──
+  edit: {
+    inputs: "One or more source videos (required) + an edit instruction. Optional images/audio.",
+    bestFor: "Changing something inside an existing clip while keeping the rest.",
+    limits: "Seedance 2.5 only. Duration is always Auto; aspect follows the source video. Output defaults to .mov.",
+  },
+  extend: {
+    inputs: "One or more source videos (required) + how to continue. Optional images/audio.",
+    bestFor: "Continuing a clip past its last frame.",
+    limits: "Seedance 2.5 only. Aspect follows the source video. Output defaults to .mov.",
+  },
+  voice_clone: {
+    inputs: "One or more speaker images + an audio clip (≤ 30 s) to clone the voice from.",
+    bestFor: "Talking-head clips where the voice must match a real recording.",
+    limits: "Seedance 2.5 only. No video input. Keep the mouth visible.",
+  },
 };

@@ -83,3 +83,6 @@ public/brand/*
 
 # Local scratch test scripts (Phase 10 helper)
 /scripts/_test-*.mts
+
+# Local scratch (portfolio drafts, notes) — never committed
+tmp/

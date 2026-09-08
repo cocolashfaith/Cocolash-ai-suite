@@ -617,6 +617,9 @@ function modeLabel(mode: DirectorMode): string {
       lipsyncing: "Lip-Sync",
       first_n_last_frames: "First+Last Frame",
       text_to_video: "Text-to-Video",
+      edit: "Edit",
+      extend: "Extend",
+      voice_clone: "Voice Clone",
     } as const
   )[mode];
 }
@@ -682,6 +685,9 @@ function buildDirectorBody(state: SeedanceV4WizardState): DirectorInput {
         ...base,
         sceneDescription: state.t2vSceneDescription,
       };
+    // edit / extend / voice_clone: Director inputs are wired in Wave 1 (package E/F).
+    default:
+      return base;
   }
 }
 
@@ -808,5 +814,9 @@ function buildEnhancorBody(
         multiFramePrompts: editedSegments,
       };
     }
+    // edit / extend / voice_clone are Seedance 2.5 only — the 2.5 request
+    // builder (Wave 1, package E) replaces this legacy 2.0 body entirely.
+    default:
+      return { ...common, type: "image-to-video" };
   }
 }

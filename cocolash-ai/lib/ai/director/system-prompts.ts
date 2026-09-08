@@ -415,7 +415,9 @@ export function getSeedanceDirectorPrompt(mode: DirectorMode): {
   id: string;
   text: string;
 } {
-  const map: Record<DirectorMode, string> = {
+  // Partial: edit / extend / voice_clone prompts are added in Wave 1 (package F).
+  // Until then the lookup below throws the existing "No system prompt" error.
+  const map: Partial<Record<DirectorMode, string>> = {
     ugc: "seedance-director-ugc",
     multi_reference: "seedance-director-multi-reference",
     multi_frame: "seedance-director-multi-frame",
@@ -424,7 +426,7 @@ export function getSeedanceDirectorPrompt(mode: DirectorMode): {
     text_to_video: "seedance-director-text-to-video",
   };
   const id = map[mode];
-  const entry = PROMPT_REGISTRY.find((p) => p.id === id);
+  const entry = id ? PROMPT_REGISTRY.find((p) => p.id === id) : undefined;
   if (!entry) throw new Error(`No system prompt registered for mode: ${mode}`);
   return { id: entry.id, text: entry.text };
 }

@@ -21,7 +21,40 @@ export const BUCKETS = {
   // Both private; service-role + chat admins only.
   CHAT_KB_UPLOADS: "chat-kb-uploads",
   CHAT_SELFIES: "chat-selfies",
+  // ── Seedance 2.5 (D6) — audio/video/image reference inputs ──
+  // Public bucket, 50 MB cap, MIME allow-list: video/mp4|quicktime|webm|x-m4v,
+  // audio/mpeg|mp3|wav|x-wav|wave|mp4|x-m4a|m4a|aac|ogg|webm|flac,
+  // image/png|jpeg|webp. Created 2026-09-08 via the service-role API; the
+  // 20260908_seedance25.sql migration re-asserts it idempotently.
+  // Uploads go through /api/video-inputs/* (see components/video/seedance-v4/lib/upload.ts).
+  VIDEO_INPUTS: "video-inputs",
 } as const;
+
+/** MIME types the `video-inputs` bucket accepts (mirror of the bucket config). */
+export const VIDEO_INPUTS_ALLOWED_MIME = [
+  "video/mp4",
+  "video/quicktime",
+  "video/webm",
+  "video/x-m4v",
+  "audio/mpeg",
+  "audio/mp3",
+  "audio/wav",
+  "audio/x-wav",
+  "audio/wave",
+  "audio/mp4",
+  "audio/x-m4a",
+  "audio/m4a",
+  "audio/aac",
+  "audio/ogg",
+  "audio/webm",
+  "audio/flac",
+  "image/png",
+  "image/jpeg",
+  "image/webp",
+] as const;
+
+/** 50 MB — the `video-inputs` bucket's file_size_limit. */
+export const VIDEO_INPUTS_MAX_BYTES = 50 * 1024 * 1024;
 
 // ── Upload Generated Image ────────────────────────────────────
 export async function uploadGeneratedImage(

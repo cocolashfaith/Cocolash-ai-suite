@@ -553,6 +553,36 @@ export type CompositionPose = "holding" | "applying" | "selfie" | "testimonial";
 // ── Video Pipeline ────────────────────────────────────────────
 export type VideoPipeline = "heygen" | "seedance";
 
+// ── Seedance engine + quality tier (Seedance 2.5 upgrade, 2026-09) ──
+/**
+ * Which Enhancor Seedance endpoint produced a `pipeline = 'seedance'` row.
+ * Registry + capabilities: lib/seedance/engines.ts. HeyGen rows carry the DB
+ * default ('2.0') — only meaningful when pipeline === "seedance".
+ */
+export type SeedanceEngine = "2.0" | "2.5";
+
+/**
+ * Faith's "draft cheap / final expensive" tiers → Enhancor resolution.
+ * Mapping lives in lib/seedance/engines.ts (QUALITY_TIERS).
+ */
+export type QualityTier = "draft-480p" | "draft-720p" | "final-1080p";
+
+/**
+ * Every media URL sent to Enhancor for one job. Stored verbatim on
+ * generated_videos.input_urls so "Re-render as Final" and the later
+ * 2.0-vs-2.5 A/B can reproduce the exact inputs.
+ */
+export interface VideoInputUrls {
+  products?: string[];
+  influencers?: string[];
+  images?: string[];
+  videos?: string[];
+  audios?: string[];
+  first_frame_image?: string;
+  last_frame_image?: string;
+  lipsyncing_audio?: string;
+}
+
 // ── HeyGen Video Status ──────────────────────────────────────
 // `captioning` is an intermediate state we set AFTER HeyGen returns
 // `completed` but BEFORE Shotstack has finished burning captions. It
@@ -598,7 +628,12 @@ export interface GeneratedVideo {
   final_video_url: string | null;
   thumbnail_url: string | null;
   duration_seconds: number | null;
-  aspect_ratio: VideoAspectRatio | null;
+  /**
+   * HeyGen rows use VideoAspectRatio; Seedance rows may hold any Enhancor
+   * ratio ("3:4", "21:9", "adaptive", …). Kept as a plain string on the DB
+   * record — narrow at the call site when you need the HeyGen union.
+   */
+  aspect_ratio: VideoAspectRatio | string | null;
   has_captions: boolean;
   has_watermark: boolean;
   has_background_music: boolean;
@@ -615,6 +650,33 @@ export interface GeneratedVideo {
   caption_srt: string | null;
   created_at: string;
   completed_at: string | null;
+
+  // ── Seedance 2.5 columns (supabase/migrations/20260908_seedance25.sql) ──
+  // All OPTIONAL: they are absent from rows read before the migration is
+  // applied, and from literal test fixtures. Use `rowHasSeedance25Columns()`
+  // (lib/supabase/schema-errors.ts) before writing them.
+  /** '2.0' | '2.5' — DB default '2.0'. Only meaningful when pipeline === "seedance". */
+  engine?: SeedanceEngine | null;
+  /** Enhancor mode string (ugc, text_to_video, multi_reference, …). */
+  seedance_mode?: string | null;
+  quality_tier?: QualityTier | null;
+  /** Output resolution actually requested: 480p | 720p | 1080p. */
+  resolution?: string | null;
+  /** Requested clip length in seconds; -1 = Auto (Seedance 2.5 only). */
+  requested_duration?: number | null;
+  input_urls?: VideoInputUrls | null;
+  /** Exact Enhancor /queue body minus webhook_url (never store the token). */
+  request_payload?: Record<string, unknown> | null;
+  /** Actual Enhancor credits from the 2.5 webhook/status `cost` field. NULL for 2.0. */
+  credits_cost?: number | null;
+  /** Provider / validation error text for failed rows. */
+  error_message?: string | null;
+  /** Source row id when this row is a "Re-render as Final" of another job. */
+  rerender_of?: string | null;
+  output_format?: "mp4" | "mov" | null;
+  bitrate_mode?: "standard" | "high" | null;
+  is_uncensored?: boolean | null;
+  pass_faces?: boolean | null;
 }
 
 // ── Voice Option (database record — cached from voice provider) ─
@@ -678,6 +740,21 @@ export interface VideoStatusResponse {
   scriptTextCache?: string;
   durationSeconds?: number;
   error?: string;
+
+  // ── Seedance 2.5 additions (all optional; absent for HeyGen / pre-migration rows) ──
+  engine?: SeedanceEngine;
+  mode?: string | null;
+  resolution?: string | null;
+  qualityTier?: QualityTier | null;
+  /** -1 = Auto */
+  requestedDuration?: number | null;
+  /** Actual Enhancor credits once known (2.5). */
+  creditsCost?: number | null;
+  /** USD recorded on the row (processing_cost). */
+  costUsd?: number | null;
+  /** Persisted provider error text (error_message column). */
+  errorMessage?: string | null;
+  rerenderOf?: string | null;
 }
 
 export interface ScriptResult {

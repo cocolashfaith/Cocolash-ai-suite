@@ -9,15 +9,15 @@
 
 import type { CampaignType, ScriptTone } from "@/lib/types";
 import type { SeedanceMultiFramePrompt } from "@/lib/seedance/types";
+import type { Seedance25Mode } from "@/lib/seedance/v25/types";
 import type { ProductTruthEntry } from "@/lib/brand/product-truth";
 
-export type DirectorMode =
-  | "ugc"
-  | "multi_reference"
-  | "multi_frame"
-  | "lipsyncing"
-  | "first_n_last_frames"
-  | "text_to_video";
+/**
+ * All nine Seedance 2.5 modes (a superset of the six 2.0 Director modes).
+ * `edit`, `extend` and `voice_clone` get their system prompts in Wave 1
+ * (package F); until then getSeedanceDirectorPrompt() throws for them.
+ */
+export type DirectorMode = Seedance25Mode;
 
 export interface ImageRoleRef {
   url: string;
@@ -31,8 +31,17 @@ export interface DirectorInput {
   mode: DirectorMode;
   campaignType: CampaignType;
   tone: ScriptTone;
-  /** Total clip duration in seconds (5, 8, 10, or 15). */
+  /** Total clip duration in seconds: 4–30 on Seedance 2.5, or -1 (Auto). 2.0: 4–15. */
   durationSeconds: number;
+
+  /** Seedance 2.5 edit / extend: the source clip(s) the model must change or continue. */
+  sourceVideoUrls?: string[];
+  /** Seedance 2.5 edit / extend: what to change (edit) or how to continue (extend). */
+  editInstruction?: string;
+  /** Seedance 2.5 multi_reference: several audio refs (`@audioN`). */
+  referenceAudioUrls?: string[];
+  /** Seedance 2.5 multi_reference: several video refs (`@videoN`). */
+  referenceVideoUrls?: string[];
   /** Aspect ratio (e.g. "9:16", "16:9"). Influences shot framing language. */
   aspectRatio: string;
   /**
