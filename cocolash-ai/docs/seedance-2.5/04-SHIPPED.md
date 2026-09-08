@@ -314,3 +314,17 @@ not Seedance 2.5, has no stored payload, is not completed, or is already 1080p.
 6. **Cost dashboard split by engine** (Wave 2 G) and the scripted end-to-end
    smoke run (`scripts/smoke-seedance25.ts`, Wave 2 H) are the remaining pieces
    of this pass.
+
+## Post-review hardening (commit `05e1cc3`)
+
+Applied after an independent security review and code review of the whole diff:
+
+- **Re-render is idempotent.** `POST /api/seedance/[id]/rerender` answers `409 { code: "already_rerendered", existingVideoId }` when a re-render of that source is already pending, processing, or completed. Delete the existing Final in the gallery if you genuinely want another one.
+- **Paid submissions are rate-limited.** `POST /api/seedance/generate` and `/rerender` allow 12 submissions per 10 minutes per session (`lib/seedance/submit-rate-limit.ts`), answering `429 { code: "rate_limited" }` beyond that. The limiter is in-memory per serverless instance — a guard against runaway loops, not a hard billing cap.
+- **Step 3 on engine 2.5 is a read-only recap.** Output settings (tier, duration, aspect, Advanced) are only editable in Step 1, so the resolution shown is always the resolution billed.
+- **URL safety.** Every media URL must be public `https://`; loopback, private, link-local, ULA, multicast and IPv4-mapped IPv6 hosts are rejected in all their numeric spellings (`lib/seedance/v25/schema.ts` → `isPublicHttpsUrl`).
+- **Image uploads are sniffed.** The stored type comes from the file's magic bytes (PNG / JPEG / WebP), not the declared MIME; mismatches are re-encoded through sharp or rejected. sharp runs with a 50 MP input cap and a 4096 px bound.
+- **The webhook secret never leaks.** Provider error text is scrubbed of `ENHANCOR_WEBHOOK_SECRET` before it is logged, stored in `error_message`, or returned.
+- **Gallery labels.** Rows without a stored mode (all pre-2.5 videos) show "—" rather than "UGC".
+
+Known follow-ups: a distributed rate limiter if the app ever becomes multi-tenant; the shared access password still grants admin (planned cutover with Faith once everyone has personal logins).
