@@ -20,7 +20,6 @@
  */
 
 import { qualityTierToResolution } from "@/lib/seedance/engines";
-import { AUTO_DURATION } from "@/lib/seedance/v25/types";
 import type { Seedance25Mode } from "@/lib/seedance/v25/types";
 import type { Seedance25RequestInput } from "@/lib/seedance/v25/schema";
 import type { QualityTier } from "@/lib/types";

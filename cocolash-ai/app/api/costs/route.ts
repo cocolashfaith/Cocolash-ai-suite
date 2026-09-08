@@ -10,6 +10,11 @@ import { getMonthlyCostSummary } from "@/lib/costs/tracker";
  * Query params:
  * - year: e.g. 2026
  * - month: 1-12
+ *
+ * `pipelineBreakdown` carries both the combined seedance totals (`seedance`,
+ * `seedanceCount` — unchanged) and the D1 engine split (`seedance20*`,
+ * `seedance25*`, `seedance25Credits`). Before the 20260908 migration the split
+ * degrades to "everything is 2.0"; the response shape never changes.
  */
 export async function GET(request: NextRequest) {
   try {

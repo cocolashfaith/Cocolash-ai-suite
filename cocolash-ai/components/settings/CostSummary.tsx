@@ -12,13 +12,27 @@ import {
   Loader2,
   Sparkles,
   Clapperboard,
+  Zap,
 } from "lucide-react";
+import { engineLabel } from "@/lib/seedance/engines";
+import { formatCredits } from "@/lib/seedance/pricing";
 
+/**
+ * `seedance` / `seedanceCount` are the combined totals. The engine split
+ * (`seedance20*` / `seedance25*`) needs `generated_videos.engine`, so it is
+ * optional here: a pre-migration `/api/costs` response omits it and the 2.5
+ * card simply reads zero.
+ */
 interface PipelineBreakdown {
   heygen: number;
   seedance: number;
   heygenCount: number;
   seedanceCount: number;
+  seedance20?: number;
+  seedance25?: number;
+  seedance20Count?: number;
+  seedance25Count?: number;
+  seedance25Credits?: number;
 }
 
 interface CostSummaryData {
@@ -168,37 +182,32 @@ export function CostSummary() {
                 <p className="mb-2.5 text-[10px] font-semibold uppercase tracking-wider text-coco-brown-medium/50">
                   By Pipeline
                 </p>
-                <div className="grid grid-cols-2 gap-2.5">
-                  <div className="rounded-lg bg-indigo-50 p-2.5">
-                    <div className="flex items-center gap-1.5">
-                      <Clapperboard className="h-3 w-3 text-indigo-500" />
-                      <span className="text-[10px] font-medium text-indigo-600">
-                        HeyGen
-                      </span>
-                    </div>
-                    <p className="mt-1 text-sm font-bold text-indigo-700">
-                      ${data.pipelineBreakdown.heygen.toFixed(2)}
-                    </p>
-                    <p className="text-[10px] text-indigo-500/60">
-                      {data.pipelineBreakdown.heygenCount} video
-                      {data.pipelineBreakdown.heygenCount !== 1 ? "s" : ""}
-                    </p>
-                  </div>
-                  <div className="rounded-lg bg-orange-50 p-2.5">
-                    <div className="flex items-center gap-1.5">
-                      <Sparkles className="h-3 w-3 text-orange-500" />
-                      <span className="text-[10px] font-medium text-orange-600">
-                        Seedance
-                      </span>
-                    </div>
-                    <p className="mt-1 text-sm font-bold text-orange-700">
-                      ${data.pipelineBreakdown.seedance.toFixed(2)}
-                    </p>
-                    <p className="text-[10px] text-orange-500/60">
-                      {data.pipelineBreakdown.seedanceCount} video
-                      {data.pipelineBreakdown.seedanceCount !== 1 ? "s" : ""}
-                    </p>
-                  </div>
+                <div className="grid grid-cols-3 gap-2.5">
+                  <PipelineCard
+                    icon={Clapperboard}
+                    label="HeyGen"
+                    cost={data.pipelineBreakdown.heygen}
+                    count={data.pipelineBreakdown.heygenCount}
+                    color="indigo"
+                  />
+                  <PipelineCard
+                    icon={Sparkles}
+                    label={engineLabel("2.0")}
+                    cost={data.pipelineBreakdown.seedance20 ?? data.pipelineBreakdown.seedance}
+                    count={
+                      data.pipelineBreakdown.seedance20Count ??
+                      data.pipelineBreakdown.seedanceCount
+                    }
+                    color="orange"
+                  />
+                  <PipelineCard
+                    icon={Zap}
+                    label={engineLabel("2.5")}
+                    cost={data.pipelineBreakdown.seedance25 ?? 0}
+                    count={data.pipelineBreakdown.seedance25Count ?? 0}
+                    credits={data.pipelineBreakdown.seedance25Credits ?? 0}
+                    color="rose"
+                  />
                 </div>
               </div>
             )}
@@ -220,6 +229,65 @@ export function CostSummary() {
         <p className="mt-6 text-center text-xs text-coco-brown-medium/40">
           Unable to load cost data.
         </p>
+      )}
+    </div>
+  );
+}
+
+/** One engine tile in the "By Pipeline" grid. Credits show for Seedance 2.5. */
+function PipelineCard({
+  icon: Icon,
+  label,
+  cost,
+  count,
+  credits,
+  color,
+}: {
+  icon: React.ComponentType<{ className?: string }>;
+  label: string;
+  cost: number;
+  count: number;
+  credits?: number;
+  color: "indigo" | "orange" | "rose";
+}) {
+  const colorMap = {
+    indigo: {
+      bg: "bg-indigo-50",
+      icon: "text-indigo-500",
+      label: "text-indigo-600",
+      value: "text-indigo-700",
+      sub: "text-indigo-500/60",
+    },
+    orange: {
+      bg: "bg-orange-50",
+      icon: "text-orange-500",
+      label: "text-orange-600",
+      value: "text-orange-700",
+      sub: "text-orange-500/60",
+    },
+    rose: {
+      bg: "bg-rose-50",
+      icon: "text-rose-500",
+      label: "text-rose-600",
+      value: "text-rose-700",
+      sub: "text-rose-500/60",
+    },
+  };
+
+  const c = colorMap[color];
+
+  return (
+    <div className={`rounded-lg ${c.bg} p-2.5`}>
+      <div className="flex items-center gap-1.5">
+        <Icon className={`h-3 w-3 ${c.icon}`} />
+        <span className={`text-[10px] font-medium ${c.label}`}>{label}</span>
+      </div>
+      <p className={`mt-1 text-sm font-bold ${c.value}`}>${cost.toFixed(2)}</p>
+      <p className={`text-[10px] ${c.sub}`}>
+        {count} video{count !== 1 ? "s" : ""}
+      </p>
+      {credits !== undefined && credits > 0 && (
+        <p className={`text-[10px] ${c.sub}`}>{formatCredits(credits)} credits</p>
       )}
     </div>
   );

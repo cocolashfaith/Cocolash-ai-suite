@@ -7,6 +7,7 @@
 
 import { createAdminClient } from "@/lib/supabase/server";
 import { isMissingColumnError } from "@/lib/supabase/schema-errors";
+import { roundCredits } from "@/lib/seedance/pricing";
 import { API_COSTS } from "./estimates";
 
 // Re-export client-safe utilities for server-side callers
@@ -15,11 +16,24 @@ export type { VideoCostEstimate } from "./estimates";
 
 // ── Types ────────────────────────────────────────────────────
 
+/**
+ * `seedance` / `seedanceCount` are the COMBINED 2.0 + 2.5 totals and keep their
+ * historical meaning — existing consumers never have to know about engines.
+ * The `seedance20*` / `seedance25*` fields are the D1 engine split; they are
+ * derived from `generated_videos.engine`, which only exists after the 20260908
+ * migration (see `getMonthlyCostSummary`'s fallback).
+ */
 export interface PipelineBreakdown {
   heygen: number;
   seedance: number;
   heygenCount: number;
   seedanceCount: number;
+  seedance20: number;
+  seedance25: number;
+  seedance20Count: number;
+  seedance25Count: number;
+  /** Real Enhancor credit spend on 2.5 rows (`credits_cost`). */
+  seedance25Credits: number;
 }
 
 export interface CostSummary {
@@ -85,6 +99,27 @@ export async function recordActualCost(
 
 // ── Monthly Cost Summary ─────────────────────────────────────
 
+/** Shape of the columns the summary reads. Every 2.5 column is optional. */
+interface VideoCostRow {
+  processing_cost?: number | string | null;
+  pipeline?: string | null;
+  engine?: string | null;
+  credits_cost?: number | string | null;
+}
+
+/** With the engine split (post-migration). */
+const VIDEO_COST_SELECT = "processing_cost, pipeline, engine, credits_cost";
+/** Pre-migration: `engine` / `credits_cost` do not exist yet (42703). */
+const VIDEO_COST_SELECT_LEGACY = "processing_cost, pipeline";
+
+const num = (value: number | string | null | undefined): number =>
+  Number(value) || 0;
+
+const sumCost = (rows: VideoCostRow[]): number =>
+  rows.reduce((total, row) => total + num(row.processing_cost), 0);
+
+const usd = (value: number): number => Number(value.toFixed(2));
+
 export async function getMonthlyCostSummary(
   year?: number,
   month?: number
@@ -106,39 +141,61 @@ export async function getMonthlyCostSummary(
 
   const supabase = await createAdminClient();
 
-  const { data: videos, error: videoError } = await supabase
-    .from("generated_videos")
-    .select("processing_cost, pipeline")
-    .gte("created_at", startDate)
-    .lt("created_at", endDate);
+  const queryVideos = (columns: string) =>
+    supabase
+      .from("generated_videos")
+      .select(columns)
+      .gte("created_at", startDate)
+      .lt("created_at", endDate);
+
+  let { data: videos, error: videoError } = await queryVideos(VIDEO_COST_SELECT);
+
+  // Pre-migration the `engine` / `credits_cost` columns do not exist. Retry
+  // without them so the dashboard keeps working (no engine split is possible,
+  // and every seedance row is 2.0 by construction — see below).
+  let engineSplitAvailable = true;
+  if (videoError && isMissingColumnError(videoError)) {
+    console.warn(
+      "[costs] engine/credits_cost columns missing — cost dashboard cannot split engines (run the 20260908 migration)."
+    );
+    engineSplitAvailable = false;
+    ({ data: videos, error: videoError } = await queryVideos(VIDEO_COST_SELECT_LEGACY));
+  }
 
   if (videoError) {
     console.error("[costs] Video query error:", videoError);
   }
 
-  const videoList = videos ?? [];
-  const videoCosts = videoList.reduce(
-    (sum, v) => sum + (Number(v.processing_cost) || 0),
-    0
-  );
+  const videoList = (videos ?? []) as unknown as VideoCostRow[];
+  const videoCosts = sumCost(videoList);
   const videoCount = videoList.length;
 
   const heygenVideos = videoList.filter((v) => (v.pipeline ?? "heygen") === "heygen");
   const seedanceVideos = videoList.filter((v) => v.pipeline === "seedance");
 
+  // A seedance row with no `engine` predates 2.5 (the column defaults to '2.0'),
+  // so it belongs in the 2.0 bucket — same rule as `engineLabel`. Without the
+  // column at all, that puts the whole seedance total in 2.0 and leaves 2.5 at 0.
+  const seedance25Videos = engineSplitAvailable
+    ? seedanceVideos.filter((v) => v.engine === "2.5")
+    : [];
+  const seedance20Videos = seedanceVideos.filter((v) => !seedance25Videos.includes(v));
+
+  const seedance20 = usd(sumCost(seedance20Videos));
+  const seedance25 = usd(sumCost(seedance25Videos));
+
   const pipelineBreakdown: PipelineBreakdown = {
-    heygen: Number(
-      heygenVideos
-        .reduce((sum, v) => sum + (Number(v.processing_cost) || 0), 0)
-        .toFixed(2)
-    ),
-    seedance: Number(
-      seedanceVideos
-        .reduce((sum, v) => sum + (Number(v.processing_cost) || 0), 0)
-        .toFixed(2)
-    ),
+    heygen: usd(sumCost(heygenVideos)),
+    seedance: usd(sumCost(seedanceVideos)),
     heygenCount: heygenVideos.length,
     seedanceCount: seedanceVideos.length,
+    seedance20,
+    seedance25,
+    seedance20Count: seedance20Videos.length,
+    seedance25Count: seedance25Videos.length,
+    seedance25Credits: roundCredits(
+      seedance25Videos.reduce((total, v) => total + num(v.credits_cost), 0)
+    ),
   };
 
   const { count: imageCount, error: imageError } = await supabase
