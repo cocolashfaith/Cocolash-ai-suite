@@ -105,18 +105,33 @@ interface VideoCostRow {
   pipeline?: string | null;
   engine?: string | null;
   credits_cost?: number | string | null;
+  heygen_status?: string | null;
 }
 
 /** With the engine split (post-migration). */
-const VIDEO_COST_SELECT = "processing_cost, pipeline, engine, credits_cost";
+const VIDEO_COST_SELECT =
+  "processing_cost, pipeline, engine, credits_cost, heygen_status";
 /** Pre-migration: `engine` / `credits_cost` do not exist yet (42703). */
-const VIDEO_COST_SELECT_LEGACY = "processing_cost, pipeline";
+const VIDEO_COST_SELECT_LEGACY = "processing_cost, pipeline, heygen_status";
 
 const num = (value: number | string | null | undefined): number =>
   Number(value) || 0;
 
+/**
+ * A failed render is never billed — Enhancor returns no `cost` for it and the
+ * provider does not charge. Seedance 2.5 writes the *estimate* into
+ * `processing_cost` at insert (before the job is queued), so a failed 2.5 row
+ * still carries that number and would otherwise inflate the dashboard by money
+ * nobody spent. 2.0/HeyGen only write cost on completion, so this is a no-op
+ * for them.
+ */
+const isBillable = (row: VideoCostRow): boolean => row.heygen_status !== "failed";
+
 const sumCost = (rows: VideoCostRow[]): number =>
-  rows.reduce((total, row) => total + num(row.processing_cost), 0);
+  rows.reduce(
+    (total, row) => total + (isBillable(row) ? num(row.processing_cost) : 0),
+    0
+  );
 
 const usd = (value: number): number => Number(value.toFixed(2));
 

@@ -142,6 +142,79 @@ describe("getMonthlyCostSummary — engine split", () => {
   });
 });
 
+describe("getMonthlyCostSummary — failed renders are not billed", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  /**
+   * Seedance 2.5 writes the ESTIMATE into `processing_cost` at insert, before
+   * the job is queued. When the provider then fails the render nobody is
+   * charged (Enhancor returns no `cost`, so `credits_cost` stays null) — but
+   * the estimate is still on the row. It must not reach the dashboard.
+   * Real case 2026-09-09: two 720p jobs failed upstream carrying $5.1167 each.
+   */
+  const WITH_FAILURES = [
+    ...ROWS.map((r) => ({ ...r, heygen_status: "completed" })),
+    {
+      processing_cost: 5.1167,
+      pipeline: "seedance",
+      engine: "2.5",
+      credits_cost: null,
+      heygen_status: "failed",
+    },
+    {
+      processing_cost: 5.1167,
+      pipeline: "seedance",
+      engine: "2.5",
+      credits_cost: null,
+      heygen_status: "failed",
+    },
+  ];
+
+  it("asks for the status column", async () => {
+    const { selects } = mockSupabase([{ data: WITH_FAILURES, error: null }]);
+    await getMonthlyCostSummary(2026, 9);
+
+    expect(selects.generated_videos[0]).toContain("heygen_status");
+  });
+
+  it("excludes the estimate on failed rows from every total", async () => {
+    mockSupabase([{ data: WITH_FAILURES, error: null }]);
+    const summary = await getMonthlyCostSummary(2026, 9);
+    const b = summary.pipelineBreakdown;
+
+    // Identical to the all-succeeded numbers: the $10.23 of failed estimates
+    // is excluded, not added.
+    expect(b.seedance25).toBe(2.1);
+    expect(b.seedance).toBe(5.6);
+    expect(summary.breakdown.videos).toBe(9.35);
+    expect(summary.totalCost).toBe(9.35);
+  });
+
+  it("still counts failed jobs as attempts", async () => {
+    mockSupabase([{ data: WITH_FAILURES, error: null }]);
+    const summary = await getMonthlyCostSummary(2026, 9);
+
+    expect(summary.videoCount).toBe(8);
+    expect(summary.pipelineBreakdown.seedance25Count).toBe(4);
+  });
+
+  it("records no credits for a failed 2.5 render", async () => {
+    mockSupabase([{ data: WITH_FAILURES, error: null }]);
+    const summary = await getMonthlyCostSummary(2026, 9);
+
+    expect(summary.pipelineBreakdown.seedance25Credits).toBe(2104.6);
+  });
+
+  it("keeps counting rows that have no status at all", async () => {
+    mockSupabase([{ data: ROWS, error: null }]);
+    const summary = await getMonthlyCostSummary(2026, 9);
+
+    expect(summary.totalCost).toBe(9.35);
+  });
+});
+
 describe("getMonthlyCostSummary — pre-migration fallback", () => {
   beforeEach(() => {
     vi.clearAllMocks();
