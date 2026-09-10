@@ -124,7 +124,17 @@ export interface SeedanceV4WizardState {
   /** multi_frame: free-text subject brief (text-only flow per D-26-01) */
   subjectBrief?: string;
 
-  /** Product SKU — retained internally for script grounding (D-34-04 note: not user-facing selector) */
+  /**
+   * Which CocoLash SKU the selected product images are of, or "" when the
+   * selection identifies no single product.
+   *
+   * Not a user-facing selector (D-34-04): it is derived from the picker's
+   * selection by resolveSelectedProductSku() in ProductReferencePicker, and it
+   * is what switches the product-truth database on for the Director's truth
+   * context and for lib/brand/prompt-validator. Before 2026-09-10 nothing ever
+   * wrote it, so it was permanently "" and every truth guard was dead code
+   * (docs/seedance-2.5/05-GROUNDING-FIX.md root cause #5).
+   */
   productSku?: string;
 
   // Step 3 — Director output (one of the two will be populated based on mode)

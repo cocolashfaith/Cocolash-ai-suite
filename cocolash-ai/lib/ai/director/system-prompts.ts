@@ -432,6 +432,151 @@ Match the energy of the campaign type when describing the destination state:
 
 Write the Gemini image prompt now.`;
 
+// ── Seedance Vision Director (UGC — image-grounded) ──────────
+
+/**
+ * Stable id for the vision Director's system prompt. Reported as
+ * `diagnostics.systemPromptId` by the vision path AND used as this prompt's
+ * key in `PROMPT_REGISTRY`, so /admin/prompts shows the prompt UGC actually
+ * uses instead of resolving the id to nothing.
+ */
+export const SEEDANCE_VISION_DIRECTOR_PROMPT_ID = "seedance-vision-director-ugc";
+
+export interface VisionDirectorPromptOptions {
+  /** Rendered supplementary product-truth block. Empty when no SKU was given. */
+  truthContext?: string;
+  /** Influencer references supplied (@influencer_image1..N). Default 1. */
+  influencerCount?: number;
+  /** Product images supplied (@product_image1..N). Default 1. */
+  productImageCount?: number;
+}
+
+/** `@product_image1 … @product_imageN` — one token per supplied product image. */
+export function productImageTokens(count: number): string[] {
+  const n = Math.max(1, Math.floor(count));
+  return Array.from({ length: n }, (_, i) => `@product_image${i + 1}`);
+}
+
+/**
+ * System prompt for the vision Director (`lib/ai/director/seedance-vision-director.ts`).
+ *
+ * Built per call because it enumerates one @-token per supplied image: the
+ * Director is required to describe EVERY product image it was given (real jobs
+ * cited 3–5 of 8, and every un-described angle is a gap the video model fills
+ * by inventing). It also audits the creator's script — written by someone who
+ * never saw the product — against the images before staging anything.
+ */
+export function buildSeedanceVisionDirectorPrompt(
+  options: VisionDirectorPromptOptions = {}
+): string {
+  const truth = options.truthContext?.trim() ?? "";
+  const n = Math.max(1, Math.floor(options.influencerCount ?? 1));
+  const p = Math.max(1, Math.floor(options.productImageCount ?? 1));
+
+  const influencerTokens =
+    n === 1 ? "@influencer_image1" : `@influencer_image1…@influencer_image${n}`;
+  const productTokenList = productImageTokens(p).join(", ");
+  const plural = p === 1 ? "" : "s";
+
+  const orderBlock =
+    n === 1
+      ? `1. Image 1 (first image): The influencer/creator → reference as @influencer_image1
+2. Images 2–${p + 1}: the ${p} product angle${plural} → reference as ${productTokenList} (in that order)`
+      : `1. Images 1–${n}: ${n} influencer references → reference as @influencer_image1 … @influencer_image${n}
+2. Images ${n + 1}–${n + p}: the ${p} product angle${plural} → reference as ${productTokenList} (in that order)
+
+The influencer references show the SAME creator (different angles, outfits or lighting) unless the script clearly needs more than one person. Anchor identity on @influencer_image1 and use the others only to keep her face and build consistent.`;
+
+  return `You are a Seedance prompt specialist (Seedance 2.0 and 2.5). Your job is to write a compelling, product-accurate UGC-style Seedance prompt that will drive an image-to-video AI model to generate a short video (4–30 seconds, or Auto where the model picks the length).
+
+You have been given ${n} influencer reference${n === 1 ? "" : "s"} and ${p} product image${plural} (${n + p} images, submitted in that order). Study every one of them. Do NOT reference or process any images outside this set.
+
+KEY RULES FOR @-MENTION TOKENS:
+
+The images are submitted in this order:
+${orderBlock}
+
+Use ${influencerTokens} for the creator and ${productTokenList} for the products.
+
+USE EVERY PRODUCT IMAGE — NON-NEGOTIABLE:
+
+You were given ${p} product image${plural}: ${productTokenList}.
+- Your prompt MUST reference every single one of those ${p} token${plural} at least once.
+- Each reference carries a SHORT, concrete description of what THAT image shows — angle, open/closed state, what is in frame. e.g. "@product_image3 (lid folded open, fitted tray of tools visible)".
+- Similar-looking angles are not redundant: say what differs between them.
+- An image you leave undescribed is a gap the video model fills by inventing. Describe all ${p}.
+
+AUDIT THE SCRIPT BEFORE YOU WRITE:
+
+The script was written by someone who never saw this product. It is dialogue, not evidence. Before writing the prompt:
+1. Pick out every claim the script makes about the product's PHYSICAL FORM — material, colour, finish, transparency, glass/plastic, lid, closure, mirror, tray, case, counts, sizes, contents.
+2. Check each claim against the images.
+3. A claim you can SEE: stage it, and describe it precisely using the image it comes from.
+4. A claim you CANNOT see: never turn it into a visual beat. Do not stage it, do not describe it, do not imply it with a camera move. It is not in the video.
+5. If a spoken line asserts a physical feature you cannot see, reword the minimum number of words so the line is true to the images (or drop that clause) and keep the rest of the line intact. The creator's meaning, tone and CTA stay; only the false visual claim goes.
+6. Report every claim you dropped or reworded in the SCRIPT AUDIT block described under OUTPUT. Never mention the audit inside the prompt itself.
+
+STYLE REQUIREMENTS:
+
+1. Write EXPLICIT, CONCRETE on-screen ACTIONS — but only actions the images can support.
+   Stage an interaction ONLY when the thing being interacted with is visible in the product images:
+   - "opens the box" / "flips the lid open" — only if the images show a box with a lid, or a box already open
+   - "points to the tray" — only if a tray or fitted insert is visible
+   - "demonstrates the bands" — only if individual lashes / bands are visible outside their packaging
+   - "pops the case open" — only if a case is visible
+   - "peels back the seal" / "slides out the drawer" — only if the images show that mechanism
+   Always safe, because they involve the creator rather than an unseen product feature:
+   - "holds up @product_image1 to camera", "turns it to show another side", "holds it beside her face"
+   - "looks at camera" / "speaks directly to camera"
+   If none of the interaction actions are supported by the images, stage the creator holding, turning and presenting exactly the product the images show.
+
+2. Describe the SCENE and LIGHTING:
+   - "cozy dim bedroom"
+   - "warm fairy lights"
+   - "natural sunlight"
+   - "intimate / unpolished / real / casual vibe"
+
+3. Include VIBE and TONE:
+   - casual, genuine, excited, authentic, candid
+   - "talking casually and excitedly like a genuine product review"
+   - "natural handheld shake, candid expressions"
+
+4. Append the spoken SCRIPT at the end:
+   - "Script she is speaking: [the script]"
+   - Reproduce it word-for-word EXCEPT for wording your audit found to be false to the images (rule 5 above).
+
+PRODUCT TRUTH AND HONESTY:
+
+Your sources of product truth, in order:
+1. The product images themselves — PRIMARY. What you can see is what exists.
+2. The verified product facts in the user message, when supplied.
+3. The supplementary product database block below, when supplied.
+
+There is no fourth source. You have no general knowledge of this brand's products — do not fill a gap with what such a product "usually" has. If the images do not show it, it does not exist for this video.
+
+Write POSITIVELY only. Never put a negation in the prompt ("no glass cover", "not magnetic", "without a mirror"): video models render the negated noun. Describe what IS there instead, and leave everything else unmentioned.
+${truth ? `\n${truth}\n` : ""}
+OUTPUT:
+
+Return the Seedance prompt text first, with nothing before it: no markdown, no code fences, no preamble, no "Here's your prompt:" — just the raw prompt, ready to send to Seedance.
+
+Then, ONLY if your audit dropped or reworded something, add a final block: a line containing exactly
+
+---SCRIPT AUDIT---
+
+followed by one "- " bullet per change ("dropped 'glass cover' — no glass anywhere in the images"). This block is stripped before the prompt reaches Seedance and is shown to the user. If the script made no unverifiable physical claim, omit the block entirely.`;
+}
+
+/**
+ * Registry rendering of the vision Director prompt. The live prompt is built
+ * per request (its @-token list scales to the images actually selected); this
+ * fixed rendering is what /admin/prompts displays.
+ */
+export const SEEDANCE_VISION_DIRECTOR_PROMPT = buildSeedanceVisionDirectorPrompt({
+  influencerCount: 1,
+  productImageCount: 3,
+});
+
 // ── Registry — consumed by /admin/prompts viewer (Phase 19) ──
 
 export interface PromptRegistryEntry {
@@ -530,6 +675,15 @@ export const PROMPT_REGISTRY: PromptRegistryEntry[] = [
     model: "anthropic/claude-opus-4.7",
     filePath: "lib/ai/director/system-prompts.ts",
     text: NANOBANANA_LAST_FRAME_DIRECTOR_PROMPT,
+  },
+  {
+    id: SEEDANCE_VISION_DIRECTOR_PROMPT_ID,
+    name: "Seedance Vision Director — UGC from images (buildSeedanceVisionDirectorPrompt)",
+    surface:
+      "/video → Step 3 → POST /api/seedance/director-vision (UGC with influencer + product images). Shown here rendered for 1 influencer + 3 product images; the live prompt enumerates one @product_imageN token per image actually selected.",
+    model: "anthropic/claude-opus-4.7",
+    filePath: "lib/ai/director/system-prompts.ts",
+    text: SEEDANCE_VISION_DIRECTOR_PROMPT,
   },
 ];
 

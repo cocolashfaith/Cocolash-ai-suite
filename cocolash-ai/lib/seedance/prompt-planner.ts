@@ -10,6 +10,46 @@ import {
 
 const MODEL = "anthropic/claude-sonnet-4.6";
 
+/**
+ * Tokens that prove a prompt still names the lash category. "cocolash" is
+ * matched by "lash" already; the list is spelled out so the intent is readable.
+ */
+export const PRODUCT_CATEGORY_HINTS = ["lash", "lashes", "eyelash", "eyelashes", "cocolash"];
+
+/**
+ * Category anchor prepended when a prompt never names the product at all.
+ *
+ * It names the CATEGORY and nothing else. It must NEVER assert a lash format
+ * (strip / cluster / half-lash), packaging, closure, band or material: the
+ * previous wording claimed "false-lash extension strips — a small cluster lash
+ * strip in branded packaging" and was silently prepended AFTER the user
+ * approved their prompt, which is the prime suspect for cluster lashes
+ * rendering as strips (docs/seedance-2.5/05-GROUNDING-FIX.md, root cause #6).
+ *
+ * Positive phrasing only, per decision G5 — video models happily render the
+ * nouns inside a negation, so the old "NOT a serum bottle, NOT a face mask"
+ * tail was actively harmful.
+ */
+export const PRODUCT_CATEGORY_DIRECTIVE =
+  "The product on screen is a CocoLash false-eyelash product. Keep it recognizable as CocoLash false eyelashes throughout, matching the supplied CocoLash product reference images exactly. ";
+
+/** True when the prompt already names the lash product; no guard is needed. */
+export function mentionsProductCategory(prompt: string): boolean {
+  const lower = prompt.toLowerCase();
+  return PRODUCT_CATEGORY_HINTS.some((hint) => lower.includes(hint));
+}
+
+/**
+ * Prepend the category anchor only when the prompt never names the product.
+ *
+ * Idempotent: a guarded prompt contains "lash", so re-running the guard (or
+ * re-rendering a row whose `request_payload` was guarded) is a no-op.
+ */
+export function applyProductCategoryGuard(prompt: string): string {
+  if (!prompt || mentionsProductCategory(prompt)) return prompt;
+  return PRODUCT_CATEGORY_DIRECTIVE + prompt;
+}
+
 export interface SeedanceDirectorPromptParams {
   campaignType: CampaignType;
   scriptText: string;

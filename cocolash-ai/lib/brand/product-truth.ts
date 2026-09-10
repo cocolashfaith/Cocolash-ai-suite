@@ -22,6 +22,22 @@
  *   - bestFor?: marketing one-liner
  *   - retired: boolean; exclude from active listings, keep for backward compat
  *
+ * Physical-construction fields (added 2026-09-10 after the "glass cover"
+ * hallucination — see docs/seedance-2.5/05-GROUNDING-FIX.md §1). The old schema
+ * had no way to say what a lid is made of, so "glass cover" was literally
+ * unrepresentable and therefore uncheckable:
+ *   - lidType?: how the packaging opens ("book" | "hinged" | "slide" | "tray-lid" | "none")
+ *   - hasMirror?: true ONLY where a mirror is verified in the product imagery.
+ *     Explicit `false` means "this product has no mirror" and lets the prompt
+ *     validator rewrite a mirror claim; `undefined` means "not established".
+ *   - transparentWindow?: true ONLY where part of the packaging is see-through
+ *     from the outside. Same false/undefined distinction as hasMirror.
+ *   - exteriorColor? / interiorColor? / boxMaterial? / finish?: plain-text
+ *     descriptors used to build POSITIVE replacement phrasing (decision G5 —
+ *     never send a negation like "no glass cover" to a video model).
+ * Every one of them is optional: absent means unknown, and unknown is never
+ * asserted. Do not guess — an empty field is safer than a wrong one.
+ *
  * Sourced from:
  *   - public/brand/products_export_1 (1).csv (Shopify export)
  *   - CocoLash-System3-Knowledge-Base-for-Harry.md (product details)
@@ -66,6 +82,16 @@ export const KNOWN_PRODUCT_CATEGORY_KEYS: ReadonlyArray<ProductCategoryKey> = [
   "ivy",
 ];
 
+/**
+ * How a product's packaging opens.
+ *   book      — lid folds open like a book cover (full kits, four-pack boxes)
+ *   hinged    — lid stays attached on a hinge
+ *   slide     — sleeve / drawer that slides out
+ *   tray-lid  — separate lift-off lid over a tray
+ *   none      — no lid at all (bare tools, zip pouches)
+ */
+export type ProductLidType = "book" | "hinged" | "slide" | "tray-lid" | "none";
+
 export interface ProductTruthEntry {
   sku: string;
   displayName: string;
@@ -81,6 +107,20 @@ export interface ProductTruthEntry {
   kitContents?: ReadonlyArray<string>;
   colorTone?: string;
   bestFor?: string;
+  /** How the packaging opens. Omit when it has not been established. */
+  lidType?: ProductLidType;
+  /** True only where a mirror is verified. `false` = verified absent. */
+  hasMirror?: boolean;
+  /** True only where the packaging is see-through from the outside. */
+  transparentWindow?: boolean;
+  /** Outside colour of the packaging, e.g. "tan". */
+  exteriorColor?: string;
+  /** Inside colour of the packaging, e.g. "black". */
+  interiorColor?: string;
+  /** What the packaging is made of, e.g. "rigid board". */
+  boxMaterial?: string;
+  /** Surface finish, e.g. "matte". */
+  finish?: string;
   retired: boolean;
 }
 
@@ -97,7 +137,7 @@ export const PRODUCT_TRUTH: ReadonlyArray<ProductTruthEntry> = [
   {
     sku: "violet",
     displayName: "Violet",
-    productHandle: "violet",
+    productHandle: "violet-subtle-charm",
     categoryKey: "single-black-tray",
     lashType: "clusters",
     lengthRange: "6-14mm",
@@ -105,6 +145,8 @@ export const PRODUCT_TRUTH: ReadonlyArray<ProductTruthEntry> = [
     bandMaterial: "cotton",
     magneticClosure: false,
     packagingType: "single-pack lash tray",
+    lidType: "tray-lid",
+    hasMirror: false,
     colorTone: "black",
     bestFor: "Subtle charm — everyday elegance with cat-eye definition",
     retired: false,
@@ -112,7 +154,7 @@ export const PRODUCT_TRUTH: ReadonlyArray<ProductTruthEntry> = [
   {
     sku: "violet-4pack",
     displayName: "Violet 4-Pack",
-    productHandle: "violet-4pack",
+    productHandle: "violet-subtle-charm",
     categoryKey: "multi-lash-book",
     lashType: "clusters",
     lengthRange: "6-14mm",
@@ -120,6 +162,8 @@ export const PRODUCT_TRUTH: ReadonlyArray<ProductTruthEntry> = [
     bandMaterial: "cotton",
     magneticClosure: false,
     packagingType: "four-pack box",
+    lidType: "book",
+    hasMirror: false,
     colorTone: "black",
     bestFor: "Violet classic lash clusters, four-pack bundle",
     retired: false,
@@ -129,7 +173,7 @@ export const PRODUCT_TRUTH: ReadonlyArray<ProductTruthEntry> = [
   {
     sku: "peony",
     displayName: "Peony",
-    productHandle: "peony",
+    productHandle: "peony-soft-sophistication",
     categoryKey: "single-black-tray",
     lashType: "clusters",
     lengthRange: "14mm",
@@ -137,6 +181,8 @@ export const PRODUCT_TRUTH: ReadonlyArray<ProductTruthEntry> = [
     bandMaterial: "cotton",
     magneticClosure: false,
     packagingType: "single-pack lash tray",
+    lidType: "tray-lid",
+    hasMirror: false,
     colorTone: "black",
     bestFor: "Soft sophistication — delicate doll-eye with romantic appeal",
     retired: false,
@@ -144,7 +190,7 @@ export const PRODUCT_TRUTH: ReadonlyArray<ProductTruthEntry> = [
   {
     sku: "peony-4pack",
     displayName: "Peony 4-Pack",
-    productHandle: "peony-4pack",
+    productHandle: "peony-soft-sophistication",
     categoryKey: "multi-lash-book",
     lashType: "clusters",
     lengthRange: "14mm",
@@ -152,6 +198,8 @@ export const PRODUCT_TRUTH: ReadonlyArray<ProductTruthEntry> = [
     bandMaterial: "cotton",
     magneticClosure: false,
     packagingType: "four-pack box",
+    lidType: "book",
+    hasMirror: false,
     colorTone: "black",
     bestFor: "Peony soft lash clusters, four-pack bundle",
     retired: false,
@@ -161,7 +209,7 @@ export const PRODUCT_TRUTH: ReadonlyArray<ProductTruthEntry> = [
   {
     sku: "jasmine",
     displayName: "Jasmine",
-    productHandle: "jasmine",
+    productHandle: "jasmine-delicate-beauty",
     categoryKey: "single-black-tray",
     lashType: "clusters",
     lengthRange: "4-12mm",
@@ -169,6 +217,8 @@ export const PRODUCT_TRUTH: ReadonlyArray<ProductTruthEntry> = [
     bandMaterial: "cotton",
     magneticClosure: false,
     packagingType: "single-pack lash tray",
+    lidType: "tray-lid",
+    hasMirror: false,
     colorTone: "black",
     bestFor: "Delicate beauty — feathery natural look for everyday wear",
     retired: false,
@@ -176,7 +226,7 @@ export const PRODUCT_TRUTH: ReadonlyArray<ProductTruthEntry> = [
   {
     sku: "jasmine-4pack",
     displayName: "Jasmine 4-Pack",
-    productHandle: "jasmine-4pack",
+    productHandle: "jasmine-delicate-beauty",
     categoryKey: "multi-lash-book",
     lashType: "clusters",
     lengthRange: "4-12mm",
@@ -184,6 +234,8 @@ export const PRODUCT_TRUTH: ReadonlyArray<ProductTruthEntry> = [
     bandMaterial: "cotton",
     magneticClosure: false,
     packagingType: "four-pack box",
+    lidType: "book",
+    hasMirror: false,
     colorTone: "black",
     bestFor: "Jasmine natural lash clusters, four-pack bundle",
     retired: false,
@@ -193,7 +245,7 @@ export const PRODUCT_TRUTH: ReadonlyArray<ProductTruthEntry> = [
   {
     sku: "daisy",
     displayName: "Daisy",
-    productHandle: "daisy",
+    productHandle: "daisy-lash-kit",
     categoryKey: "single-black-tray",
     lashType: "clusters",
     lengthRange: "9-14mm",
@@ -201,6 +253,8 @@ export const PRODUCT_TRUTH: ReadonlyArray<ProductTruthEntry> = [
     bandMaterial: "cotton",
     magneticClosure: false,
     packagingType: "single-pack lash tray",
+    lidType: "tray-lid",
+    hasMirror: false,
     colorTone: "black",
     bestFor: "Fresh elegance — soft natural look for spring-ready eyes",
     retired: false,
@@ -208,7 +262,7 @@ export const PRODUCT_TRUTH: ReadonlyArray<ProductTruthEntry> = [
   {
     sku: "daisy-4pack",
     displayName: "Daisy 4-Pack",
-    productHandle: "daisy-4pack",
+    productHandle: "daisy-lash-kit",
     categoryKey: "multi-lash-book",
     lashType: "clusters",
     lengthRange: "9-14mm",
@@ -216,6 +270,8 @@ export const PRODUCT_TRUTH: ReadonlyArray<ProductTruthEntry> = [
     bandMaterial: "cotton",
     magneticClosure: false,
     packagingType: "four-pack box",
+    lidType: "book",
+    hasMirror: false,
     colorTone: "black",
     bestFor: "Daisy natural lash clusters, four-pack bundle",
     retired: false,
@@ -237,6 +293,8 @@ export const PRODUCT_TRUTH: ReadonlyArray<ProductTruthEntry> = [
     bandMaterial: "cotton",
     magneticClosure: false,
     packagingType: "single-pack lash tray",
+    lidType: "tray-lid",
+    hasMirror: false,
     colorTone: "dark warm brown",
     bestFor: "Warm radiance — versatile dark brown for inclusive beauty",
     retired: false,
@@ -244,7 +302,7 @@ export const PRODUCT_TRUTH: ReadonlyArray<ProductTruthEntry> = [
   {
     sku: "sorrel-4pack",
     displayName: "Sorrel 4-Pack",
-    productHandle: "sorrel-4pack",
+    productHandle: "sorrel",
     categoryKey: "multi-lash-book",
     lashType: "clusters",
     lengthRange: "10-16mm",
@@ -252,6 +310,8 @@ export const PRODUCT_TRUTH: ReadonlyArray<ProductTruthEntry> = [
     bandMaterial: "cotton",
     magneticClosure: false,
     packagingType: "four-pack box",
+    lidType: "book",
+    hasMirror: false,
     colorTone: "dark warm brown",
     bestFor: "Sorrel warm-brown lash clusters, four-pack bundle",
     retired: false,
@@ -279,6 +339,7 @@ export const PRODUCT_TRUTH: ReadonlyArray<ProductTruthEntry> = [
     magneticClosure: false,
     packagingType: "half lash kit box",
     kitContents: ["pre-glued half lashes"],
+    hasMirror: false,
     colorTone: "black",
     bestFor: "Effortless classic half lash — natural lifted finish, peel and place",
     retired: false,
@@ -299,6 +360,7 @@ export const PRODUCT_TRUTH: ReadonlyArray<ProductTruthEntry> = [
     magneticClosure: false,
     packagingType: "half lash kit box",
     kitContents: ["pre-glued half lashes"],
+    hasMirror: false,
     colorTone: "black",
     bestFor: "Soft volume half lash — lifted outer corners, peel and place",
     retired: false,
@@ -310,7 +372,7 @@ export const PRODUCT_TRUTH: ReadonlyArray<ProductTruthEntry> = [
   {
     sku: "iris",
     displayName: "Iris",
-    productHandle: "iris",
+    productHandle: "iris-striking-drama",
     categoryKey: "single-black-tray",
     lashType: "clusters",
     lengthRange: "14mm",
@@ -318,6 +380,8 @@ export const PRODUCT_TRUTH: ReadonlyArray<ProductTruthEntry> = [
     bandMaterial: "cotton",
     magneticClosure: false,
     packagingType: "single-pack lash tray",
+    lidType: "tray-lid",
+    hasMirror: false,
     colorTone: "black",
     bestFor: "Striking drama — bold fox-eye for glamorous impact",
     retired: false,
@@ -325,7 +389,7 @@ export const PRODUCT_TRUTH: ReadonlyArray<ProductTruthEntry> = [
   {
     sku: "iris-4pack",
     displayName: "Iris 4-Pack",
-    productHandle: "iris-4pack",
+    productHandle: "iris-striking-drama",
     categoryKey: "multi-lash-book",
     lashType: "clusters",
     lengthRange: "14mm",
@@ -333,6 +397,8 @@ export const PRODUCT_TRUTH: ReadonlyArray<ProductTruthEntry> = [
     bandMaterial: "cotton",
     magneticClosure: false,
     packagingType: "four-pack box",
+    lidType: "book",
+    hasMirror: false,
     colorTone: "black",
     bestFor: "Iris bold lash clusters, four-pack bundle",
     retired: false,
@@ -342,7 +408,7 @@ export const PRODUCT_TRUTH: ReadonlyArray<ProductTruthEntry> = [
   {
     sku: "dahlia",
     displayName: "Dahlia",
-    productHandle: "dahlia",
+    productHandle: "dahlia-lash-extensions",
     categoryKey: "single-black-tray",
     lashType: "clusters",
     lengthRange: "8-14mm",
@@ -350,6 +416,8 @@ export const PRODUCT_TRUTH: ReadonlyArray<ProductTruthEntry> = [
     bandMaterial: "cotton",
     magneticClosure: false,
     packagingType: "single-pack lash tray",
+    lidType: "tray-lid",
+    hasMirror: false,
     colorTone: "black",
     bestFor: "Bold glamour — maximum drama fox-eye for special occasions",
     retired: false,
@@ -357,7 +425,7 @@ export const PRODUCT_TRUTH: ReadonlyArray<ProductTruthEntry> = [
   {
     sku: "dahlia-4pack",
     displayName: "Dahlia 4-Pack",
-    productHandle: "dahlia-4pack",
+    productHandle: "dahlia-lash-extensions",
     categoryKey: "multi-lash-book",
     lashType: "clusters",
     lengthRange: "8-14mm",
@@ -365,6 +433,8 @@ export const PRODUCT_TRUTH: ReadonlyArray<ProductTruthEntry> = [
     bandMaterial: "cotton",
     magneticClosure: false,
     packagingType: "four-pack box",
+    lidType: "book",
+    hasMirror: false,
     colorTone: "black",
     bestFor: "Dahlia dramatic lash clusters, four-pack bundle",
     retired: false,
@@ -374,7 +444,7 @@ export const PRODUCT_TRUTH: ReadonlyArray<ProductTruthEntry> = [
   {
     sku: "poppy",
     displayName: "Poppy",
-    productHandle: "poppy",
+    productHandle: "poppy-dramatic-allure",
     categoryKey: "single-black-tray",
     lashType: "clusters",
     lengthRange: "5-12mm",
@@ -382,6 +452,8 @@ export const PRODUCT_TRUTH: ReadonlyArray<ProductTruthEntry> = [
     bandMaterial: "cotton",
     magneticClosure: false,
     packagingType: "single-pack lash tray",
+    lidType: "tray-lid",
+    hasMirror: false,
     colorTone: "black",
     bestFor: "Dramatic allure — glamorous fox-eye impact",
     retired: false,
@@ -389,7 +461,7 @@ export const PRODUCT_TRUTH: ReadonlyArray<ProductTruthEntry> = [
   {
     sku: "poppy-4pack",
     displayName: "Poppy 4-Pack",
-    productHandle: "poppy-4pack",
+    productHandle: "poppy-dramatic-allure",
     categoryKey: "multi-lash-book",
     lashType: "clusters",
     lengthRange: "5-12mm",
@@ -397,6 +469,8 @@ export const PRODUCT_TRUTH: ReadonlyArray<ProductTruthEntry> = [
     bandMaterial: "cotton",
     magneticClosure: false,
     packagingType: "four-pack box",
+    lidType: "book",
+    hasMirror: false,
     colorTone: "black",
     bestFor: "Poppy dramatic lash clusters, four-pack bundle",
     retired: false,
@@ -406,7 +480,7 @@ export const PRODUCT_TRUTH: ReadonlyArray<ProductTruthEntry> = [
   {
     sku: "marigold",
     displayName: "Marigold",
-    productHandle: "marigold",
+    productHandle: "marigold-radiant-warmth",
     categoryKey: "single-black-tray",
     lashType: "clusters",
     lengthRange: "4-10mm",
@@ -414,6 +488,8 @@ export const PRODUCT_TRUTH: ReadonlyArray<ProductTruthEntry> = [
     bandMaterial: "cotton",
     magneticClosure: false,
     packagingType: "single-pack lash tray",
+    lidType: "tray-lid",
+    hasMirror: false,
     colorTone: "black",
     bestFor: "Radiant warmth — wispy medium volume for playful flair",
     retired: false,
@@ -421,7 +497,7 @@ export const PRODUCT_TRUTH: ReadonlyArray<ProductTruthEntry> = [
   {
     sku: "marigold-4pack",
     displayName: "Marigold 4-Pack",
-    productHandle: "marigold-4pack",
+    productHandle: "marigold-radiant-warmth",
     categoryKey: "multi-lash-book",
     lashType: "clusters",
     lengthRange: "4-10mm",
@@ -429,6 +505,8 @@ export const PRODUCT_TRUTH: ReadonlyArray<ProductTruthEntry> = [
     bandMaterial: "cotton",
     magneticClosure: false,
     packagingType: "four-pack box",
+    lidType: "book",
+    hasMirror: false,
     colorTone: "black",
     bestFor: "Marigold wispy lash clusters, four-pack bundle",
     retired: false,
@@ -438,7 +516,7 @@ export const PRODUCT_TRUTH: ReadonlyArray<ProductTruthEntry> = [
   {
     sku: "orchid",
     displayName: "Orchid",
-    productHandle: "orchid",
+    productHandle: "orchid-exotic-sophistication",
     categoryKey: "single-black-tray",
     lashType: "clusters",
     lengthRange: "12-16mm",
@@ -446,6 +524,8 @@ export const PRODUCT_TRUTH: ReadonlyArray<ProductTruthEntry> = [
     bandMaterial: "cotton",
     magneticClosure: false,
     packagingType: "single-pack lash tray",
+    lidType: "tray-lid",
+    hasMirror: false,
     colorTone: "black",
     bestFor: "Exotic sophistication — bold statement fox-eye glamour",
     retired: false,
@@ -453,7 +533,7 @@ export const PRODUCT_TRUTH: ReadonlyArray<ProductTruthEntry> = [
   {
     sku: "orchid-4pack",
     displayName: "Orchid 4-Pack",
-    productHandle: "orchid-4pack",
+    productHandle: "orchid-exotic-sophistication",
     categoryKey: "multi-lash-book",
     lashType: "clusters",
     lengthRange: "12-16mm",
@@ -461,6 +541,8 @@ export const PRODUCT_TRUTH: ReadonlyArray<ProductTruthEntry> = [
     bandMaterial: "cotton",
     magneticClosure: false,
     packagingType: "four-pack box",
+    lidType: "book",
+    hasMirror: false,
     colorTone: "black",
     bestFor: "Orchid bold lash clusters, four-pack bundle",
     retired: false,
@@ -470,7 +552,7 @@ export const PRODUCT_TRUTH: ReadonlyArray<ProductTruthEntry> = [
   {
     sku: "rose",
     displayName: "Rose",
-    productHandle: "rose",
+    productHandle: "rose-romantic-boldness",
     categoryKey: "single-black-tray",
     lashType: "clusters",
     lengthRange: "12-16mm",
@@ -478,6 +560,8 @@ export const PRODUCT_TRUTH: ReadonlyArray<ProductTruthEntry> = [
     bandMaterial: "cotton",
     magneticClosure: false,
     packagingType: "single-pack lash tray",
+    lidType: "tray-lid",
+    hasMirror: false,
     colorTone: "black",
     bestFor: "Romantic boldness — dense glamorous fox-eye elegance",
     retired: false,
@@ -485,7 +569,7 @@ export const PRODUCT_TRUTH: ReadonlyArray<ProductTruthEntry> = [
   {
     sku: "rose-4pack",
     displayName: "Rose 4-Pack",
-    productHandle: "rose-4pack",
+    productHandle: "rose-romantic-boldness",
     categoryKey: "multi-lash-book",
     lashType: "clusters",
     lengthRange: "12-16mm",
@@ -493,6 +577,8 @@ export const PRODUCT_TRUTH: ReadonlyArray<ProductTruthEntry> = [
     bandMaterial: "cotton",
     magneticClosure: false,
     packagingType: "four-pack box",
+    lidType: "book",
+    hasMirror: false,
     colorTone: "black",
     bestFor: "Rose bold lash clusters, four-pack bundle",
     retired: false,
@@ -500,8 +586,23 @@ export const PRODUCT_TRUTH: ReadonlyArray<ProductTruthEntry> = [
 
   // ========== ACTIVE KITS ==========
 
-  // CocoLash Kit - Ultimate Lash Essentials (available in multiple lash styles)
-  // Magnetic closure, includes full toolkit for DIY application
+  // CocoLash Kit - Ultimate Lash Essentials (available in multiple lash styles).
+  //
+  // GROUND TRUTH, established 2026-09-10 by opening the eight photographs in
+  // brand-assets/products/full-kit-box and looking at them
+  // (docs/seedance-2.5/05-GROUNDING-FIX.md §1):
+  //   exterior  tan / camel rigid board, black COCOLASH wordmark, side text
+  //             "Experience the long lasting lash technology."
+  //   lid       book-style, folds open, tan inner face, magnetic close
+  //   mirror    REAL — a rectangular mirror is set into the inside of the lid
+  //             and visibly reflects the tray contents
+  //   interior  black rigid tray, tan die-cut insert with a fitted cut-out per
+  //             tool, black base printed www.cocolash.com
+  //   contents  SIX items (listed below), not the nine previously recorded here
+  //   glass     DOES NOT EXIST anywhere on this product. The lashes in the round
+  //             case sit under a clear PLASTIC inner cover, never glass.
+  // All four kit SKUs are the SAME physical box; only the bundled lash style
+  // differs, which is why they share one Shopify handle.
   {
     sku: "kit-daisy",
     displayName: "CocoLash Kit - Daisy",
@@ -510,20 +611,24 @@ export const PRODUCT_TRUTH: ReadonlyArray<ProductTruthEntry> = [
     lashType: "kit",
     bandMaterial: "cotton",
     magneticClosure: true,
-    packagingType: "kit box (magnetic)",
+    packagingType: "rigid tan kit box with a book-style magnetic lid",
     kitContents: [
-      "Daisy lash clusters",
-      "Bond adhesive",
-      "Bond sealant",
-      "Lash remover",
-      "Precision applicator",
-      "Tweezers (classic)",
-      "Tweezers (curved)",
-      "Scissors",
-      "Spoolie brush",
+      "Bond + Sealant dual-ended black pen",
+      "White lash remover pen",
+      "Black tweezers",
+      "Pink angled applicator",
+      "Black scissors",
+      "Round black lash case with rose-gold COCOLASH lettering, holding the Daisy lash clusters",
     ],
+    lidType: "book",
+    hasMirror: true,
+    transparentWindow: false,
+    exteriorColor: "tan",
+    interiorColor: "black",
+    boxMaterial: "rigid board",
+    finish: "matte",
     colorTone: "black",
-    bestFor: "Complete beginner kit with Daisy lashes, bond, tools, and magnetic box",
+    bestFor: "Complete beginner kit with Daisy lashes, bond, tools, and a mirrored magnetic box",
     retired: false,
   },
   {
@@ -534,20 +639,24 @@ export const PRODUCT_TRUTH: ReadonlyArray<ProductTruthEntry> = [
     lashType: "kit",
     bandMaterial: "cotton",
     magneticClosure: true,
-    packagingType: "kit box (magnetic)",
+    packagingType: "rigid tan kit box with a book-style magnetic lid",
     kitContents: [
-      "Dahlia lash clusters",
-      "Bond adhesive",
-      "Bond sealant",
-      "Lash remover",
-      "Precision applicator",
-      "Tweezers (classic)",
-      "Tweezers (curved)",
-      "Scissors",
-      "Spoolie brush",
+      "Bond + Sealant dual-ended black pen",
+      "White lash remover pen",
+      "Black tweezers",
+      "Pink angled applicator",
+      "Black scissors",
+      "Round black lash case with rose-gold COCOLASH lettering, holding the Dahlia lash clusters",
     ],
+    lidType: "book",
+    hasMirror: true,
+    transparentWindow: false,
+    exteriorColor: "tan",
+    interiorColor: "black",
+    boxMaterial: "rigid board",
+    finish: "matte",
     colorTone: "black",
-    bestFor: "Complete kit with Dahlia drama lashes, bond, tools, and magnetic box",
+    bestFor: "Complete kit with Dahlia drama lashes, bond, tools, and a mirrored magnetic box",
     retired: false,
   },
   {
@@ -558,20 +667,24 @@ export const PRODUCT_TRUTH: ReadonlyArray<ProductTruthEntry> = [
     lashType: "kit",
     bandMaterial: "cotton",
     magneticClosure: true,
-    packagingType: "kit box (magnetic)",
+    packagingType: "rigid tan kit box with a book-style magnetic lid",
     kitContents: [
-      "Violet lash clusters",
-      "Bond adhesive",
-      "Bond sealant",
-      "Lash remover",
-      "Precision applicator",
-      "Tweezers (classic)",
-      "Tweezers (curved)",
-      "Scissors",
-      "Spoolie brush",
+      "Bond + Sealant dual-ended black pen",
+      "White lash remover pen",
+      "Black tweezers",
+      "Pink angled applicator",
+      "Black scissors",
+      "Round black lash case with rose-gold COCOLASH lettering, holding the Violet lash clusters",
     ],
+    lidType: "book",
+    hasMirror: true,
+    transparentWindow: false,
+    exteriorColor: "tan",
+    interiorColor: "black",
+    boxMaterial: "rigid board",
+    finish: "matte",
     colorTone: "black",
-    bestFor: "Complete kit with Violet classic lashes, bond, tools, and magnetic box",
+    bestFor: "Complete kit with Violet classic lashes, bond, tools, and a mirrored magnetic box",
     retired: false,
   },
   {
@@ -582,30 +695,69 @@ export const PRODUCT_TRUTH: ReadonlyArray<ProductTruthEntry> = [
     lashType: "kit",
     bandMaterial: "cotton",
     magneticClosure: true,
-    packagingType: "kit box (magnetic)",
+    packagingType: "rigid tan kit box with a book-style magnetic lid",
     kitContents: [
-      "Sorrel lash clusters",
-      "Bond adhesive",
-      "Bond sealant",
-      "Lash remover",
-      "Precision applicator",
-      "Tweezers (classic)",
-      "Tweezers (curved)",
-      "Scissors",
-      "Spoolie brush",
+      "Bond + Sealant dual-ended black pen",
+      "White lash remover pen",
+      "Black tweezers",
+      "Pink angled applicator",
+      "Black scissors",
+      "Round black lash case with rose-gold COCOLASH lettering, holding the Sorrel lash clusters",
     ],
+    lidType: "book",
+    hasMirror: true,
+    transparentWindow: false,
+    exteriorColor: "tan",
+    interiorColor: "black",
+    boxMaterial: "rigid board",
+    finish: "matte",
     colorTone: "dark warm brown",
-    bestFor: "Complete kit with Sorrel brown lashes, bond, tools, and magnetic box",
+    bestFor: "Complete kit with Sorrel brown lashes, bond, tools, and a mirrored magnetic box",
     retired: false,
   },
 
   // ========== ACTIVE TOOLS & ACCESSORIES ==========
 
-  // NOTE: the standalone "Bond + Sealant Duo" SKU (cocolash-bond-sealant-duo)
-  // is intentionally NOT listed here. Shopify keeps it hidden /
-  // existing-customers-only, so Coco must never surface, price, or link it as a
-  // purchasable product. Bond + sealant still appear as KIT CONTENTS above and
-  // in the application steps, which is correct.
+  // The two entries below exist ONLY so that every live Shopify handle resolves
+  // through getProductTruthByHandle() — the prompt validator needs a truth row
+  // for any product a video can be made about. They do NOT make either product
+  // recommendable: Coco's knowledge base is gated by handle in
+  // lib/shopify/kb-exclusions.ts (KB_SKIP_PRODUCT_HANDLES), which is entirely
+  // independent of this file. In particular "cocolash-bond-sealant-duo" is an
+  // existing-customers-only refill — Coco must never surface, price, or link it
+  // as a purchasable product; it appears here only as a physical object that
+  // shows up on camera, and as a kit content above.
+  {
+    sku: "bond-sealant-duo",
+    displayName: "CocoLash Bond + Sealant Duo",
+    productHandle: "cocolash-bond-sealant-duo",
+    lashType: "tools",
+    bandMaterial: "none",
+    magneticClosure: false,
+    packagingType: "dual-ended pen",
+    colorTone: "black",
+    bestFor: "Bond on one end, sealant on the other — the pen bundled in every full kit",
+    lidType: "none",
+    hasMirror: false,
+    exteriorColor: "black",
+    retired: false,
+  },
+
+  // "fan" is a live Shopify handle with no reference imagery in this project,
+  // so everything past its identity is deliberately left undefined rather than
+  // invented. Add facts here only after looking at real photographs.
+  {
+    sku: "fan",
+    displayName: "Fan",
+    productHandle: "fan",
+    lashType: "tools",
+    bandMaterial: "none",
+    magneticClosure: false,
+    packagingType: "tool accessory",
+    lidType: "none",
+    hasMirror: false,
+    retired: false,
+  },
 
   {
     sku: "lash-wand",
@@ -615,6 +767,8 @@ export const PRODUCT_TRUTH: ReadonlyArray<ProductTruthEntry> = [
     bandMaterial: "none",
     magneticClosure: false,
     packagingType: "tool accessory",
+    lidType: "none",
+    hasMirror: false,
     bestFor: "Precision lash applicator wand for cluster placement",
     retired: false,
   },
@@ -627,6 +781,8 @@ export const PRODUCT_TRUTH: ReadonlyArray<ProductTruthEntry> = [
     bandMaterial: "none",
     magneticClosure: false,
     packagingType: "accessory pouch",
+    lidType: "none",
+    hasMirror: false,
     bestFor: "Branded cosmetic storage for lashes and tools",
     retired: false,
   },
@@ -642,6 +798,7 @@ export const PRODUCT_TRUTH: ReadonlyArray<ProductTruthEntry> = [
     magneticClosure: false,
     packagingType: "pre-glued kit box",
     kitContents: ["Pre-glued lash clusters (4 lengths)"],
+    hasMirror: false,
     colorTone: "black; pink accents",
     bestFor: "Pre-glued lash clusters — no bond needed",
     retired: true,
@@ -667,13 +824,99 @@ export function getActiveProducts(): ReadonlyArray<ProductTruthEntry> {
 }
 
 /**
+ * Every product handle that exists on cocolash.com, verified 2026-09-10.
+ *
+ * Ten of these did not match `productHandle` before that date — the truth rows
+ * said "violet", "daisy", "iris"… while Shopify says "violet-subtle-charm",
+ * "daisy-lash-kit", "iris-striking-drama" — so `getProductTruthByHandle()`
+ * resolved nothing and had zero callers. Keep this list and PRODUCT_TRUTH in
+ * step; tests/brand/product-handles.test.ts fails if any handle stops
+ * resolving.
+ *
+ * Note there is no separate handle for a four-pack: the 4-pack SKUs are
+ * VARIANTS of their parent product and therefore share its handle, exactly as
+ * the four kit SKUs share "cocolash-kit-ultimate-lash-essentials".
+ */
+export const LIVE_SHOPIFY_PRODUCT_HANDLES: ReadonlyArray<string> = [
+  "violet-subtle-charm",
+  "daisy-lash-kit",
+  "dahlia-lash-extensions",
+  "iris-striking-drama",
+  "peony-soft-sophistication",
+  "jasmine-delicate-beauty",
+  "marigold-radiant-warmth",
+  "orchid-exotic-sophistication",
+  "poppy-dramatic-allure",
+  "rose-romantic-boldness",
+  "sorrel",
+  "fern",
+  "ivy",
+  "cocolash-kit-ultimate-lash-essentials",
+  "fan",
+  "cocolash-bond-sealant-duo",
+];
+
+/**
  * Retrieve a product truth entry by Shopify product handle.
- * Returns undefined if not found.
+ *
+ * A handle can cover several SKUs (variants of one Shopify product: the four
+ * kits, and every 4-pack alongside its single). This returns the FIRST match in
+ * PRODUCT_TRUTH order, which is always the base variant — the single pack, or
+ * kit-daisy for the kit. Use getProductTruthEntriesByHandle() when you need all
+ * of them. Returns undefined if the handle is unknown.
  */
 export function getProductTruthByHandle(
   handle: string
 ): ProductTruthEntry | undefined {
   return PRODUCT_TRUTH.find((p) => p.productHandle === handle);
+}
+
+/**
+ * Every truth entry sharing one Shopify handle, in PRODUCT_TRUTH order.
+ * Empty array when the handle is unknown.
+ */
+export function getProductTruthEntriesByHandle(
+  handle: string
+): ReadonlyArray<ProductTruthEntry> {
+  return PRODUCT_TRUTH.filter((p) => p.productHandle === handle);
+}
+
+/**
+ * Library category → the SKU whose truth row describes what those photographs
+ * actually show.
+ *
+ * Only categories that depict ONE physical product get an entry. The three
+ * per-SKU categories are one-to-one. "full-kit-box" maps to kit-daisy because
+ * all four kit SKUs are the same box — same tan board, same book lid, same
+ * mirror, same tray, same six tools — and differ only in which lash style is
+ * bundled, which the box photography does not show. That is the same base
+ * variant getProductTruthByHandle() returns for the shared handle.
+ *
+ * Deliberately absent, because the photographs could be any of ten styles:
+ * single-black-tray, single-nude-tray, multi-lash-book, full-kit-pouch,
+ * storage-pouch, branding-flatlay. Picking from those leaves productSku unset,
+ * which is correct — an unset SKU means "ground this in the images alone".
+ */
+export const CATEGORY_KEY_TO_SKU: Readonly<
+  Partial<Record<ProductCategoryKey, string>>
+> = {
+  sorrel: "sorrel",
+  fern: "fern",
+  ivy: "ivy",
+  "full-kit-box": "kit-daisy",
+};
+
+/**
+ * Resolve a product-category key to the SKU it unambiguously identifies.
+ * Returns undefined for an unknown key, or for a category that covers several
+ * different products.
+ */
+export function resolveCategoryKeyToSku(
+  key: string | null | undefined
+): string | undefined {
+  if (!key) return undefined;
+  const sku = CATEGORY_KEY_TO_SKU[key as ProductCategoryKey];
+  return sku && getProductTruthBySku(sku) ? sku : undefined;
 }
 
 /**

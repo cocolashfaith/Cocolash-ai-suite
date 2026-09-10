@@ -90,6 +90,8 @@ export function Step3PromptReviewAndGenerate({ state, setState, onReset, isActiv
   const [isSkuDegraded, setIsSkuDegraded] = useState(false);
   const [visionLoading, setVisionLoading] = useState(false);
   const [visionError, setVisionError] = useState<string | null>(null);
+  /** Claims the Director refused to stage because the images don't show them. */
+  const [scriptAudit, setScriptAudit] = useState<string[]>([]);
 
   const { settings } = useVideoSettings();
 
@@ -136,9 +138,21 @@ export function Step3PromptReviewAndGenerate({ state, setState, onReset, isActiv
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           influencerImageUrl: state.ugcInfluencerImageUrl,
+          // ALL influencer references, not just the scalar. Every one of them
+          // already reaches Enhancor (build-request.ts), so the prompt writer
+          // that has to describe them must see them too.
+          ...(state.ugcInfluencerImageUrls?.length
+            ? { influencerImageUrls: state.ugcInfluencerImageUrls }
+            : {}),
           productImageUrls: state.ugcProductImageUrls,
           script: state.scriptText,
           campaignType: state.campaignType,
+          // The wizard holds "" until a library category is chosen (the picker
+          // sets it): send it only when it is real, so the Director's DB lookup
+          // is either right or absent — never a lookup for "".
+          ...(state.productSku?.trim()
+            ? { productSku: state.productSku.trim() }
+            : {}),
           // R-34.1-04: reuse the SAME cached facts the script was grounded in, so
           // the prompt and the script share one source of truth and can't drift.
           ...(state.productFacts
@@ -152,7 +166,8 @@ export function Step3PromptReviewAndGenerate({ state, setState, onReset, isActiv
                   "Give me a fresh, distinctly different scene from the previous version.",
               }
             : {}),
-          // Per BLOCKER 1 (D-34-04): NO productSku required — images are sole source of identity
+          // Per BLOCKER 1 (D-34-04): productSku stays OPTIONAL — the images
+          // remain the primary source of product identity.
         }),
       });
 
@@ -170,6 +185,7 @@ export function Step3PromptReviewAndGenerate({ state, setState, onReset, isActiv
         directorPromptVersion: versionAtRun,
       });
       setEditedPrompt(data.prompt);
+      setScriptAudit(Array.isArray(data.scriptAudit) ? data.scriptAudit : []);
       toast.success(
         variation
           ? "Fresh take generated — a different scene."
@@ -178,6 +194,7 @@ export function Step3PromptReviewAndGenerate({ state, setState, onReset, isActiv
     } catch (error) {
       const msg = error instanceof Error ? error.message : "Failed to generate prompt";
       setVisionError(msg);
+      setScriptAudit([]);
       toast.error(msg);
     } finally {
       setVisionLoading(false);
@@ -596,6 +613,28 @@ export function Step3PromptReviewAndGenerate({ state, setState, onReset, isActiv
               ? ` Director took ${directorDurationMs}ms.`
               : ""}
           </p>
+          {/* The Director audited the script against the product images. These
+              claims were not visible in them, so they were kept out of the
+              visuals — the user sees exactly what changed and why. */}
+          {scriptAudit.length > 0 && (
+            <div className="flex items-start gap-2 rounded-xl border border-amber-300 bg-amber-50 p-3">
+              <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-600" />
+              <div className="space-y-1">
+                <p className="text-xs font-semibold text-amber-900">
+                  The script claimed things the product images don&apos;t show
+                </p>
+                <ul className="list-disc space-y-0.5 pl-4 text-[11px] text-amber-800">
+                  {scriptAudit.map((note, i) => (
+                    <li key={i}>{note}</li>
+                  ))}
+                </ul>
+                <p className="text-[10px] text-amber-700/80">
+                  They were left out of the visual prompt so the video shows the
+                  real product.
+                </p>
+              </div>
+            </div>
+          )}
         </section>
       )}
 

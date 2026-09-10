@@ -80,7 +80,7 @@ export function MultiFrameMode(props: MultiFrameModeProps) {
             setState({ subjectBrief: e.target.value });
             setValidationError(null);
           }}
-          placeholder="Describe the subject and product so the Director can carry continuity across every shot. e.g. 'a woman in her late 20s, brand of black lash strips in her hand'"
+          placeholder="Describe the subject and product so the Director can carry continuity across every shot. e.g. 'a woman in her late 20s holding the CocoLash kit box shown in the reference images'"
           rows={4}
           className="w-full rounded-xl border-2 border-coco-beige-dark bg-white p-3 text-xs text-coco-brown outline-none focus:border-coco-golden focus:ring-1 focus:ring-coco-golden"
         />

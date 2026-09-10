@@ -5,6 +5,10 @@ import Link from "next/link";
 import { toast } from "sonner";
 import { Loader2, Upload, Check, Package, Settings, Store, X } from "lucide-react";
 import { cn } from "@/lib/utils";
+import {
+  getProductTruthByHandle,
+  resolveCategoryKeyToSku,
+} from "@/lib/brand/product-truth";
 import { inputLimitsFor } from "./lib/mode-input-rules";
 import type { SeedanceV4WizardState } from "./types";
 
@@ -29,6 +33,12 @@ interface ProductRef {
   id: string;
   image_url: string;
   category_name: string;
+  /**
+   * `product_categories.key` — the stable slug ("full-kit-box", "sorrel"), not
+   * the display label. This is what identifies WHICH product the picture is of,
+   * and therefore what lets the wizard set `productSku`.
+   */
+  category_key?: string;
 }
 
 /** One heading + its thumbnails in the Library tab. */
@@ -60,6 +70,59 @@ export function groupLibraryByCategory(images: readonly ProductRef[]): LibraryGr
     group.images.push(img);
   }
   return groups;
+}
+
+/** Where one selected thumbnail came from, and therefore what it depicts. */
+export interface SelectionSource {
+  url: string;
+  /** Library tab: `product_categories.key`. */
+  categoryKey?: string | null;
+  /** Store tab: the live Shopify product handle. */
+  productHandle?: string | null;
+}
+
+/**
+ * Work out which CocoLash SKU the current selection is of.
+ *
+ * Root cause #5 of docs/seedance-2.5/05-GROUNDING-FIX.md: `productSku` was
+ * declared in wizard state and never written by anything, so the product-truth
+ * database was switched off on the live path — the Director's magnetic-closure,
+ * kit-contents and lash-length guards never rendered, and nothing downstream
+ * could check a prompt against the real product.
+ *
+ * The rule is deliberately strict, because a WRONG SKU is worse than none: an
+ * unset SKU means "ground this in the images alone", which is already safe. A
+ * SKU is returned only when every attributable image points at the SAME
+ * product. Selections that mix categories, or sit in a category covering ten
+ * lash styles, or are ad-hoc uploads of something unknown, resolve to
+ * undefined and clear the field.
+ *
+ * URLs with no known source (e.g. a selection persisted from another
+ * environment) are ignored rather than treated as a conflict.
+ */
+export function resolveSelectedProductSku(
+  selectedUrls: readonly string[],
+  sources: readonly SelectionSource[]
+): string | undefined {
+  if (selectedUrls.length === 0) return undefined;
+  const byUrl = new Map<string, SelectionSource>();
+  for (const source of sources) {
+    if (!byUrl.has(source.url)) byUrl.set(source.url, source);
+  }
+
+  const resolved = new Set<string | undefined>();
+  for (const url of selectedUrls) {
+    const source = byUrl.get(url);
+    if (!source) continue; // unattributable — neither evidence nor conflict
+    const sku = source.productHandle
+      ? getProductTruthByHandle(source.productHandle)?.sku
+      : resolveCategoryKeyToSku(source.categoryKey);
+    resolved.add(sku);
+  }
+
+  if (resolved.size !== 1) return undefined;
+  const [only] = resolved;
+  return only;
 }
 
 /**
@@ -116,7 +179,12 @@ export function ProductReferencePicker({ state, setState }: ProductReferencePick
   const [storeError, setStoreError] = useState<string | null>(null);
   const storeLoadedRef = useRef(false);
 
-  const selected = state.ugcProductImageUrls ?? [];
+  // Memoised so the identity is stable across renders: the productSku effect
+  // below depends on it, and a fresh [] each render would re-run it forever.
+  const selected = useMemo(
+    () => state.ugcProductImageUrls ?? [],
+    [state.ugcProductImageUrls]
+  );
   const influencerCount = state.ugcInfluencerImageUrls?.length ?? 0;
   const combinedCap = inputLimitsFor(state.engine, "ugc").ugcCombined;
   // products + influencers share one budget (30 on 2.5, 9 on 2.0).
@@ -135,6 +203,7 @@ export function ProductReferencePicker({ state, setState }: ProductReferencePick
               id: img.id,
               image_url: img.image_url,
               category_name: cat.name ?? "",
+              category_key: cat.key ?? undefined,
             });
           }
         }
@@ -304,6 +373,9 @@ export function ProductReferencePicker({ state, setState }: ProductReferencePick
             id: data.image.id,
             image_url: data.image.image_url,
             category_name: data.image.category_name ?? "Custom Uploads",
+            // "custom-uploads" is deliberately not mapped to any SKU: an ad-hoc
+            // upload could be a photograph of anything.
+            category_key: data.image.category_key ?? "custom-uploads",
           };
           setImages((prev) => [newProduct, ...prev]);
           newlySelected.push(newProduct.image_url);
@@ -336,6 +408,31 @@ export function ProductReferencePicker({ state, setState }: ProductReferencePick
 
   const showEmptyState = !loading && images.length === 0;
   const libraryGroups = useMemo(() => groupLibraryByCategory(images), [images]);
+
+  /**
+   * Keep `state.productSku` in step with the selection — the wiring that turns
+   * the product-truth database back on (root cause #5). Set when every selected
+   * image is of one identifiable product; cleared to "" the moment the
+   * selection becomes ambiguous or empty.
+   */
+  const selectionSources = useMemo<SelectionSource[]>(
+    () => [
+      ...images.map((i) => ({ url: i.image_url, categoryKey: i.category_key })),
+      ...storeProducts.flatMap((p) =>
+        (p.images ?? []).map((im) => ({ url: im.url, productHandle: p.handle }))
+      ),
+    ],
+    [images, storeProducts]
+  );
+  const resolvedSku = useMemo(
+    () => resolveSelectedProductSku(selected, selectionSources) ?? "",
+    [selected, selectionSources]
+  );
+  const currentSku = state.productSku ?? "";
+  useEffect(() => {
+    if (currentSku === resolvedSku) return;
+    setState({ productSku: resolvedSku });
+  }, [currentSku, resolvedSku, setState]);
 
   return (
     <section className="space-y-3 rounded-xl border-2 border-coco-beige-dark/50 bg-white/50 p-4">

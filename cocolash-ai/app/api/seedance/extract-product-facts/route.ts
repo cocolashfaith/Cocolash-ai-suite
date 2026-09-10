@@ -6,7 +6,7 @@
  * twice"). The client caches the result in wizard state and reuses it for both
  * script generation (Step 1) and the Step-3 Seedance prompt agent.
  *
- * Request body: { productImageUrls: ["https://...", ...] }  // 1–9 HTTPS URLs
+ * Request body: { productImageUrls: ["https://...", ...] }  // 1–30 HTTPS URLs
  * Response:     { facts: ProductFacts }
  */
 
@@ -14,6 +14,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import {
   extractProductFacts,
+  MAX_PRODUCT_FACT_IMAGES,
   ProductFactExtractorError,
 } from "@/lib/ai/director/product-fact-extractor";
 
@@ -21,7 +22,10 @@ const BodySchema = z.object({
   productImageUrls: z
     .array(z.string().url("Each product image URL must be a valid HTTPS URL"))
     .min(1, "At least one product image is required")
-    .max(9, "Maximum 9 product images allowed"),
+    .max(
+      MAX_PRODUCT_FACT_IMAGES,
+      `Maximum ${MAX_PRODUCT_FACT_IMAGES} product images allowed`
+    ),
 });
 
 export async function POST(request: NextRequest) {

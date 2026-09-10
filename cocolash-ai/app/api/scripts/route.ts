@@ -3,7 +3,9 @@ import { createAdminClient } from "@/lib/supabase/server";
 import { generateVideoScript } from "@/lib/openrouter/captions";
 import { CAMPAIGN_CONCEPT_POOLS } from "@/lib/prompts/scripts/templates";
 import {
+  extractProductFacts,
   formatProductFactsForPrompt,
+  MAX_PRODUCT_FACT_IMAGES,
   type ProductFacts,
 } from "@/lib/ai/director/product-fact-extractor";
 import type {
@@ -54,6 +56,8 @@ export async function POST(request: NextRequest) {
       customInstructions,
       excludeHooks,
       productFacts,
+      productImageUrls,
+      productSku,
       pipeline = "heygen",
       action = "generate",
       scriptText,
@@ -78,6 +82,12 @@ export async function POST(request: NextRequest) {
       customInstructions?: string;
       excludeHooks?: string[];
       productFacts?: ProductFacts;
+      /** Product reference images selected in the wizard (0–30 HTTPS URLs).
+       *  When present and `productFacts` is absent, the script is grounded by
+       *  analysing these images first — see `groundInProductImages`. */
+      productImageUrls?: string[];
+      /** Optional SKU for the selected product (product-truth lookup). */
+      productSku?: string;
     };
 
     if (!campaignType || !VALID_CAMPAIGN_TYPES.includes(campaignType)) {
@@ -184,6 +194,8 @@ export async function POST(request: NextRequest) {
       campaignFocus,
       customInstructions,
       excludeHooks,
+      productImageUrls,
+      productSku,
     });
     if (promptInputErrors.length > 0) {
       return NextResponse.json(
@@ -225,10 +237,36 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    const formattedFacts =
-      productFacts && typeof productFacts === "object"
-        ? formatProductFactsForPrompt(productFacts)
-        : undefined;
+    // G2 — grounding is mandatory, never best-effort. If the wizard selected
+    // product images but has no cached facts, analyse them HERE and fail the
+    // whole request if that analysis fails. Generating an ungrounded script is
+    // what produced the "glass cover" claim on a product with no glass on it.
+    let facts: ProductFacts | undefined =
+      productFacts && typeof productFacts === "object" ? productFacts : undefined;
+
+    if (!facts && Array.isArray(productImageUrls) && productImageUrls.length > 0) {
+      console.log("[scripts] Grounding script in product images", {
+        imageCount: productImageUrls.length,
+        productSku: productSku || null,
+      });
+      try {
+        facts = await extractProductFacts(productImageUrls);
+      } catch (error: unknown) {
+        console.error("[scripts] Product fact extraction failed:", error);
+        return NextResponse.json(
+          {
+            error:
+              "Could not read the selected product images, so the script would not be grounded in the real product. " +
+              "Please try again, or deselect the product images to write a generic script. " +
+              `(${error instanceof Error ? error.message : "unknown error"})`,
+            code: "PRODUCT_FACTS_FAILED",
+          },
+          { status: 502 }
+        );
+      }
+    }
+
+    const formattedFacts = facts ? formatProductFactsForPrompt(facts) : undefined;
 
     const scripts = await generateVideoScript({
       campaignType,
@@ -251,6 +289,9 @@ export async function POST(request: NextRequest) {
       success: true,
       scripts,
       savedIds: [],
+      // Echo the facts back so the wizard can cache them and reuse the same
+      // single source of truth in Step 3 ("extract once, reuse twice").
+      ...(facts ? { productFacts: facts } : {}),
     });
   } catch (error: unknown) {
     console.error("[scripts] Error:", error);
@@ -269,6 +310,8 @@ function validatePromptInputs(input: {
   campaignFocus?: string;
   customInstructions?: string;
   excludeHooks?: string[];
+  productImageUrls?: string[];
+  productSku?: string;
 }): string[] {
   const errors: string[] = [];
 
@@ -298,6 +341,24 @@ function validatePromptInputs(input: {
   }
   if (input.excludeHooks?.some((hook) => hook.length > 240)) {
     errors.push("each excludeHook must be 240 characters or less");
+  }
+  if (input.productImageUrls !== undefined) {
+    if (!Array.isArray(input.productImageUrls)) {
+      errors.push("productImageUrls must be an array of HTTPS URLs");
+    } else if (input.productImageUrls.length > MAX_PRODUCT_FACT_IMAGES) {
+      errors.push(
+        `productImageUrls cannot include more than ${MAX_PRODUCT_FACT_IMAGES} images`
+      );
+    } else if (
+      input.productImageUrls.some(
+        (url) => typeof url !== "string" || !url.startsWith("https://")
+      )
+    ) {
+      errors.push("each productImageUrl must be an HTTPS URL");
+    }
+  }
+  if (input.productSku && input.productSku.length > 120) {
+    errors.push("productSku must be 120 characters or less");
   }
 
   return errors;

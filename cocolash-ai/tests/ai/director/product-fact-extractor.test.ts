@@ -22,9 +22,11 @@ describe("extractProductFacts input validation", () => {
     );
   });
 
-  it("rejects more than 9 images", async () => {
-    const urls = Array.from({ length: 10 }, (_, i) => `https://x/${i}.png`);
-    await expect(extractProductFacts(urls)).rejects.toThrow(/exceeds 9/i);
+  // Raised 9 -> 30 (2026-09-10) so the extractor matches the product picker's
+  // own 30-reference limit; at 9 a 10th image silently dropped ALL grounding.
+  it("rejects more than 30 images", async () => {
+    const urls = Array.from({ length: 31 }, (_, i) => `https://x/${i}.png`);
+    await expect(extractProductFacts(urls)).rejects.toThrow(/exceeds 30/i);
   });
 
   it("rejects non-HTTPS image URLs", async () => {

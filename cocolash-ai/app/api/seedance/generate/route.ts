@@ -9,6 +9,7 @@ import { handleSeedance25Generate } from "@/lib/seedance/v25/generate";
 import { resolveSkuReferences } from "@/lib/seedance/reference-resolver";
 import { validateScriptAgainstProductTruth } from "@/lib/brand/product-truth";
 import {
+  applyProductCategoryGuard,
   buildSeedanceDirectorPromptFallback,
   generateSeedanceDirectorPrompt,
   type SeedanceDirectorPromptParams,
@@ -125,9 +126,16 @@ interface SeedanceGenerateBody {
  * Without this, the prompt planner sees a raw URL string under "PRODUCT:"
  * and Claude has to guess what's in the image — which historically drifted
  * to face masks / generic skincare.
+ *
+ * It names the category and defers to the reference images for everything
+ * else. It must NOT assert a lash format ("strip", "cluster", "half-lash") or
+ * packaging: this string is a LAST RESORT for an unknown product, and the old
+ * wording said "extension strip … reusable cluster lash" — contradictory, and
+ * a false format claim on every SKU whose description was omitted
+ * (docs/seedance-2.5/05-GROUNDING-FIX.md, root cause #6).
  */
 const DEFAULT_PRODUCT_DESCRIPTION =
-  "CocoLash DIY false-lash extension strip in its branded packaging — a premium, reusable cluster lash designed for at-home application by CocoLash.";
+  "CocoLash false eyelashes by CocoLash, exactly as they appear in the supplied CocoLash product reference images.";
 
 /**
  * POST /api/seedance/generate
@@ -329,21 +337,21 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // Brand-grounding guard. The planner is allowed to rewrite freely, but it
-    // must never drop the lash-product anchor. If the resulting prompt doesn't
-    // mention lashes by some recognizable token, prepend a hard directive so
-    // Enhancor's image-to-video model can't drift into other beauty
-    // categories (face mask, serum, sunscreen tube — all observed in QA).
-    const lashHints = ["lash", "lashes", "false-lash", "false lash", "strip lash", "cluster lash"];
-    const promptLower = seedancePrompt.toLowerCase();
-    const mentionsLashes = lashHints.some((h) => promptLower.includes(h));
-    if (!mentionsLashes) {
+    // Category guard. The planner is allowed to rewrite freely, but it must
+    // never drop the lash-product anchor: if the resulting prompt names no
+    // product at all, prepend the category anchor so Enhancor's
+    // image-to-video model can't drift into other beauty categories (face
+    // mask, serum, sunscreen tube — all observed in QA).
+    //
+    // The anchor names the CATEGORY only. It no longer asserts a lash format
+    // or packaging, and no longer negates ("NOT a serum bottle") — see
+    // PRODUCT_CATEGORY_DIRECTIVE.
+    const guardedPrompt = applyProductCategoryGuard(seedancePrompt);
+    if (guardedPrompt !== seedancePrompt) {
       console.warn(
-        "[seedance/generate] Planner output did not mention lashes; prepending hard brand directive"
+        "[seedance/generate] Planner output did not name the product; prepending the category anchor"
       );
-      seedancePrompt =
-        `The product on screen is CocoLash false-lash extension strips — a small cluster lash strip in branded packaging, NOT a tube of cream, NOT a serum bottle, NOT a face mask, NOT skincare. Keep the product visually identifiable as false eyelashes throughout. ` +
-        seedancePrompt;
+      seedancePrompt = guardedPrompt;
     }
 
     // ── Step 3: Create DB record ─────────────────────────────

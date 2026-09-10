@@ -344,7 +344,7 @@ describe("POST /api/seedance/generate — engine 2.5", () => {
     expect(row.requested_duration).toBe(8);
   });
 
-  it("prepends the lash brand directive for a ugc prompt that never mentions lashes", async () => {
+  it("prepends the neutral category anchor for a ugc prompt that names no product", async () => {
     const harness = makeSupabase();
     vi.mocked(createAdminClient).mockResolvedValue(harness.client as never);
     const { calls } = mockQueueFetch(() => ({ ok: true, json: { requestId: "guard-1" } }));
@@ -363,9 +363,11 @@ describe("POST /api/seedance/generate — engine 2.5", () => {
       })
     );
 
-    expect(String(calls[0].body.prompt)).toContain("CocoLash false-lash extension strips");
+    // The anchor names the CATEGORY only — never a lash format (Package D).
+    expect(String(calls[0].body.prompt)).toContain("CocoLash false-eyelash product");
+    expect(String(calls[0].body.prompt)).not.toMatch(/strip/i);
     const row = harness.inserts[0].row as Record<string, unknown>;
-    expect(String(row.seedance_prompt)).toContain("CocoLash false-lash extension strips");
+    expect(String(row.seedance_prompt)).toContain("CocoLash false-eyelash product");
   });
 
   it("stores duration_seconds null for Auto (-1)", async () => {

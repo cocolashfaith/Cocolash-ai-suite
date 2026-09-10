@@ -77,6 +77,7 @@ export function Step1ScriptAndMode({ state, setState, onAdvance }: Step1Props) {
           <SeedanceScriptStep
             duration={effectiveScriptDuration(state)}
             productImageUrls={state.ugcProductImageUrls ?? []}
+            productSku={state.productSku || undefined}
             productFacts={state.productFacts}
             onProductFacts={(facts) => setState({ productFacts: facts })}
             onScriptSelected={(script, meta, editedText) => {

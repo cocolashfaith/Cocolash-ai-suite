@@ -45,7 +45,7 @@ export interface ProductFacts {
 
 export class ProductFactExtractorError extends Error {
   constructor(
-    public code: "INVALID_INPUT" | "EMPTY_RESPONSE",
+    public code: "INVALID_INPUT" | "EMPTY_RESPONSE" | "REQUEST_FAILED",
     message: string
   ) {
     super(message);
@@ -53,7 +53,13 @@ export class ProductFactExtractorError extends Error {
   }
 }
 
-const MAX_IMAGES = 9;
+/**
+ * Must match the product picker's own limit (30 combined references, D8) and
+ * the `/api/seedance/extract-product-facts` schema. When this was 9 while the
+ * picker allowed 30, selecting a 10th image silently 400'd and the script was
+ * written with NO grounding at all — that is how "glass cover" was invented.
+ */
+export const MAX_PRODUCT_FACT_IMAGES = 30;
 
 function validate(imageUrls: string[]): void {
   if (!Array.isArray(imageUrls) || imageUrls.length === 0) {
@@ -62,10 +68,10 @@ function validate(imageUrls: string[]): void {
       "productImageUrls must be a non-empty array"
     );
   }
-  if (imageUrls.length > MAX_IMAGES) {
+  if (imageUrls.length > MAX_PRODUCT_FACT_IMAGES) {
     throw new ProductFactExtractorError(
       "INVALID_INPUT",
-      `productImageUrls exceeds ${MAX_IMAGES} images`
+      `productImageUrls exceeds ${MAX_PRODUCT_FACT_IMAGES} images`
     );
   }
   for (const url of imageUrls) {
@@ -132,12 +138,62 @@ export async function callFactsModel(
   return raw;
 }
 
+// ── Client-side fetch helper ─────────────────────────────────
+
+/** Minimal `fetch` shape so callers can inject a stub in tests. */
+type FetchLike = (
+  input: string,
+  init?: { method?: string; headers?: Record<string, string>; body?: string }
+) => Promise<{ ok: boolean; status: number; json: () => Promise<unknown> }>;
+
+/**
+ * Browser-side wrapper around `POST /api/seedance/extract-product-facts`.
+ *
+ * THROWS on any failure. This is deliberate: grounding is mandatory (G2). The
+ * wizard used to swallow extraction errors and then generate a completely
+ * ungrounded script, which is exactly how a product with no glass anywhere on
+ * it ended up described as having "a glass cover".
+ */
+export async function fetchProductFacts(
+  productImageUrls: string[],
+  fetchImpl?: FetchLike
+): Promise<ProductFacts> {
+  const doFetch = (fetchImpl ?? (globalThis.fetch as unknown as FetchLike));
+  let res: Awaited<ReturnType<FetchLike>>;
+  try {
+    res = await doFetch("/api/seedance/extract-product-facts", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ productImageUrls }),
+    });
+  } catch (error) {
+    throw new ProductFactExtractorError(
+      "REQUEST_FAILED",
+      `Could not reach the product analyser: ${
+        error instanceof Error ? error.message : "network error"
+      }`
+    );
+  }
+
+  const data = (await res.json().catch(() => null)) as
+    | { facts?: ProductFacts; error?: string }
+    | null;
+
+  if (!res.ok || !data?.facts) {
+    throw new ProductFactExtractorError(
+      "REQUEST_FAILED",
+      data?.error || `Product analysis failed (HTTP ${res.status})`
+    );
+  }
+  return data.facts;
+}
+
 // ── Prompts ──────────────────────────────────────────────────
 
 function buildFactsSystemPrompt(): string {
   return `You are a meticulous product analyst for CocoLash (a false-lash brand).
 
-You will be shown 1–9 images of a SINGLE product (often different angles). Report ONLY what you can actually see. Do not guess, embellish, or import features from other CocoLash products.
+You will be shown 1–${MAX_PRODUCT_FACT_IMAGES} images of a SINGLE product (often different angles). Report ONLY what you can actually see. Do not guess, embellish, or import features from other CocoLash products.
 
 Honesty rules:
 - If a feature is not visibly present, do NOT claim it.

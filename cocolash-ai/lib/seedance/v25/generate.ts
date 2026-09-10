@@ -10,11 +10,14 @@
  *   6 createSeedance25Task(request, webhookUrl) → ONE POST /queue, NO retry
  *        fail ⇒ row failed + error_message ⇒ 500
  *   7 UPDATE seedance_task_id + status processing
- *   8 200 { videoId, taskId, status, engine, estimatedCost, estimate }
+ *   8 200 { videoId, taskId, status, engine, estimatedCost, corrections, estimate }
  *
  * No server-side script generation and no legacy prompt planner run here — the
  * wizard's Director output is authoritative (`request.prompt` /
- * `multi_frame_prompts`). Only the lash-brand guard survives, for `ugc` only.
+ * `multi_frame_prompts`). Two things still touch the approved prompt, and both
+ * are visible to the user: the category guard (`ugc` only, and only when the
+ * prompt names no product at all) and the product-truth validator, whose
+ * `corrections` are returned in the response and stored in `request_payload`.
  *
  * Order matters: the row is inserted BEFORE the queue call so a DB failure can
  * never leave a billed-but-untracked Enhancor job.
@@ -23,10 +26,16 @@
 import { NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/server";
 import { getVideoSettings } from "@/lib/settings/video-settings";
+import { getProductTruthBySku } from "@/lib/brand/product-truth";
+import {
+  validateAndCorrectPrompt,
+  type PromptCorrection,
+} from "@/lib/brand/prompt-validator";
 import {
   MIGRATION_REQUIRED_STATUS,
   migrationRequiredBody,
 } from "@/lib/supabase/schema-errors";
+import { applyProductCategoryGuard } from "../prompt-planner";
 import { estimateCredits } from "../pricing";
 import { SeedanceError } from "../types";
 import { getEnhancorWebhookUrl, redactWebhookSecret } from "../webhook-url";
@@ -44,28 +53,78 @@ import {
 import { AUTO_DURATION, type Seedance25Request } from "./types";
 
 /**
- * Brand-grounding guard (ugc only, mirrors the 2.0 route): Enhancor's
- * image-to-video model has been observed drifting to face masks / serums when
- * the prompt never names the product category.
+ * Category guard (ugc only, mirrors the 2.0 route): Enhancor's image-to-video
+ * model has been observed drifting to face masks / serums when the prompt never
+ * names the product category.
+ *
+ * The guard names the CATEGORY only — never a lash format or packaging. See
+ * `PRODUCT_CATEGORY_DIRECTIVE` in ../prompt-planner for why the old
+ * "extension strips … cluster lash strip" wording had to go.
+ *
+ * Idempotent: a guarded prompt contains "lash", so re-rendering a row whose
+ * `request_payload` was guarded leaves the prompt byte-identical.
  */
-const LASH_HINTS = ["lash", "lashes", "false-lash", "false lash", "strip lash", "cluster lash"];
-const LASH_DIRECTIVE =
-  "The product on screen is CocoLash false-lash extension strips — a small cluster lash strip in branded packaging, NOT a tube of cream, NOT a serum bottle, NOT a face mask, NOT skincare. Keep the product visually identifiable as false eyelashes throughout. ";
-
-/**
- * Prepend the lash directive when a `ugc` prompt never mentions lashes.
- * Idempotent: a guarded prompt already contains "lash", so re-rendering a row
- * whose `request_payload` was guarded leaves the prompt byte-identical.
- */
-export function applyLashGuard(request: Seedance25Request): Seedance25Request {
+export function applyProductGuard(request: Seedance25Request): Seedance25Request {
   if (request.mode !== "ugc" || !request.prompt) return request;
-  const lower = request.prompt.toLowerCase();
-  if (LASH_HINTS.some((hint) => lower.includes(hint))) return request;
+  const guarded = applyProductCategoryGuard(request.prompt);
+  if (guarded === request.prompt) return request;
 
   console.warn(
-    "[seedance2.5/generate] ugc prompt did not mention lashes; prepending hard brand directive"
+    "[seedance2.5/generate] ugc prompt did not name the product; prepending the category anchor"
   );
-  return { ...request, prompt: LASH_DIRECTIVE + request.prompt };
+  return { ...request, prompt: guarded };
+}
+
+/**
+ * Last line of defence before the wire: rewrite any claim the prompt makes that
+ * the product truth contradicts (05-GROUNDING-FIX.md §4 D / decisions G4+G5).
+ *
+ * Every prompt that leaves this function is what gets POSTed to `/queue`, what
+ * is stored on `seedance_prompt`, and what is replayed on a re-render. The
+ * `corrections` it returns are persisted and shown to the user — a silent
+ * rewrite is exactly the bug this package exists to remove.
+ */
+export function applyPromptValidation(
+  request: Seedance25Request,
+  sku: string | null
+): { request: Seedance25Request; corrections: PromptCorrection[] } {
+  const truth = sku ? getProductTruthBySku(sku) ?? null : null;
+  const corrections: PromptCorrection[] = [];
+  let next = request;
+
+  if (request.prompt) {
+    const validated = validateAndCorrectPrompt({ prompt: request.prompt, truth, sku });
+    corrections.push(...validated.corrections);
+    if (validated.prompt !== request.prompt) {
+      next = { ...next, prompt: validated.prompt };
+    }
+  }
+
+  const segments = request.multi_frame_prompts;
+  if (segments?.length) {
+    let changed = false;
+    const validatedSegments = segments.map((segment) => {
+      const validated = validateAndCorrectPrompt({ prompt: segment.prompt, truth, sku });
+      corrections.push(...validated.corrections);
+      if (validated.prompt === segment.prompt) return segment;
+      changed = true;
+      return { ...segment, prompt: validated.prompt };
+    });
+    if (changed) next = { ...next, multi_frame_prompts: validatedSegments };
+  }
+
+  return { request: next, corrections: dedupeCorrections(corrections) };
+}
+
+/** Same claim corrected in several shots is one correction for the user. */
+function dedupeCorrections(corrections: PromptCorrection[]): PromptCorrection[] {
+  const seen = new Set<string>();
+  return corrections.filter((correction) => {
+    const key = `${correction.claim}→${correction.replacement ?? ""}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
 }
 
 /** The prompt stored on `seedance_prompt` (multi_frame has no top-level prompt). */
@@ -97,7 +156,12 @@ export async function handleSeedance25Generate(rawBody: unknown): Promise<NextRe
 export async function runSeedance25Generation(
   body: Seedance25GenerateBody
 ): Promise<NextResponse> {
-  const request = applyLashGuard(body.request);
+  // Guard first (it may add the only product mention), then validate — so the
+  // validator sees the exact text that is about to go on the wire.
+  const { request, corrections } = applyPromptValidation(
+    applyProductGuard(body.request),
+    body.productSku ?? null
+  );
   const supabase = await createAdminClient();
 
   // ── Step 2/3: live rates → estimate ────────────────────────
@@ -167,7 +231,12 @@ export async function runSeedance25Generation(
     resolution: request.resolution,
     requested_duration: request.duration,
     input_urls: inputUrls,
-    request_payload: request,
+    // `corrections` rides inside the existing JSONB rather than a new column
+    // (a new column would need a migration). The re-render route spreads this
+    // payload into the zod request schema, which drops unknown keys, so the
+    // extra key can never reach Enhancor. Omitted entirely when nothing was
+    // corrected, keeping untouched payloads byte-identical.
+    request_payload: corrections.length > 0 ? { ...request, corrections } : request,
     credits_cost: null,
     error_message: null,
     rerender_of: body.rerenderOf ?? null,
@@ -224,6 +293,9 @@ export async function runSeedance25Generation(
     status: "processing",
     engine: "2.5",
     estimatedCost: estimate.usd,
+    // Always present (empty when nothing was rewritten) so Step 3 can render
+    // "we changed this and why" without probing for the field.
+    corrections,
     estimate: {
       credits: estimate.credits,
       usd: estimate.usd,

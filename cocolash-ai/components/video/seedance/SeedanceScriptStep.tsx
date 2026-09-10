@@ -19,6 +19,8 @@ import {
   FileEdit,
   Save,
   Check,
+  AlertTriangle,
+  ScanSearch,
 } from "lucide-react";
 import { ScriptVariations } from "../ScriptVariations";
 import { ScriptLibraryPicker } from "../ScriptLibraryPicker";
@@ -28,7 +30,10 @@ import type {
   ScriptResult,
   VideoScript,
 } from "@/lib/types";
-import type { ProductFacts } from "@/lib/ai/director/product-fact-extractor";
+import {
+  fetchProductFacts,
+  type ProductFacts,
+} from "@/lib/ai/director/product-fact-extractor";
 
 type ScriptMode = "generate" | "library" | "manual";
 
@@ -38,6 +43,11 @@ interface SeedanceScriptStepProps {
   duration: number;
   /** Product images chosen in Step 1 — used to extract grounding facts. */
   productImageUrls: string[];
+  /** Real product name when the wizard knows it. Replaces the old blind
+   *  "CocoLash premium false lashes" placeholder in the script prompt. */
+  productName?: string;
+  /** Optional SKU for the selected product (product-truth lookup). */
+  productSku?: string;
   /** Cached vision-extracted product facts (extract once, reuse twice). */
   productFacts?: ProductFacts;
   /** Called after a fresh extraction so the parent can cache the facts. */
@@ -82,6 +92,8 @@ const MODE_TABS: { value: ScriptMode; label: string; icon: React.ElementType }[]
 export function SeedanceScriptStep({
   duration,
   productImageUrls,
+  productName,
+  productSku,
   productFacts,
   onProductFacts,
   onScriptSelected,
@@ -98,6 +110,10 @@ export function SeedanceScriptStep({
   const [editedText, setEditedText] = useState("");
   const [savingIndex, setSavingIndex] = useState<number | null>(null);
 
+  // Product grounding (G2) — mandatory and visible on every script path.
+  const [isExtractingFacts, setIsExtractingFacts] = useState(false);
+  const [factsError, setFactsError] = useState<string | null>(null);
+
   // Manual mode state
   const [manualText, setManualText] = useState("");
   const [manualSavedId, setManualSavedId] = useState<string | null>(null);
@@ -109,37 +125,49 @@ export function SeedanceScriptStep({
   const [libraryEditedText, setLibraryEditedText] = useState("");
   const [libraryIsEditing, setLibraryIsEditing] = useState(false);
 
+  /**
+   * G2 — grounding is mandatory on EVERY script path (AI, manual, library),
+   * not just behind the AI button, and a failure is never swallowed.
+   *
+   * Returns the facts, or `null` when there is nothing to ground (no product
+   * images selected). Returns `false` when analysis failed — the caller must
+   * abort rather than proceed with a blind script. This used to be a bare
+   * ignore-the-error catch, which is how a product with no glass anywhere on
+   * it ended up being described as having "a glass cover".
+   */
+  const ensureProductFacts = async (): Promise<ProductFacts | null | false> => {
+    if (productFacts) return productFacts;
+    if (productImageUrls.length === 0) return null;
+
+    setIsExtractingFacts(true);
+    setFactsError(null);
+    try {
+      const facts = await fetchProductFacts(productImageUrls);
+      onProductFacts?.(facts);
+      return facts;
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : "Product analysis failed";
+      setFactsError(message);
+      toast.error(`Couldn't read the product images — ${message}`);
+      return false;
+    } finally {
+      setIsExtractingFacts(false);
+    }
+  };
+
   const handleGenerate = async () => {
-    setIsGenerating(true);
     setSelectedIndex(null);
     setIsEditing(false);
 
+    const facts = await ensureProductFacts();
+    if (facts === false) return;
+
+    setIsGenerating(true);
     try {
       const excludeHooks = scripts.length > 0
         ? scripts.map((s) => s.hook)
         : undefined;
-
-      // Extract once, reuse twice: ground the script in the actual product.
-      // Use cached facts if we have them; otherwise extract from the Step-1
-      // images now and hand them back to the parent to cache. Non-fatal — if
-      // extraction fails, the script still generates (just less grounded).
-      let facts = productFacts;
-      if (!facts && productImageUrls.length > 0) {
-        try {
-          const fres = await fetch("/api/seedance/extract-product-facts", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ productImageUrls }),
-          });
-          const fdata = await fres.json();
-          if (fres.ok && fdata.facts) {
-            facts = fdata.facts as ProductFacts;
-            onProductFacts?.(facts);
-          }
-        } catch {
-          // ignore — proceed without grounding facts
-        }
-      }
 
       const res = await fetch("/api/scripts", {
         method: "POST",
@@ -149,6 +177,11 @@ export function SeedanceScriptStep({
           tone,
           duration,
           pipeline: "seedance",
+          // The script writer is blind without these — send everything we know
+          // about the product it is meant to be selling.
+          productImageUrls,
+          ...(productName ? { productName } : {}),
+          ...(productSku ? { productSku } : {}),
           ...(facts ? { productFacts: facts } : {}),
           ...(excludeHooks ? { excludeHooks } : {}),
         }),
@@ -156,10 +189,16 @@ export function SeedanceScriptStep({
 
       const data = await res.json();
       if (!res.ok) {
+        if (data.code === "PRODUCT_FACTS_FAILED") {
+          setFactsError(data.error);
+        }
         toast.error(data.error || "Script generation failed");
         return;
       }
 
+      if (data.productFacts) {
+        onProductFacts?.(data.productFacts as ProductFacts);
+      }
       setScripts(data.scripts);
       setScriptIds(data.savedIds ?? []);
       setSavedScriptTexts({});
@@ -245,8 +284,11 @@ export function SeedanceScriptStep({
     setLibraryIsEditing(false);
   };
 
-  const handleUseLibraryScript = () => {
+  const handleUseLibraryScript = async () => {
     if (!libraryScript) return;
+    // A saved script is just as blind as a generated one once it reaches the
+    // Director, so it needs the same grounding facts (G2).
+    if ((await ensureProductFacts()) === false) return;
     const script: ScriptResult = {
       hook: libraryScript.hook_text ?? libraryScript.script_text.slice(0, 120),
       body: libraryScript.script_text,
@@ -269,12 +311,14 @@ export function SeedanceScriptStep({
     );
   };
 
-  const handleUseManualScript = () => {
+  const handleUseManualScript = async () => {
     const trimmed = manualText.trim();
     if (!trimmed) {
       toast.error("Please write or paste a script first.");
       return;
     }
+    // Same grounding gate as the AI path (G2) — Step 3 needs the facts.
+    if ((await ensureProductFacts()) === false) return;
     const sentences = trimmed.split(/[.!?]+/).filter((s) => s.trim().length > 5);
     const hook = sentences[0]?.trim() ?? trimmed.slice(0, 120);
     const cta = sentences.length > 1 ? (sentences[sentences.length - 1]?.trim() ?? "") : "";
@@ -344,6 +388,37 @@ export function SeedanceScriptStep({
           own audio in the next step for lip-sync.
         </p>
       </div>
+
+      {/* Product grounding status (G2) — never fails silently. */}
+      {isExtractingFacts && (
+        <div className="flex items-center gap-3 rounded-xl border border-coco-beige-dark bg-coco-beige-light/60 p-3">
+          <ScanSearch className="h-4 w-4 shrink-0 animate-pulse text-coco-brown-medium" />
+          <p className="text-xs text-coco-brown-medium">
+            Reading your product images so the script describes the real
+            product...
+          </p>
+        </div>
+      )}
+
+      {factsError && !isExtractingFacts && (
+        <div
+          role="alert"
+          className="flex items-start gap-3 rounded-xl border-2 border-red-300 bg-red-50 p-3"
+        >
+          <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-red-600" />
+          <div className="space-y-1">
+            <p className="text-xs font-semibold text-red-800">
+              Couldn&apos;t read your product images
+            </p>
+            <p className="text-xs leading-relaxed text-red-700">{factsError}</p>
+            <p className="text-[11px] leading-relaxed text-red-700/80">
+              The script is written from what the product actually is, so it
+              can&apos;t be written until this succeeds. Try again, or change
+              the selected product images above.
+            </p>
+          </div>
+        </div>
+      )}
 
       {/* Mode Tabs */}
       <div className="flex gap-1 rounded-xl border-2 border-coco-beige-dark bg-coco-beige-light/50 p-1">
@@ -436,7 +511,7 @@ export function SeedanceScriptStep({
           {/* Generate */}
           <Button
             onClick={handleGenerate}
-            disabled={isGenerating}
+            disabled={isGenerating || isExtractingFacts}
             className={cn(
               "w-full gap-2 py-5 text-sm font-semibold shadow-md transition-all hover:shadow-lg disabled:opacity-50",
               scripts.length > 0
@@ -445,7 +520,9 @@ export function SeedanceScriptStep({
             )}
             size="lg"
           >
-            {isGenerating ? (
+            {isExtractingFacts ? (
+              <><Loader2 className="h-4 w-4 animate-spin" />Reading product images...</>
+            ) : isGenerating ? (
               <><Loader2 className="h-4 w-4 animate-spin" />Generating scripts...</>
             ) : scripts.length > 0 ? (
               <><RefreshCw className="h-4 w-4" />Regenerate Scripts</>
@@ -567,10 +644,18 @@ export function SeedanceScriptStep({
 
               <Button
                 onClick={handleUseLibraryScript}
-                className="w-full gap-2 bg-coco-golden py-5 text-sm font-semibold text-white shadow-lg transition-all hover:bg-coco-golden-dark hover:shadow-xl"
+                disabled={isExtractingFacts}
+                className="w-full gap-2 bg-coco-golden py-5 text-sm font-semibold text-white shadow-lg transition-all hover:bg-coco-golden-dark hover:shadow-xl disabled:opacity-50"
                 size="lg"
               >
-                Use This Script →
+                {isExtractingFacts ? (
+                  <>
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                    Reading product images...
+                  </>
+                ) : (
+                  <>Use This Script →</>
+                )}
               </Button>
             </div>
           )}
@@ -626,11 +711,18 @@ export function SeedanceScriptStep({
             </Button>
             <Button
               onClick={handleUseManualScript}
-              disabled={!manualText.trim()}
+              disabled={!manualText.trim() || isExtractingFacts}
               className="gap-2 bg-coco-golden py-5 text-sm font-semibold text-white shadow-lg transition-all hover:bg-coco-golden-dark hover:shadow-xl disabled:opacity-50"
               size="lg"
             >
-              Use This Script →
+              {isExtractingFacts ? (
+                <>
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                  Reading product images...
+                </>
+              ) : (
+                <>Use This Script →</>
+              )}
             </Button>
           </div>
         </>

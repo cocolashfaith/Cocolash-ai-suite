@@ -18,17 +18,17 @@ const FRAMEWORKS: Partial<Record<CampaignType, SeedanceScriptFramework>> = {
     intent:
       "Make the product visually irresistible while keeping the creator's delivery natural and UGC-native.",
     structure: [
-      "Visual hook: immediately name or show the product detail that makes viewers lean in",
-      "Product reveal: packaging, lash texture, band flexibility, or close-up quality moment",
-      "Proof beat: why the feature matters in real life",
+      "Visual hook: a first line that makes viewers lean in",
+      "Product reveal: the moment it comes into frame — react to it, do not describe it",
+      "Proof beat: why it matters in real life",
       "Benefit stack: comfort, reuse, beauty result, confidence",
       "CTA: invite the viewer to try or shop CocoLash naturally",
     ],
     motionBeats: [
-      "holding the lash tray near face",
-      "tilting packaging toward camera",
-      "touching or pointing to the cotton band",
-      "brief smile after product reveal",
+      "holding the product up near her face",
+      "tilting the product toward the camera",
+      "pointing toward her lashes",
+      "brief smile after the reveal",
     ],
     avoid: ["generic luxury claims", "too many features at once", "static product description"],
   },
@@ -65,7 +65,7 @@ const FRAMEWORKS: Partial<Record<CampaignType, SeedanceScriptFramework>> = {
     motionBeats: [
       "energetic direct-to-camera delivery",
       "quick product lift toward lens",
-      "pointing to product or packaging",
+      "pointing to the product",
       "smiling confident close",
     ],
     avoid: ["fake scarcity", "shouting", "discount-only script with no product proof"],
@@ -89,24 +89,34 @@ const FRAMEWORKS: Partial<Record<CampaignType, SeedanceScriptFramework>> = {
     ],
     avoid: ["too many tips for the duration", "teacherly lectures", "instructions that require complex hand choreography"],
   },
+  // G1 (2026-09-10): this framework used to order the writer to narrate
+  // "Tactile detail: fibers, softness, band, tray, packaging" while it could
+  // not see the product — so it invented the detail. An unboxing script is
+  // carried by anticipation, reaction and result; the images decide what the
+  // thing actually looks like.
   unboxing: {
     label: "Unboxing",
     intent:
-      "Make the packaging and first-touch experience feel tactile, premium, and satisfying.",
+      "Carry the excitement of the arrival through anticipation and honest reaction — never through invented product detail.",
     structure: [
-      "Anticipation: package just arrived",
-      "Reveal: open the box and show the lashes resting inside",
-      "Tactile detail: fibers, softness, band, tray, packaging",
-      "First reaction: surprise or delight",
+      "Anticipation: it finally arrived and she has been waiting for it",
+      "Reveal moment: it is open and in her hands — react, do not describe it",
+      "Honest first reaction: surprise, relief, 'okay, these are actually good'",
+      "Result she is expecting: how they are going to look and feel on",
       "Try-on or shop CTA",
     ],
     motionBeats: [
-      "opening or presenting packaging",
-      "lifting lash tray",
-      "bringing product close to camera",
-      "eyes widening or smiling during reveal",
+      "reacting to what she has just opened",
+      "lifting the product toward the camera",
+      "bringing the product close for a better look",
+      "eyes widening or smiling during the reveal",
     ],
-    avoid: ["listing features without reaction", "too much narration before the reveal", "fast hand movements"],
+    avoid: [
+      "describing what the product or its packaging looks like — the visual layer owns that",
+      "listing features without reaction",
+      "too much narration before the reveal",
+      "fast hand movements",
+    ],
   },
   "before-after": {
     label: "Before & After",
@@ -185,6 +195,23 @@ export function buildSeedanceDurationRule(seconds: number): string {
   return `${lead} The full_script MUST be ${minWords}-${maxWords} words and MUST NOT exceed ${maxWords} words (spoken pace ~2.5-3 words/sec). ${overrun} Count the words before you finish. ${structure}`;
 }
 
+/**
+ * Decision G1 (2026-09-10) — the single most important rule in this prompt.
+ *
+ * The script writer is a TEXT model. It never sees the product. When it was
+ * asked for "tactile detail" it duly invented some, and a CocoLash kit that has
+ * no glass anywhere on it was described as having "a glass cover" — a claim
+ * that then flowed verbatim into the video prompt. Appearance is the visual
+ * prompt's job: that layer is shown the real product photographs.
+ */
+export const SCRIPT_NO_PHYSICAL_DESCRIPTION_RULE = `PRODUCT HONESTY — THIS RULE OUTRANKS EVERY OTHER RULE HERE:
+- You cannot see the product. You are writing what the creator SAYS, nothing else. Never describe what the product looks like.
+- NEVER describe, name or imply: packaging, boxes, cases, trays, sleeves, inserts; lids and covers; closures — how it opens, shuts, snaps, folds or seals; materials (glass, plastic, acrylic, leather, velvet, metal, wood, silk, cotton); transparency (clear, see-through, frosted, tinted); mirrors or any reflective surface; colours, finishes or lettering; and any physical construction, shape, size, weight or piece-count.
+- BANNED PHRASING — these are examples of the failure, not the whole list: "glass cover", "clear lid", "mirrored inside", "velvet-lined tray", "matte black box", "rose-gold lettering", "it flips open", "it snaps shut", "comes in the cutest little case".
+- YOU MAY: name the product, and talk about how it feels to wear, the result it gives, comfort, wear time, confidence, the hook and the CTA.
+- If a beat seems to need a physical detail, use a reaction or a benefit instead. Say "wait until you see these on" — never "look at this box".
+- Every appearance detail you invent becomes a false claim in the finished video. When you are unsure whether something is a physical description, it is: leave it out.`;
+
 export function buildSeedanceScriptSystemPrompt(): string {
   return `You are a UGC script writer for CocoLash videos generated with Seedance 2.0 / 2.5.
 
@@ -192,10 +219,12 @@ Your job is to write SPOKEN DIALOGUE first. Another AI layer will turn the selec
 
 Write scripts that a human-looking creator can say naturally while holding, showing, unboxing, applying, or reacting to CocoLash lashes.
 
+${SCRIPT_NO_PHYSICAL_DESCRIPTION_RULE}
+
 Core rules:
 - LENGTH IS A HARD CONSTRAINT. The clip is short (4-30 seconds) — obey the word limit in the user message exactly. Every full_script MUST fit the limit; count the words. A script that runs long gets cut off mid-sentence in the video. When in doubt, write fewer words.
 - Write for speech, not captions. Use contractions and short sentences.
-- Every script must contain a visual action opportunity: hold product, show packaging, point to lashes, turn face, reveal result, or react.
+- Every script must leave room for a visual action: hold the product, lift it toward the lens, point to the lashes, turn the face, reveal the result, or react. Leave room for the action — never narrate what the action shows.
 - Keep the dialogue realistic for AI lip movement. Avoid tongue-twisters, dense clauses, and rapid lists.
 - Follow the campaign framework's INTENT, but the length limit always wins — compress or drop framework beats to fit the clip. Do not try to cover every beat in a short clip.
 - Mention CocoLash naturally at least once.
@@ -217,6 +246,48 @@ Return valid JSON only:
 }
 
 Generate exactly 3 variations. Each variation must use a different angle and different opening.`;
+}
+
+/** Used only when the caller could not tell us the real product name. */
+const GENERIC_PRODUCT_PLACEHOLDER = "CocoLash lashes";
+
+/**
+ * G1 — the shared `CAMPAIGN_TEMPLATES` focus areas are written for the HeyGen
+ * pipeline, where a human picks the b-roll. Several of them order the writer to
+ * narrate physical detail it cannot see ("the weight of the box, the packaging,
+ * the presentation"; "hand-crafted fibers"; "the premium packaging"). Those are
+ * the same instruction class that produced "glass cover", so they are dropped
+ * from the Seedance script prompt. The templates file is shared, so the filter
+ * lives here rather than in the source data.
+ */
+const PHYSICAL_FOCUS_AREA = new RegExp(
+  [
+    "packaging",
+    "\\bbox\\b",
+    "\\bband\\b",
+    "\\bbands\\b",
+    "fiber",
+    "fibre",
+    "\\btray\\b",
+    "\\bcase\\b",
+    "\\blid\\b",
+    "cover",
+    "material",
+    "texture",
+    "unboxing",
+    "close-ups",
+    "construction",
+    "hand-crafted",
+    "softness",
+    "curl pattern",
+    "presentation",
+  ].join("|"),
+  "i"
+);
+
+function selectFocusAreas(focusAreas: string[]): string[] {
+  const kept = focusAreas.filter((area) => !PHYSICAL_FOCUS_AREA.test(area));
+  return kept.slice(0, 6);
 }
 
 export function buildSeedanceScriptUserPrompt(
@@ -243,27 +314,50 @@ export function buildSeedanceScriptUserPrompt(
     `TONE: ${params.tone} (${TONE_NOTES[params.tone]})`,
     buildSeedanceDurationRule(params.duration),
     "",
-    `PRODUCT: ${params.productName ?? "CocoLash premium false lashes"}`,
-    "",
   ];
 
-  // Phase 34.1 (R-34.1-04): image-derived product facts come FIRST and override
-  // the generic brand facts below where they conflict (especially packaging).
+  // G1: the real product name when we know it, instead of the old blind
+  // placeholder "CocoLash premium false lashes".
+  const productName = params.productName?.trim();
+  lines.push(`PRODUCT: ${productName || GENERIC_PRODUCT_PLACEHOLDER}`);
+  if (productName) {
+    lines.push(
+      `Call the product by that name. Do not invent a different name, a variant, or any description of how it looks.`
+    );
+  }
+  lines.push("");
+
   if (params.productFacts) {
-    lines.push(params.productFacts, "");
+    // G3 truth precedence: when the product's own images have been analysed,
+    // those facts are the ONLY product truth in play — the generic brand
+    // claims below are dropped entirely so they cannot contradict them.
+    lines.push(
+      params.productFacts,
+      "",
+      `HOW TO USE THOSE FACTS: they exist so that you never have to guess. They are reference, NOT a script — do not read them out and do not turn them into spoken description. Ignore any other CocoLash brand copy you may have seen; where anything conflicts with these facts, these facts win. Anything not listed there does not exist.`,
+      ""
+    );
+  } else {
+    // G3 fallback: no images were analysed, so all we have is generic brand
+    // copy. It is the weakest layer of truth — never physical description.
+    lines.push(
+      `GENERIC BRAND FACTS (fallback only — no product images were analysed for this script. Weave in at most one or two, and never as a description of how the product looks. If any of these ever conflicts with analysed product facts, the analysed facts win):`,
+      `- Premium false lashes made for Black women and diverse eye shapes`,
+      `- Flexible cotton band for comfort`,
+      `- Reusable 25+ wears with proper care`,
+      `- Lightweight enough for all-day wear`,
+      `- Cruelty-free and vegan`,
+      ""
+    );
   }
 
-  lines.push(
-    `BRAND FACTS TO WEAVE IN NATURALLY WHEN RELEVANT (generic — defer to the product facts above if they conflict):`,
-    `- Premium false lashes made for Black women and diverse eye shapes`,
-    `- Flexible cotton band for comfort`,
-    `- Reusable 25+ wears with proper care`,
-    `- Lightweight enough for all-day wear`,
-    `- Cruelty-free and vegan`,
-    "",
-    `CAMPAIGN FOCUS AREAS:`,
-    ...template.focusAreas.slice(0, 6).map((item) => `- ${item}`)
-  );
+  const focusAreas = selectFocusAreas(template.focusAreas);
+  if (focusAreas.length > 0) {
+    lines.push(
+      `CAMPAIGN FOCUS AREAS:`,
+      ...focusAreas.map((item) => `- ${item}`)
+    );
+  }
 
   if (params.autoConcept) {
     lines.push("", `SUGGESTED ANGLE: ${params.autoConcept}`);
@@ -291,7 +385,8 @@ export function buildSeedanceScriptUserPrompt(
 
   lines.push(
     "",
-    `Output exactly 3 JSON scripts. The full_script should be clean spoken dialogue only.`
+    `Output exactly 3 JSON scripts. The full_script should be clean spoken dialogue only.`,
+    `Before you finish, re-read each full_script and delete any phrase that describes what the product looks like — packaging, materials, lids, closures, transparency, mirrors, colours or construction. That rule outranks every framework beat above.`
   );
 
   return lines.join("\n");

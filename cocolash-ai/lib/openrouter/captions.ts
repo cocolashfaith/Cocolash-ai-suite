@@ -18,6 +18,15 @@ import { PLATFORM_LIMITS } from "@/lib/constants/posting-times";
 
 const MODEL = "anthropic/claude-sonnet-4.6";
 
+/**
+ * Script generation temperature. Lowered 0.8 → 0.5 (2026-09-10) after a blind,
+ * high-temperature writer invented a "glass cover" on a product that has no
+ * glass on it. Scripts must stay inside the supplied product facts; variety
+ * comes from the campaign angle and the anti-repeat hook list, not from
+ * sampling noise. Captions keep 0.8 — they carry no product claims.
+ */
+const SCRIPT_TEMPERATURE = 0.5;
+
 interface RawCaptionOutput {
   text: string;
   style_match: number;
@@ -179,7 +188,7 @@ export async function generateVideoScript(
         { role: "user", content: userPrompt },
       ],
       max_tokens: 4096,
-      temperature: 0.8,
+      temperature: SCRIPT_TEMPERATURE,
     })
   );
 

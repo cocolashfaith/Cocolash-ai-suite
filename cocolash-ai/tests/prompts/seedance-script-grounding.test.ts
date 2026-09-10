@@ -25,19 +25,19 @@ describe("buildSeedanceScriptUserPrompt product grounding", () => {
     expect(prompt).toContain("no magnetic closure");
   });
 
-  it("places the facts before the generic brand facts and marks them authoritative", () => {
+  // Updated 2026-09-10 for decision G3: the generic brand claims are no longer
+  // emitted alongside extracted facts at all — they are a fallback used only
+  // when nothing better exists, so they can never contradict the real product.
+  it("replaces the generic brand facts entirely when facts exist", () => {
     const prompt = buildSeedanceScriptUserPrompt({
       campaignType: "product-showcase",
       tone: "casual",
       duration: 10,
       productFacts: FACTS_BLOCK,
     });
-    const factsIdx = prompt.indexOf("WHAT THE PRODUCT ACTUALLY IS");
-    const brandIdx = prompt.indexOf("BRAND FACTS TO WEAVE IN");
-    expect(factsIdx).toBeGreaterThan(-1);
-    expect(brandIdx).toBeGreaterThan(-1);
-    expect(factsIdx).toBeLessThan(brandIdx);
-    expect(prompt).toMatch(/defer to the product facts above/i);
+    expect(prompt.indexOf("WHAT THE PRODUCT ACTUALLY IS")).toBeGreaterThan(-1);
+    expect(prompt).not.toMatch(/GENERIC BRAND FACTS/);
+    expect(prompt).toMatch(/these facts win/i);
   });
 
   it("omits the facts block entirely when no facts are provided", () => {
@@ -47,5 +47,7 @@ describe("buildSeedanceScriptUserPrompt product grounding", () => {
       duration: 10,
     });
     expect(prompt).not.toContain("WHAT THE PRODUCT ACTUALLY IS");
+    // ...and only then does the generic fallback appear (G3).
+    expect(prompt).toMatch(/GENERIC BRAND FACTS/);
   });
 });

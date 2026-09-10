@@ -15,13 +15,15 @@
  *     productImageUrls: ["https://...", ...], // REQUIRED (1-30 URLs)
  *     script: "The spoken script...", // REQUIRED
  *     campaignType: "product-showcase", // REQUIRED
- *     productSku?: "jasmine", // OPTIONAL
+ *     productSku?: "jasmine", // OPTIONAL (empty string is treated as absent)
+ *     productFacts?: "WHAT THE PRODUCT ACTUALLY IS...", // OPTIONAL, image-extracted
  *     intent?: "Show the opened tray..." // OPTIONAL
  *   }
  *
  * Response:
  *   {
  *     prompt: "Using @influencer_image1 @product_image1...", // Seedance-ready prompt
+ *     scriptAudit: string[], // claims dropped/reworded because the images don't show them
  *     diagnostics?: { model, systemPromptId, durationMs, inputSummary }
  *   }
  */
@@ -72,7 +74,12 @@ const VisionDirectorBodySchema = z
     campaignType: z
       .string()
       .min(1, "campaignType is required and must be non-empty"),
-    productSku: z.string().optional(),
+    /** The wizard stores "" until a library category is chosen — treat that as absent. */
+    productSku: z
+      .string()
+      .trim()
+      .optional()
+      .transform((sku) => (sku ? sku : undefined)),
     intent: z.string().optional(),
     productFacts: z.string().optional(),
     /** Set on explicit "Regenerate" to request a distinctly different scene. */
@@ -110,6 +117,7 @@ export async function POST(request: NextRequest) {
       scriptLength: parsed.script.length,
       campaignType: parsed.campaignType,
       hasSku: !!parsed.productSku,
+      hasFacts: !!parsed.productFacts,
     });
 
     // Call the vision director
@@ -132,10 +140,14 @@ export async function POST(request: NextRequest) {
       promptLength: result.prompt.length,
       durationMs: result.diagnostics.durationMs,
       model: result.diagnostics.model,
+      scriptAuditCount: result.scriptAudit?.length ?? 0,
     });
 
     return NextResponse.json({
       prompt: result.prompt,
+      // What the Director refused to stage because the images don't support it.
+      // Step 3 shows this to the user; it is never part of the outgoing prompt.
+      scriptAudit: result.scriptAudit ?? [],
       diagnostics: result.diagnostics,
     });
   } catch (error) {
@@ -155,12 +167,15 @@ export async function POST(request: NextRequest) {
         `[seedance/director-vision] Vision director error (${error.code}):`,
         error.message
       );
+      // A bad request is the caller's fault (400); a truncated or empty model
+      // reply is ours (500) — and is now surfaced instead of silently returning
+      // a cut-off prompt.
       return NextResponse.json(
         {
           error: error.message,
           code: error.code,
         },
-        { status: 500 }
+        { status: error.code === "INVALID_INPUT" ? 400 : 500 }
       );
     }
 
