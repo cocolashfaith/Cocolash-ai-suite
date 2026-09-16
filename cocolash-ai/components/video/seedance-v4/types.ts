@@ -87,6 +87,23 @@ export interface SeedanceV4WizardState {
    *  alongside the avatar to Seedance as a second reference. */
   ugcSeparateProductUrl?: string;
 
+  /**
+   * H1 (docs/seedance-2.5/06-QUALITY-PASS.md): the opt-in "Generate holding
+   * the product" switch in Step 2's Generate tab. When ON, the avatar
+   * generator receives the first Step-1 product image and renders the creator
+   * already holding it; the composed shot then enters the influencer array
+   * FIRST (H2) without ever touching `ugcProductImageUrls`.
+   *
+   * Default OFF (H5) — the default flips only if the A/B proves compose wins.
+   */
+  ugcComposeEnabled?: boolean;
+  /**
+   * H3(b): non-blocking amber note recorded when the composed avatar's
+   * product contradicts the facts extracted from the real product refs
+   * (different packaging type / invented closure). Never blocks generation.
+   */
+  ugcComposeWarning?: string;
+
   // UGC Enhancor-parity inputs (D-34-02, D-34-03): 1 influencer + 2–9 product images
   /** UGC: single influencer image URL */
   ugcInfluencerImageUrl?: string;

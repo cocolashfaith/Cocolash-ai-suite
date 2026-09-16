@@ -433,11 +433,14 @@ describe("regeneration keeps the honesty rules constant", () => {
     return lastCall();
   }
 
-  it("uses the identical system prompt at temperature 0.9", async () => {
+  it("uses the identical system prompt, hotter only on regeneration", async () => {
     const first = await run(false);
     const second = await run(true);
 
-    expect(first.args.temperature).toBeUndefined();
+    // F6 (06-QUALITY-PASS.md) — deliberately changed: the first run used to
+    // omit temperature entirely and inherit the provider default (≈1.0) for the
+    // one call whose job is describing images accurately.
+    expect(first.args.temperature).toBe(0.35);
     expect(second.args.temperature).toBe(0.9);
     expect(second.system).toBe(first.system);
   });

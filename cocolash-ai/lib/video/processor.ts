@@ -79,9 +79,11 @@ export async function processVideo(
     resolvedMethod = result.method;
   }
 
+  // F14: derive the thumbnail box from the video's REAL aspect. Cloudinary
+  // reports the source pixel dimensions on upload, so a 9:16 clip gets a
+  // 360x640 card instead of being centre-cropped into a 16:9 strip.
   const thumbnailUrl = getThumbnailUrl(publicId, {
-    width: 640,
-    height: 360,
+    aspect: { width: uploaded.width, height: uploaded.height },
   });
 
   let videoUrl = uploaded.secureUrl;

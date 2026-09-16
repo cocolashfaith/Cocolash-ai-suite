@@ -18,7 +18,9 @@ import { getOpenRouterClient, openrouterRequest } from "@/lib/openrouter/client"
 import { SEEDANCE_25_LIMITS } from "@/lib/seedance/v25/types";
 import {
   buildSeedanceVisionDirectorPrompt,
+  describeVisionFrame,
   productImageTokens,
+  visionClipPlan,
   SEEDANCE_VISION_DIRECTOR_PROMPT_ID,
 } from "@/lib/ai/director/system-prompts";
 
@@ -47,6 +49,19 @@ export { SEEDANCE_VISION_DIRECTOR_PROMPT_ID };
  * truncated prompt used to be returned silently as if it were finished.
  */
 export const VISION_DIRECTOR_MAX_TOKENS = 2048;
+
+/**
+ * Sampling temperature for the FIRST prompt of a job (F6).
+ *
+ * This used to be omitted, which handed the provider's default (≈1.0) to the
+ * one call in the pipeline whose job is to describe images accurately. 0.35
+ * keeps the descriptions tight to what the images show; the variety the user
+ * actually wants is on the Regenerate button, below.
+ */
+export const VISION_DIRECTOR_TEMPERATURE = 0.35;
+
+/** Explicit "Regenerate": sample hot enough to reach a genuinely different scene. */
+export const VISION_DIRECTOR_VARIATION_TEMPERATURE = 0.9;
 
 /**
  * Input to the vision director. Images are the PRIMARY source of product truth.
@@ -81,6 +96,17 @@ export interface VisionPromptInput {
    *  the Director proposes a distinctly different setting/scene than before,
    *  instead of settling on the same cozy default every time. */
   variationHint?: string;
+  /** OPTIONAL (F2): the clip's runtime in seconds. `-1` (`AUTO_DURATION`) means
+   *  the model picks the length; the Director then plans ~10 s. Without this the
+   *  Director wrote every prompt as if the clip were five seconds long. */
+  durationSeconds?: number;
+  /** OPTIONAL (F2): the frame the clip ships in, e.g. `"9:16"`. Default `"9:16"`. */
+  aspectRatio?: string;
+  /** OPTIONAL (H4): the first influencer reference is a composed shot in which
+   *  the creator is ALREADY holding the product. The Director must not stage a
+   *  pickup or re-introduce the product; product appearance still comes from the
+   *  product references. */
+  influencerAlreadyHoldsProduct?: boolean;
 }
 
 /**
@@ -149,6 +175,9 @@ export async function generateSeedanceVisionPrompt(
     truthContext,
     influencerCount: influencerUrls.length,
     productImageCount: input.productImageUrls.length,
+    durationSeconds: input.durationSeconds,
+    aspectRatio: input.aspectRatio,
+    influencerAlreadyHoldsProduct: input.influencerAlreadyHoldsProduct,
   });
 
   // Build user prompt (context for this specific task)
@@ -173,7 +202,9 @@ export async function generateSeedanceVisionPrompt(
     userPrompt,
     influencerUrls,
     input.productImageUrls,
-    isVariation ? 0.9 : undefined
+    isVariation
+      ? VISION_DIRECTOR_VARIATION_TEMPERATURE
+      : VISION_DIRECTOR_TEMPERATURE
   );
 
   // The audit is addressed to the user, not to Seedance: split it off so no
@@ -284,9 +315,9 @@ export async function callVisionModel(
   /** One influencer URL, or several (@influencer_image1..N, in order). */
   influencerImageUrl: string | string[],
   productImageUrls: string[],
-  /** Optional sampling temperature. Omitted = provider default (grounded
-   *  initial run); a higher value is passed on explicit regeneration for
-   *  scene variety. */
+  /** Sampling temperature. The caller passes `VISION_DIRECTOR_TEMPERATURE`
+   *  (0.35) for a grounded initial run and `VISION_DIRECTOR_VARIATION_TEMPERATURE`
+   *  (0.9) on explicit regeneration. Omitted = provider default. */
   temperature?: number
 ): Promise<string> {
   const client = getOpenRouterClient();
@@ -489,6 +520,22 @@ function buildVisionDirectorUserPrompt(
 
   lines.push(`Campaign type: ${input.campaignType}`);
 
+  // F2 — the concrete order the user placed. The system prompt spells out the
+  // beat structure these imply; repeating the numbers here keeps them in the
+  // model's working context next to the script it has to pace.
+  const clip = visionClipPlan(input.durationSeconds);
+  lines.push(
+    clip.isAuto
+      ? `Clip length: Auto (the model picks) — plan for about ${clip.plannedSeconds} seconds`
+      : `Clip length: ${clip.plannedSeconds} seconds`
+  );
+  lines.push(`Frame: ${describeVisionFrame(input.aspectRatio)}`);
+  if (input.influencerAlreadyHoldsProduct) {
+    lines.push(
+      "The creator in @influencer_image1 is ALREADY holding this product — start from that state, stage no pickup."
+    );
+  }
+
   if (input.productFacts) {
     lines.push("");
     lines.push(input.productFacts);
@@ -541,6 +588,11 @@ function summarizeVisionInput(
     `scriptLength=${input.script.length}`,
     `campaign=${input.campaignType}`,
   ];
+
+  const clip = visionClipPlan(input.durationSeconds);
+  summary.push(clip.isAuto ? "duration=auto" : `duration=${clip.plannedSeconds}s`);
+  summary.push(`aspect=${input.aspectRatio?.trim() || "9:16"}`);
+  if (input.influencerAlreadyHoldsProduct) summary.push("composed=yes");
 
   if (input.intent) summary.push(`intent=yes`);
   if (input.productFacts) summary.push(`facts=yes`);

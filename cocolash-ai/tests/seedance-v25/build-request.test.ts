@@ -284,6 +284,60 @@ describe("output settings", () => {
     expect(body.request.output_format).toBe("mov");
   });
 
+  /**
+   * F1 — free high bitrate on finals.
+   *
+   * Enhancor rate tables key on resolution x duration x video-inputs only;
+   * `bitrate_mode` is NOT priced, so "high" costs the same as "standard". The
+   * Final 1080p is the deliverable master, so it always ships at "high".
+   *
+   * Documented semantics: the wizard state's `bitrateMode` has no
+   * "user touched this" flag, so a deliberate "standard" on a Final cannot be
+   * told apart from the untouched default — and since "high" is free, finals
+   * resolve to "high" either way. Drafts pass the state through verbatim, so a
+   * deliberate "high" in Advanced still wins there.
+   */
+  describe("bitrate_mode (F1)", () => {
+    it("forces high on final-1080p even though the state default is standard", () => {
+      const state = stateFor("ugc", { qualityTier: "final-1080p" });
+      expect(state.bitrateMode).toBe("standard");
+
+      const body = parse(build(state));
+      expect(body.request.bitrate_mode).toBe("high");
+      expect(body.request.resolution).toBe("1080p");
+      expect(body.qualityTier).toBe("final-1080p");
+    });
+
+    it("forces high on final-1080p even when the state explicitly says standard", () => {
+      const body = parse(
+        build(stateFor("ugc", { qualityTier: "final-1080p", bitrateMode: "standard" }))
+      );
+      expect(body.request.bitrate_mode).toBe("high");
+    });
+
+    it.each(["draft-480p", "draft-720p"] as const)(
+      "leaves %s on the state's standard default",
+      (tier) => {
+        const body = parse(build(stateFor("ugc", { qualityTier: tier })));
+        expect(body.request.bitrate_mode).toBe("standard");
+      }
+    );
+
+    it("respects an explicit high picked in Advanced on a draft tier", () => {
+      const body = parse(
+        build(stateFor("ugc", { qualityTier: "draft-480p", bitrateMode: "high" }))
+      );
+      expect(body.request.bitrate_mode).toBe("high");
+    });
+
+    it("applies to every mode, not just ugc", () => {
+      for (const mode of SEEDANCE_25_MODES) {
+        const body = parse(build(stateFor(mode, { qualityTier: "final-1080p" })));
+        expect(body.request.bitrate_mode, `mode=${mode}`).toBe("high");
+      }
+    });
+  });
+
   it("defaults output_format to mp4 for non edit/extend modes", () => {
     const body = parse(build(stateFor("ugc", { outputFormat: undefined })));
     expect(body.request.output_format).toBe("mp4");

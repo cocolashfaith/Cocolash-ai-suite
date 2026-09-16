@@ -147,6 +147,15 @@ export function Step3PromptReviewAndGenerate({ state, setState, onReset, isActiv
           productImageUrls: state.ugcProductImageUrls,
           script: state.scriptText,
           campaignType: state.campaignType,
+          // F2: the clip the user actually ordered. Without these the Director
+          // wrote every prompt as if it were a 5-second 16:9 clip — a 12-second
+          // 9:16 order arrived with one beat and no frame awareness.
+          // `-1` (AUTO_DURATION) is Auto: the Director plans ~10 s for it.
+          durationSeconds: effectiveDuration(state),
+          aspectRatio: state.aspectRatio,
+          // H4: when the avatar was composed holding the product, the first
+          // influencer reference already shows the pickup as done.
+          influencerAlreadyHoldsProduct: state.ugcWasComposed === true,
           // The wizard holds "" until a library category is chosen (the picker
           // sets it): send it only when it is real, so the Director's DB lookup
           // is either right or absent — never a lookup for "".

@@ -243,6 +243,48 @@ describe("POST /api/seedance/[id]/rerender", () => {
     expect((row.request_payload as Record<string, unknown>).prompt).toBe(PROMPT);
   });
 
+  /**
+   * F1 — the Final master always renders at the high bitrate. Enhancor rate
+   * tables key on resolution x duration x video-inputs only, so "high" is free;
+   * the draft's "standard" must not be copied forward onto the deliverable.
+   */
+  it("forces bitrate_mode high on the copied payload", async () => {
+    const harness = makeSupabase(sourceRow());
+    vi.mocked(createAdminClient).mockResolvedValue(harness.client as never);
+    const { calls } = mockQueueFetch();
+
+    const response = await POST(post(), { params });
+
+    expect(response.status).toBe(200);
+    // The source draft was rendered at "standard" …
+    expect(
+      (sourceRow().request_payload as Record<string, unknown>).bitrate_mode
+    ).toBe("standard");
+    // … the Final goes out at "high", and everything else is untouched.
+    expect(calls[0].body.bitrate_mode).toBe("high");
+    expect(calls[0].body.resolution).toBe("1080p");
+    expect(calls[0].body.prompt).toBe(PROMPT);
+
+    const row = harness.inserts[0];
+    expect(row.bitrate_mode).toBe("high");
+    expect((row.request_payload as Record<string, unknown>).bitrate_mode).toBe("high");
+  });
+
+  it("forces bitrate_mode high even when the source was already high", async () => {
+    const harness = makeSupabase(
+      sourceRow({
+        request_payload: ugcPayload({ bitrate_mode: "high" }),
+      } as Partial<GeneratedVideo>)
+    );
+    vi.mocked(createAdminClient).mockResolvedValue(harness.client as never);
+    const { calls } = mockQueueFetch();
+
+    const response = await POST(post(), { params });
+
+    expect(response.status).toBe(200);
+    expect(calls[0].body.bitrate_mode).toBe("high");
+  });
+
   it("applies a duration override", async () => {
     const harness = makeSupabase(sourceRow());
     vi.mocked(createAdminClient).mockResolvedValue(harness.client as never);

@@ -192,8 +192,33 @@ describe("Package D — applyProductGuard (engine 2.5)", () => {
 
   it("guards a ugc prompt that names no product", () => {
     const guarded = applyProductGuard(base);
-    expect(guarded.prompt).toContain(PRODUCT_CATEGORY_DIRECTIVE);
+    expect(guarded.prompt).toContain(PRODUCT_CATEGORY_DIRECTIVE.trim());
     expect(guarded.prompt).not.toMatch(/strip/i);
+  });
+
+  // F8 (06-QUALITY-PASS.md) — deliberately changed: the guard used to be
+  // PREPENDED, which pushed the creator out of the prompt's opening sentence.
+  // Identity is what the video model weights first, so the anchor is now a tail.
+  it("appends the anchor as a tail clause, never ahead of the opening", () => {
+    const guarded = applyProductGuard(base);
+    expect(guarded.prompt!.startsWith("She smiles at the camera")).toBe(true);
+    expect(guarded.prompt!.endsWith(PRODUCT_CATEGORY_DIRECTIVE.trim())).toBe(true);
+    expect(guarded.prompt).not.toMatch(/^The product on screen/);
+  });
+
+  it("does not double the sentence break when the prompt already ends in one", () => {
+    const punctuated = {
+      ...base,
+      prompt: "She smiles at the camera holding the box!",
+    } as unknown as Seedance25Request;
+    expect(applyProductGuard(punctuated).prompt).toBe(
+      `She smiles at the camera holding the box! ${PRODUCT_CATEGORY_DIRECTIVE.trim()}`
+    );
+  });
+
+  it("is idempotent — the tail names the category, so a second pass is a no-op", () => {
+    const once = applyProductGuard(base);
+    expect(applyProductGuard(once)).toBe(once);
   });
 
   it("leaves non-ugc modes untouched", () => {
@@ -322,7 +347,10 @@ describe("Package D — POST /api/seedance/generate (2.5) wire contract", () => 
     expect(response.status).toBe(200);
     expect(calls).toHaveLength(1);
     const wirePrompt = String(calls[0].body.prompt);
-    expect(wirePrompt).toContain(PRODUCT_CATEGORY_DIRECTIVE);
+    // F8: the anchor rides at the END now, so the prompt still opens with the
+    // subject the Director front-loaded.
+    expect(wirePrompt).toContain(PRODUCT_CATEGORY_DIRECTIVE.trim());
+    expect(wirePrompt.startsWith("She smiles at the camera")).toBe(true);
     expect(wirePrompt).not.toMatch(/strip/i);
     expect(wirePrompt).not.toMatch(/cluster/i);
 

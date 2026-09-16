@@ -11,6 +11,8 @@ import {
   RefreshCw,
   Upload,
   X,
+  AlertTriangle,
+  Package,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -30,6 +32,10 @@ import {
 } from "@/lib/seedance/ugc-image-prompt";
 import { LASH_STYLE_OPTIONS } from "@/lib/prompts/modules/lash-styles";
 import type { LashStyle } from "@/lib/types";
+import {
+  fetchProductFacts,
+  type ProductFacts,
+} from "@/lib/ai/director/product-fact-extractor";
 import type { SeedanceV4WizardState } from "../types";
 import { CapabilityCard } from "../CapabilityCard";
 import { inputLimitsFor } from "../lib/mode-input-rules";
@@ -52,6 +58,270 @@ interface GalleryAvatar {
 
 function pickRandom<T>(arr: readonly { value: T }[]): T {
   return arr[Math.floor(Math.random() * arr.length)].value;
+}
+
+// ── H1/H2/H3 + F7 pure helpers (docs/seedance-2.5/06-QUALITY-PASS.md) ──
+// Kept outside the component and exported so they can be unit-tested: this
+// suite runs `environment: "node"`, so there is no DOM to render into (same
+// approach as ProductReferencePicker's exported list helpers).
+
+/** F7 — non-blocking note when the selection mixes unrelated faces. */
+export const MIXED_IDENTITY_WARNING =
+  "Multiple influencer references with different faces will blend identities on render — one identity works best.";
+
+/** H3(b) — non-blocking note when the composed product contradicts the refs. */
+export const COMPOSE_FACT_WARNING =
+  "The generated image may show the product incorrectly — regenerate or continue anyway.";
+
+/** Fallback when no product facts were cached (the route requires a description). */
+export const DEFAULT_COMPOSE_PRODUCT_DESCRIPTION =
+  "the CocoLash product shown in the reference image";
+
+/** Where an influencer reference came from. */
+export type InfluencerOrigin = "generated" | "gallery" | "upload";
+
+export interface InfluencerRef {
+  url: string;
+  origin: InfluencerOrigin;
+  /** Generated avatars from ONE generate call share a batch id (same look). */
+  batchId?: string;
+}
+
+/**
+ * F7 — mixed-identity guard. Deliberately dumb and honest: no face
+ * recognition, just provenance. Two references are "the same look" only when
+ * they came out of the same generate call; anything uploaded, picked from the
+ * gallery, or produced by a separate generate run is a different face.
+ */
+export function mixedIdentityWarning(
+  refs: readonly InfluencerRef[]
+): string | null {
+  if (refs.length < 2) return null;
+  const looks = new Set(
+    refs.map((r) =>
+      r.origin === "generated" && r.batchId ? `batch:${r.batchId}` : `solo:${r.url}`
+    )
+  );
+  return looks.size > 1 ? MIXED_IDENTITY_WARNING : null;
+}
+
+/**
+ * H2 — the composed shot is the FIRST influencer reference. `ugcProductImageUrls`
+ * is never touched: the clean product photos stay authoritative for detail.
+ */
+export function composedFirst(
+  current: readonly string[],
+  composedUrl: string,
+  cap: number
+): string[] {
+  const merged = [composedUrl, ...current.filter((u) => u !== composedUrl)];
+  return merged.slice(0, Math.max(1, cap));
+}
+
+/**
+ * H1 — a short, holdable noun phrase for the compose prompt, derived from the
+ * cached product facts. The generate route REQUIRES `productDescription`
+ * whenever `hasProduct` is true, so this never returns "".
+ */
+export function composeProductDescription(
+  facts?: ProductFacts | null
+): string {
+  const type = facts?.productType?.trim();
+  const packaging = facts?.packaging?.trim();
+  const summary = facts?.summary?.trim();
+
+  let text: string;
+  if (type) text = packaging ? `${type} (${packaging})` : type;
+  else if (packaging) text = packaging;
+  else if (summary) text = summary;
+  else return DEFAULT_COMPOSE_PRODUCT_DESCRIPTION;
+
+  const full = /^(the|a|an)\b/i.test(text) ? text : `the ${text}`;
+  return full.length > 240 ? `${full.slice(0, 237).trimEnd()}…` : full;
+}
+
+export interface AvatarRequestArgs {
+  ethnicity: UGCEthnicity;
+  skinTone: UGCSkinTone;
+  ageRange: UGCAgeRange;
+  hairStyle: UGCHairStyle;
+  scene: UGCScene;
+  vibe: UGCVibe;
+  lashStyle: LashStyle;
+  aspectRatio: string;
+  /** H1 toggle. */
+  composeEnabled: boolean;
+  /** Step-1 selection — only [0] is composed in. */
+  productImageUrls?: readonly string[];
+  productFacts?: ProductFacts;
+}
+
+/**
+ * H1 — the POST body for `/api/seedance/generate-ugc-image`. Compose only
+ * engages when the toggle is ON *and* Step 1 actually produced a product
+ * image; otherwise the avatar is generated alone, exactly as before.
+ */
+export function buildAvatarRequestBody(
+  args: AvatarRequestArgs
+): Record<string, unknown> {
+  const base = {
+    ethnicity: args.ethnicity,
+    skinTone: args.skinTone,
+    ageRange: args.ageRange,
+    hairStyle: args.hairStyle,
+    scene: args.scene,
+    vibe: args.vibe,
+    lashStyle: args.lashStyle,
+    aspectRatio: args.aspectRatio,
+  };
+  const productImageUrl = args.composeEnabled
+    ? args.productImageUrls?.[0]
+    : undefined;
+  if (!productImageUrl) return { ...base, hasProduct: false };
+  return {
+    ...base,
+    hasProduct: true,
+    productImageUrl,
+    productDescription: composeProductDescription(args.productFacts),
+  };
+}
+
+// ── H3(b): fact-check the composed product against the real references ──
+
+/** Closure / material words that get invented on composed shots. */
+const CLOSURE_TERMS = [
+  "magnetic",
+  "magnet",
+  "zipper",
+  "velcro",
+  "clasp",
+  "latch",
+  "hinge",
+  "glass",
+] as const;
+
+/** Coarse packaging vocabulary — enough to catch "box" turning into "tube". */
+const PACKAGE_TERMS = [
+  "box",
+  "book",
+  "tin",
+  "pouch",
+  "bag",
+  "tube",
+  "case",
+  "tray",
+  "jar",
+  "bottle",
+  "carton",
+  "blister",
+  "sachet",
+  "compact",
+  "palette",
+] as const;
+
+const ISNOT_STOPWORDS = new Set([
+  "that",
+  "this",
+  "with",
+  "from",
+  "have",
+  "here",
+  "there",
+  "these",
+  "those",
+  "product",
+  "visible",
+  "anywhere",
+]);
+
+function factsText(facts: ProductFacts): string {
+  return [
+    facts.productType,
+    facts.packaging,
+    facts.colorsAndFinish,
+    facts.notableDetails,
+    facts.summary,
+  ]
+    .filter(Boolean)
+    .join(" ")
+    .toLowerCase();
+}
+
+function termsIn(text: string, vocab: readonly string[]): string[] {
+  return vocab.filter((term) => new RegExp(`\\b${term}`).test(text));
+}
+
+/** "no magnetic closure" → ["magnetic", "closure"] */
+function isNotKeywords(entry: string): string[] {
+  return entry
+    .toLowerCase()
+    .replace(/^(no|not|non|without|lacks|does not have|doesn't have|there is no)\s+/, "")
+    .replace(/[^a-z0-9\s-]/g, " ")
+    .split(/\s+/)
+    .filter((w) => w.length >= 4 && !ISNOT_STOPWORDS.has(w));
+}
+
+/**
+ * H3(b) — compare the facts extracted from the COMPOSED image against the
+ * facts cached from the real product references. Returns a short human reason
+ * on a material contradiction, or null. Intentionally conservative: it only
+ * fires on (1) a feature the real refs explicitly listed as absent, (2) a
+ * closure/material the real refs never show, or (3) a packaging type with no
+ * overlap at all. Never blocks.
+ */
+export function composedProductContradiction(
+  real?: ProductFacts | null,
+  composed?: ProductFacts | null
+): string | null {
+  if (!real || !composed) return null;
+  const realText = factsText(real);
+  const composedText = factsText(composed);
+  if (!realText || !composedText) return null;
+
+  for (const entry of real.isNot ?? []) {
+    const words = isNotKeywords(entry);
+    if (words.length === 0) continue;
+    if (words.every((w) => composedText.includes(w))) {
+      return `the generated product looks like it has "${entry.trim()}", which the real product images say it does not`;
+    }
+  }
+
+  const realClosures = new Set(termsIn(realText, CLOSURE_TERMS));
+  for (const term of termsIn(composedText, CLOSURE_TERMS)) {
+    if (!realClosures.has(term)) {
+      return `the generated product shows "${term}", which never appears in the real product images`;
+    }
+  }
+
+  const realPack = termsIn(realText, PACKAGE_TERMS);
+  const composedPack = termsIn(composedText, PACKAGE_TERMS);
+  if (
+    realPack.length > 0 &&
+    composedPack.length > 0 &&
+    !composedPack.some((t) => realPack.includes(t))
+  ) {
+    return `the generated packaging reads as ${composedPack.join("/")} but the real product is ${realPack.join("/")}`;
+  }
+
+  return null;
+}
+
+/**
+ * H3(b) driver. Best-effort by design: no cached facts, or an extractor that
+ * fails, means NO warning — never a crash and never a false alarm.
+ */
+export async function checkComposedProductFacts(
+  composedImageUrl: string,
+  realFacts?: ProductFacts,
+  fetchFacts: (urls: string[]) => Promise<ProductFacts> = fetchProductFacts
+): Promise<string | null> {
+  if (!realFacts) return null;
+  try {
+    const composedFacts = await fetchFacts([composedImageUrl]);
+    return composedProductContradiction(realFacts, composedFacts);
+  } catch {
+    return null;
+  }
 }
 
 /**
@@ -86,11 +356,42 @@ export function UgcMode({ state, setState, onReady }: UgcModeProps) {
   const [galleryAvatars, setGalleryAvatars] = useState<GalleryAvatar[]>([]);
   const [loadingGallery, setLoadingGallery] = useState(false);
 
+  // H3(a) — a composed avatar is NOT auto-added. It lands in a preview the
+  // user has to explicitly approve (or regenerate), clearly labelled as
+  // "holding product".
+  const [pendingComposed, setPendingComposed] = useState<string | null>(null);
+  const [composeWarning, setComposeWarning] = useState<string | null>(null);
+  const [checkingCompose, setCheckingCompose] = useState(false);
+  /** The composed image the user approved, once it is in the selection. */
+  const [approvedComposedUrl, setApprovedComposedUrl] = useState<string | null>(
+    null
+  );
+
+  // F7 — provenance of every chosen reference, for the mixed-identity guard.
+  const [refOrigins, setRefOrigins] = useState<
+    Record<string, { origin: InfluencerOrigin; batchId?: string }>
+  >({});
+  const batchSeq = useRef(0);
+
   const productCount = state.ugcProductImageUrls?.length ?? 0;
   const influencers = state.ugcInfluencerImageUrls ?? [];
   const combinedCap = inputLimitsFor(state.engine, "ugc").ugcCombined;
   const maxInfluencers = Math.max(0, combinedCap - productCount);
   const atLimit = influencers.length >= maxInfluencers;
+
+  const composeEnabled = state.ugcComposeEnabled ?? false;
+  const canCompose = productCount > 0;
+  /** Only true while the approved composed image is still in the selection. */
+  const composedInSelection =
+    !!approvedComposedUrl && influencers.includes(approvedComposedUrl);
+
+  const identityWarning = mixedIdentityWarning(
+    influencers.map((url) => ({
+      url,
+      origin: refOrigins[url]?.origin ?? "upload",
+      batchId: refOrigins[url]?.batchId,
+    }))
+  );
 
   useEffect(() => {
     if (activeTab === "gallery" && galleryAvatars.length === 0) {
@@ -117,8 +418,21 @@ export function UgcMode({ state, setState, onReady }: UgcModeProps) {
     }
   }
 
+  /** Remember where a reference came from (F7 mixed-identity heuristic). */
+  const rememberOrigins = useCallback(
+    (urls: string[], origin: InfluencerOrigin, batchId?: string) => {
+      setRefOrigins((prev) => {
+        const next = { ...prev };
+        for (const url of urls) next[url] = { origin, batchId };
+        return next;
+      });
+    },
+    []
+  );
+
   const addInfluencers = useCallback(
-    (urls: string[]) => {
+    (urls: string[], origin: InfluencerOrigin = "upload", batchId?: string) => {
+      rememberOrigins(urls, origin, batchId);
       setState((prev) => {
         const current = prev.ugcInfluencerImageUrls ?? [];
         const cap = Math.max(
@@ -135,7 +449,28 @@ export function UgcMode({ state, setState, onReady }: UgcModeProps) {
         return { ugcInfluencerImageUrls: merged, ugcInfluencerImageUrl: merged[0] };
       });
     },
-    [setState]
+    [rememberOrigins, setState]
+  );
+
+  /**
+   * H2 — the approved composed shot goes to position [0] of the influencer
+   * array (and `ugcInfluencerImageUrl` mirrors [0], as everywhere else).
+   * `ugcProductImageUrls` is never touched.
+   */
+  const addComposedFirst = useCallback(
+    (url: string, batchId: string) => {
+      rememberOrigins([url], "generated", batchId);
+      setState((prev) => {
+        const cap = Math.max(
+          0,
+          inputLimitsFor(prev.engine, "ugc").ugcCombined -
+            (prev.ugcProductImageUrls?.length ?? 0)
+        );
+        const merged = composedFirst(prev.ugcInfluencerImageUrls ?? [], url, cap);
+        return { ugcInfluencerImageUrls: merged, ugcInfluencerImageUrl: merged[0] };
+      });
+    },
+    [rememberOrigins, setState]
   );
 
   const removeInfluencer = useCallback(
@@ -159,7 +494,7 @@ export function UgcMode({ state, setState, onReady }: UgcModeProps) {
       );
       return;
     }
-    addInfluencers([url]);
+    addInfluencers([url], "gallery");
   }
 
   function handleRandomize() {
@@ -178,33 +513,68 @@ export function UgcMode({ state, setState, onReady }: UgcModeProps) {
       toast.error(`Products + influencers are capped at ${combinedCap}.`);
       return;
     }
+    const composing = composeEnabled && canCompose;
     setIsGeneratingAvatar(true);
+    setPendingComposed(null);
+    setComposeWarning(null);
     try {
       const res = await fetch("/api/seedance/generate-ugc-image", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          ethnicity,
-          skinTone,
-          ageRange,
-          hairStyle,
-          scene,
-          vibe,
-          lashStyle,
-          // Avatar is generated alone; products are separate references (Step 1).
-          hasProduct: false,
-          aspectRatio: "9:16",
-        }),
+        body: JSON.stringify(
+          buildAvatarRequestBody({
+            ethnicity,
+            skinTone,
+            ageRange,
+            hairStyle,
+            scene,
+            vibe,
+            lashStyle,
+            aspectRatio: "9:16",
+            // H1 — compose only when the toggle is ON and Step 1 gave us a
+            // product; otherwise the avatar is generated alone and the
+            // products stay separate references.
+            composeEnabled,
+            productImageUrls: state.ugcProductImageUrls,
+            productFacts: state.productFacts,
+          })
+        ),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Avatar generation failed");
-      addInfluencers([data.imageUrl]);
-      toast.success("Avatar generated and added.");
+
+      if (!composing) {
+        addInfluencers([data.imageUrl], "generated", `gen-${++batchSeq.current}`);
+        toast.success("Avatar generated and added.");
+        return;
+      }
+
+      // H3(a) — composed images wait for an explicit approval.
+      setPendingComposed(data.imageUrl);
+      toast.success("Composed avatar ready — review it below.");
+
+      // H3(b) — best-effort fact check against the cached real-reference facts.
+      setCheckingCompose(true);
+      const reason = await checkComposedProductFacts(
+        data.imageUrl,
+        state.productFacts
+      );
+      setComposeWarning(reason);
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Avatar generation failed");
     } finally {
+      setCheckingCompose(false);
       setIsGeneratingAvatar(false);
     }
+  }
+
+  /** H3(a) — the explicit approval gate on a composed avatar. */
+  function handleApproveComposed() {
+    if (!pendingComposed) return;
+    addComposedFirst(pendingComposed, `gen-${++batchSeq.current}`);
+    setApprovedComposedUrl(pendingComposed);
+    setPendingComposed(null);
+    toast.success("Composed avatar added as the first influencer reference.");
   }
 
   const handleContinue = useCallback(() => {
@@ -218,16 +588,41 @@ export function UgcMode({ state, setState, onReady }: UgcModeProps) {
       return;
     }
 
-    // Always the Enhancor-parity vision pipeline: influencers[] + products[].
+    // H2 — when a composed shot was approved it rides the normal influencer
+    // array as entry [0]; `ugcWasComposed` stays TRUE so the Director (H4) and
+    // the cost estimate know the reference already holds the product.
+    // `ugcComposedImageUrl` deliberately stays undefined: that legacy field
+    // switches Step 3 off the Enhancor-parity vision path, and H2 keeps the
+    // clean product photos in play.
+    const composedUrl =
+      approvedComposedUrl && chosen.includes(approvedComposedUrl)
+        ? approvedComposedUrl
+        : null;
+    const ordered = composedUrl
+      ? composedFirst(chosen, composedUrl, chosen.length)
+      : chosen;
+
     setState({
-      ugcInfluencerImageUrl: chosen[0],
+      ugcInfluencerImageUrls: ordered,
+      ugcInfluencerImageUrl: ordered[0],
       // Clear legacy single-image compose fields so Step 3 uses the vision path.
       ugcComposedImageUrl: undefined,
-      ugcWasComposed: false,
+      ugcWasComposed: !!composedUrl,
       ugcSeparateProductUrl: undefined,
+      ugcComposeWarning:
+        composedUrl && composeWarning
+          ? `${COMPOSE_FACT_WARNING} Detail: ${composeWarning}.`
+          : undefined,
     });
     onReady();
-  }, [state.ugcInfluencerImageUrls, state.ugcProductImageUrls, setState, onReady]);
+  }, [
+    state.ugcInfluencerImageUrls,
+    state.ugcProductImageUrls,
+    approvedComposedUrl,
+    composeWarning,
+    setState,
+    onReady,
+  ]);
 
   const canContinue = influencers.length > 0 && productCount >= 1;
 
@@ -275,6 +670,11 @@ export function UgcMode({ state, setState, onReady }: UgcModeProps) {
                   alt={`Influencer ${i + 1}`}
                   className="h-full w-full rounded-lg border-2 border-coco-golden/30 object-cover"
                 />
+                {composedInSelection && url === approvedComposedUrl && (
+                  <span className="absolute bottom-1 left-1 rounded-full bg-coco-brown/80 px-1.5 py-0.5 text-[9px] font-semibold text-white">
+                    holding product
+                  </span>
+                )}
                 <button
                   type="button"
                   onClick={() => removeInfluencer(url)}
@@ -286,6 +686,14 @@ export function UgcMode({ state, setState, onReady }: UgcModeProps) {
               </div>
             ))}
           </div>
+
+          {/* F7 — mixed-identity guard. Non-blocking, provenance-based only. */}
+          {identityWarning && (
+            <div className="flex items-start gap-2 rounded-lg border-2 border-amber-200 bg-amber-50 px-3 py-2">
+              <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0 text-amber-600" />
+              <p className="text-[11px] text-amber-800">{identityWarning}</p>
+            </div>
+          )}
         </section>
       )}
 
@@ -316,9 +724,12 @@ export function UgcMode({ state, setState, onReady }: UgcModeProps) {
           <div>
             <h3 className="text-sm font-semibold text-coco-brown">Avatar look</h3>
             <p className="mt-0.5 text-[11px] text-coco-brown-medium/60">
-              These traits define the creator. Each generated avatar is added to your
-              influencer selection — the products you picked in Step 1 are sent to Seedance
-              as separate references.
+              These traits define the creator.{" "}
+              {composeEnabled && canCompose
+                ? "With compose on, each generated avatar is shown for review first — approve it and it becomes your first influencer reference."
+                : "Each generated avatar is added to your influencer selection"}
+              {" — "}
+              the products you picked in Step 1 are sent to Seedance as separate references.
             </p>
           </div>
 
@@ -329,6 +740,55 @@ export function UgcMode({ state, setState, onReady }: UgcModeProps) {
             <Dropdown label="Hair Style" value={hairStyle} options={UGC_HAIR_STYLE_OPTIONS} onChange={(v) => setHairStyle(v as UGCHairStyle)} />
             <Dropdown label="Scene" value={scene} options={UGC_SCENE_OPTIONS} onChange={(v) => setScene(v as UGCScene)} />
             <Dropdown label="Vibe" value={vibe} options={UGC_VIBE_OPTIONS} onChange={(v) => setVibe(v as UGCVibe)} />
+          </div>
+
+          {/* H1 — "Generate holding the product". Opt-in, default OFF (H5). */}
+          <div className="space-y-2 rounded-lg border-2 border-coco-beige-dark bg-white/60 p-3">
+            <div className="flex items-center justify-between gap-3">
+              <div>
+                <p className="flex items-center gap-1.5 text-xs font-semibold text-coco-brown">
+                  <Package className="h-3.5 w-3.5 text-coco-golden" />
+                  Generate holding the product
+                </p>
+                <p className="mt-0.5 text-[11px] text-coco-brown-medium/60">
+                  {canCompose
+                    ? "Composes your first Step-1 product image into the avatar's hand. You review the result before it's used — the clean product photos still go to Seedance separately."
+                    : "Pick product images in Step 1 first."}
+                </p>
+              </div>
+              <button
+                type="button"
+                role="switch"
+                aria-checked={composeEnabled && canCompose}
+                aria-label="Generate holding the product"
+                disabled={!canCompose}
+                title={canCompose ? undefined : "Pick product images in Step 1 first"}
+                onClick={() => {
+                  const next = !composeEnabled;
+                  setState({ ugcComposeEnabled: next });
+                  if (!next) {
+                    setPendingComposed(null);
+                    setComposeWarning(null);
+                  }
+                }}
+                className={cn(
+                  "relative inline-flex h-5 w-9 shrink-0 items-center rounded-full transition-colors",
+                  composeEnabled && canCompose
+                    ? "bg-coco-golden"
+                    : "bg-coco-brown-medium/20",
+                  !canCompose && "cursor-not-allowed opacity-50"
+                )}
+              >
+                <span
+                  className={cn(
+                    "inline-block h-3.5 w-3.5 transform rounded-full bg-white shadow transition-transform",
+                    composeEnabled && canCompose
+                      ? "translate-x-[18px]"
+                      : "translate-x-[3px]"
+                  )}
+                />
+              </button>
+            </div>
           </div>
 
           <div>
@@ -392,6 +852,93 @@ export function UgcMode({ state, setState, onReady }: UgcModeProps) {
               Randomize
             </Button>
           </div>
+
+          {/* H3(a) — approval gate. The composed shot is never auto-selected. */}
+          {pendingComposed && (
+            <div className="space-y-3 rounded-xl border-2 border-coco-golden/40 bg-coco-golden/5 p-3">
+              <div className="flex items-baseline justify-between gap-3">
+                <h4 className="text-xs font-semibold text-coco-brown">
+                  Composed avatar — holding product
+                </h4>
+                {checkingCompose && (
+                  <span className="flex items-center gap-1 text-[10px] text-coco-brown-medium/60">
+                    <Loader2 className="h-3 w-3 animate-spin" />
+                    Checking the product…
+                  </span>
+                )}
+              </div>
+              <div className="flex gap-3">
+                <div className="relative w-24 shrink-0">
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img
+                    src={pendingComposed}
+                    alt="Composed avatar holding product"
+                    className="aspect-[9/16] w-full rounded-lg border-2 border-coco-golden/40 object-cover"
+                  />
+                  <span className="absolute bottom-1 left-1 rounded-full bg-coco-brown/80 px-1.5 py-0.5 text-[9px] font-semibold text-white">
+                    holding product
+                  </span>
+                </div>
+                <div className="flex-1 space-y-2">
+                  <p className="text-[11px] text-coco-brown-medium/70">
+                    Check the product looks right before you use it. Approving adds
+                    it as your FIRST influencer reference; your Step-1 product
+                    photos still go to Seedance untouched.
+                  </p>
+
+                  {/* H3(b) — amber, never blocking. */}
+                  {composeWarning && (
+                    <div className="flex items-start gap-2 rounded-lg border-2 border-amber-200 bg-amber-50 px-2.5 py-2">
+                      <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0 text-amber-600" />
+                      <div>
+                        <p className="text-[11px] font-medium text-amber-900">
+                          {COMPOSE_FACT_WARNING}
+                        </p>
+                        <p className="mt-0.5 text-[10px] text-amber-800">
+                          {composeWarning}.
+                        </p>
+                      </div>
+                    </div>
+                  )}
+
+                  <div className="flex flex-wrap gap-2">
+                    <Button
+                      type="button"
+                      size="sm"
+                      onClick={handleApproveComposed}
+                      className="gap-1.5 bg-coco-golden text-xs font-semibold text-white hover:bg-coco-golden-dark"
+                    >
+                      <Check className="h-3.5 w-3.5" />
+                      Use this image
+                    </Button>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      disabled={isGeneratingAvatar}
+                      onClick={handleGenerateAvatar}
+                      className="gap-1.5 text-xs"
+                    >
+                      <RefreshCw className="h-3.5 w-3.5" />
+                      Regenerate
+                    </Button>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="ghost"
+                      onClick={() => {
+                        setPendingComposed(null);
+                        setComposeWarning(null);
+                      }}
+                      className="text-xs text-coco-brown-medium/70"
+                    >
+                      Discard
+                    </Button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
         </section>
       )}
 

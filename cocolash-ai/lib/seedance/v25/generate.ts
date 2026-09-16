@@ -35,7 +35,10 @@ import {
   MIGRATION_REQUIRED_STATUS,
   migrationRequiredBody,
 } from "@/lib/supabase/schema-errors";
-import { applyProductCategoryGuard } from "../prompt-planner";
+import {
+  mentionsProductCategory,
+  PRODUCT_CATEGORY_DIRECTIVE,
+} from "../prompt-planner";
 import { estimateCredits } from "../pricing";
 import { SeedanceError } from "../types";
 import { getEnhancorWebhookUrl, redactWebhookSecret } from "../webhook-url";
@@ -63,16 +66,24 @@ import { AUTO_DURATION, type Seedance25Request } from "./types";
  *
  * Idempotent: a guarded prompt contains "lash", so re-rendering a row whose
  * `request_payload` was guarded leaves the prompt byte-identical.
+ *
+ * F8 (06-QUALITY-PASS.md): the anchor is APPENDED as a tail clause, never
+ * prepended. The Director is required to open its prompt with the creator, and
+ * the video model weights the opening most heavily — a category sentence bolted
+ * on in front of that demoted identity to second place in every guarded prompt.
  */
 export function applyProductGuard(request: Seedance25Request): Seedance25Request {
   if (request.mode !== "ugc" || !request.prompt) return request;
-  const guarded = applyProductCategoryGuard(request.prompt);
-  if (guarded === request.prompt) return request;
+  if (mentionsProductCategory(request.prompt)) return request;
+
+  const body = request.prompt.trimEnd();
+  const separator = /[.!?…]["')\]]?$/.test(body) ? "" : ".";
+  const prompt = `${body}${separator} ${PRODUCT_CATEGORY_DIRECTIVE.trim()}`;
 
   console.warn(
-    "[seedance2.5/generate] ugc prompt did not name the product; prepending the category anchor"
+    "[seedance2.5/generate] ugc prompt did not name the product; appending the category anchor as a tail clause"
   );
-  return { ...request, prompt: guarded };
+  return { ...request, prompt };
 }
 
 /**

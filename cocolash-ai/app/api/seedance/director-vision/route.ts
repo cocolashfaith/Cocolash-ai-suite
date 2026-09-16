@@ -17,7 +17,10 @@
  *     campaignType: "product-showcase", // REQUIRED
  *     productSku?: "jasmine", // OPTIONAL (empty string is treated as absent)
  *     productFacts?: "WHAT THE PRODUCT ACTUALLY IS...", // OPTIONAL, image-extracted
- *     intent?: "Show the opened tray..." // OPTIONAL
+ *     intent?: "Show the opened tray...", // OPTIONAL
+ *     durationSeconds?: 12, // OPTIONAL, -1 = Auto (the model picks the length)
+ *     aspectRatio?: "9:16", // OPTIONAL, defaults to the vertical phone frame
+ *     influencerAlreadyHoldsProduct?: true // OPTIONAL, composed avatar (H4)
  *   }
  *
  * Response:
@@ -35,7 +38,7 @@ import {
   type VisionPromptInput,
   VisionDirectorError,
 } from "@/lib/ai/director/seedance-vision-director";
-import { SEEDANCE_25_LIMITS } from "@/lib/seedance/v25/types";
+import { AUTO_DURATION, SEEDANCE_25_LIMITS } from "@/lib/seedance/v25/types";
 import { isPublicHttpsUrl } from "@/lib/seedance/v25/schema";
 
 // ── Zod schema for request validation ────────────────────────
@@ -84,6 +87,27 @@ const VisionDirectorBodySchema = z
     productFacts: z.string().optional(),
     /** Set on explicit "Regenerate" to request a distinctly different scene. */
     variationHint: z.string().max(2000).optional(),
+    /**
+     * F2 — the clip the user actually ordered. `-1` is Seedance 2.5's AUTO
+     * duration (the model picks the length), so negatives below it are rejected
+     * rather than silently planned as a zero-second clip.
+     */
+    durationSeconds: z
+      .number()
+      .int()
+      .min(AUTO_DURATION, "durationSeconds must be -1 (Auto) or a positive length")
+      .max(SEEDANCE_25_LIMITS.durationMax)
+      .refine((value) => value === AUTO_DURATION || value > 0, {
+        message: "durationSeconds must be -1 (Auto) or a positive length",
+      })
+      .optional(),
+    /** F2 — the frame the clip ships in, e.g. "9:16". */
+    aspectRatio: z.string().trim().max(16).optional(),
+    /**
+     * H4 — the first influencer reference is the composed shot in which the
+     * creator is already holding the product.
+     */
+    influencerAlreadyHoldsProduct: z.boolean().optional(),
   })
   .refine(
     (body) => !!body.influencerImageUrl || !!body.influencerImageUrls?.length,
@@ -118,6 +142,9 @@ export async function POST(request: NextRequest) {
       campaignType: parsed.campaignType,
       hasSku: !!parsed.productSku,
       hasFacts: !!parsed.productFacts,
+      durationSeconds: parsed.durationSeconds ?? null,
+      aspectRatio: parsed.aspectRatio ?? null,
+      composedInfluencer: !!parsed.influencerAlreadyHoldsProduct,
     });
 
     // Call the vision director
@@ -132,6 +159,9 @@ export async function POST(request: NextRequest) {
       intent: parsed.intent,
       productFacts: parsed.productFacts,
       variationHint: parsed.variationHint,
+      durationSeconds: parsed.durationSeconds,
+      aspectRatio: parsed.aspectRatio,
+      influencerAlreadyHoldsProduct: parsed.influencerAlreadyHoldsProduct,
     };
 
     const result = await generateSeedanceVisionPrompt(visionPromptInput);

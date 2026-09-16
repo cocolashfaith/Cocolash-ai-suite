@@ -10,6 +10,8 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
  * This test pins that behavior and guards against regressing to the
  * non-existent `upload_large_stream` (the typings declare it but the runtime
  * package does not export it — it throws "is not a function").
+ *
+ * It also pins F15: no eager derivatives are requested on upload.
  */
 
 const upload = vi.fn(async (_url: string, _opts: Record<string, unknown>) => ({
@@ -44,7 +46,7 @@ describe("uploadVideoFromUrl — remote URL upload", () => {
     delete process.env.CLOUDINARY_API_SECRET;
   });
 
-  it("hands the remote URL to cloudinary.uploader.upload with async eager renders", async () => {
+  it("hands the remote URL to cloudinary.uploader.upload", async () => {
     const { uploadVideoFromUrl } = await import("@/lib/cloudinary/video");
     const result = await uploadVideoFromUrl("https://heygen/x.mp4", {
       title: "t",
@@ -55,9 +57,25 @@ describe("uploadVideoFromUrl — remote URL upload", () => {
     const [url, opts] = upload.mock.calls[0];
     expect(url).toBe("https://heygen/x.mp4");
     expect(opts.resource_type).toBe("video");
-    expect(opts.eager_async).toBe(true);
+    expect(opts.folder).toBe("cocolash-videos");
 
     expect(result.secureUrl).toBe("https://res.cloudinary.com/x/test.mp4");
     expect(result.bytes).toBe(150_000_000);
+  });
+
+  /**
+   * F15: the upload used to ask Cloudinary for eager mp4 + webm renders that
+   * NOTHING ever read — `final_video_url` is the plain `secure_url`, and the
+   * watermark/caption helpers build their own URL transformations on demand.
+   * Those derivatives were pure wasted transformation credits.
+   */
+  it("requests no eager derivatives", async () => {
+    const { uploadVideoFromUrl } = await import("@/lib/cloudinary/video");
+    await uploadVideoFromUrl("https://heygen/x.mp4");
+
+    const [, opts] = upload.mock.calls[0];
+    expect(opts.eager).toBeUndefined();
+    expect(opts.eager_async).toBeUndefined();
+    expect(Object.keys(opts)).not.toContain("eager");
   });
 });

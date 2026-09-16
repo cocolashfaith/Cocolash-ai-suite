@@ -148,14 +148,26 @@ const VIBE_MAP: Record<UGCVibe, string> = {
 
 // ── Imperfection Options ─────────────────────────────────────
 
-const IMPERFECTIONS = [
-  "Slight jpeg compression artifacts visible",
-  "Subtle motion blur on hair strands from slight movement",
-  "Tiny bit of grain from low-light phone camera",
+/**
+ * Natural-authenticity details ONLY (F10, docs/seedance-2.5/06-QUALITY-PASS.md).
+ *
+ * This list used to also ask for "jpeg compression artifacts", "motion blur on
+ * hair strands" and "grain from low-light phone camera". Those are destructive
+ * codec/capture artefacts, and this image is the IDENTITY REFERENCE the video
+ * model conditions on — degrading it degrades every frame downstream. The
+ * handheld-phone authenticity they were reaching for belongs in the *video*
+ * prompt, not baked into the reference.
+ *
+ * What stays is real human texture: pores, flyaways, asymmetry, blemishes,
+ * natural redness — all of which survive an undegraded 2K render.
+ */
+export const IMPERFECTIONS = [
   "One stray hair across forehead",
+  "A few flyaway hairs catching the light",
   "Slight shadow under chin from phone angle",
   "Minimal natural redness on nose and cheeks",
   "A small blemish near jawline",
+  "Fine natural texture around the eyes",
 ];
 
 // ── Negative Prompt (constant) ───────────────────────────────
@@ -220,7 +232,7 @@ export function buildUGCImagePrompt(params: UGCImageParams): {
     productDetail.trimEnd(),
     lashDetail,
     "",
-    `Authentic smartphone selfie aesthetic, candid and slightly off-center framing, camera held at eye level. The final image must fill the full frame edge-to-edge with only the real scene and person visible. No iPhone UI, no status bar, no black top/bottom bars, no file name, no buttons, no icons, no app chrome. Visible natural skin texture including pores, subtle under-eye texture, and flyaway hairs. Slight natural facial asymmetry. Muted, realistic skin tones with no color grading. ${imperfectionText}`,
+    `Authentic smartphone selfie aesthetic, candid and slightly off-center framing, camera held at eye level. The final image must fill the full frame edge-to-edge with only the real scene and person visible. No iPhone UI, no status bar, no black top/bottom bars, no file name, no buttons, no icons, no app chrome. Visible natural skin texture including pores, subtle under-eye texture, and flyaway hairs. Slight natural facial asymmetry. Muted, realistic skin tones with no color grading. Sharp, clean, in-focus capture — the texture is the skin and hair themselves, not compression artifacts, grain, or motion blur. ${imperfectionText}`,
   ]
     .filter((line) => line !== undefined)
     .join("\n")

@@ -20,7 +20,7 @@
  */
 
 import { qualityTierToResolution } from "@/lib/seedance/engines";
-import type { Seedance25Mode } from "@/lib/seedance/v25/types";
+import type { Seedance25BitrateMode, Seedance25Mode } from "@/lib/seedance/v25/types";
 import type { Seedance25RequestInput } from "@/lib/seedance/v25/schema";
 import type { QualityTier } from "@/lib/types";
 import type { SeedanceV4WizardState } from "../types";
@@ -145,6 +145,25 @@ function mediaForMode(
   }
 }
 
+/**
+ * Effective `bitrate_mode` for the request (F1).
+ *
+ * Enhancor prices a job on resolution x duration x video-inputs ONLY —
+ * `bitrate_mode` is not a rate dimension (docs/seedance-2.5/01-API-REFERENCE.md),
+ * so "high" costs exactly the same as "standard". A Final 1080p is the
+ * deliverable master, so it always ships at "high".
+ *
+ * Chosen semantics: `SeedanceV4WizardState.bitrateMode` is a bare value with a
+ * "standard" default and carries no "the user touched this" flag, so a
+ * deliberate "standard" on a Final is indistinguishable from the untouched
+ * default. Since "high" is free and can only help a 1080p master, finals
+ * resolve to "high" regardless. Drafts pass the state through verbatim, so an
+ * explicit "high" picked in Advanced still wins on a draft tier.
+ */
+function bitrateForRequest(state: SeedanceV4WizardState): Seedance25BitrateMode {
+  return state.qualityTier === "final-1080p" ? "high" : state.bitrateMode;
+}
+
 /** Build the 2.5 request (wire field names, no webhook_url — the server adds it). */
 export function buildSeedance25Request(
   state: SeedanceV4WizardState,
@@ -158,7 +177,7 @@ export function buildSeedance25Request(
     aspect_ratio: state.aspectRatio,
     pass_faces: state.passFaces,
     is_uncensored: state.isUncensored,
-    bitrate_mode: state.bitrateMode,
+    bitrate_mode: bitrateForRequest(state),
     ...mediaForMode(state, editedSegments),
   };
 

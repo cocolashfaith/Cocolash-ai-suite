@@ -16,7 +16,8 @@ export const runtime = "nodejs";
  * POST /api/seedance/[id]/rerender — "Re-render as Final" (D3, 03-PLAN.md §1.4).
  *
  * Copies the source row's `request_payload` (the normalized Seedance25Request:
- * identical prompt, identical input URLs), forces `resolution: "1080p"`, applies
+ * identical prompt, identical input URLs), forces `resolution: "1080p"` and
+ * `bitrate_mode: "high"` (free — Enhancor does not price bitrate), applies
  * the optional duration override, and runs the SAME 2.5 generation path with
  * `qualityTier: "final-1080p"` and `rerenderOf` pointing at the source. The new
  * row links back via `rerender_of`.
@@ -93,6 +94,10 @@ export async function POST(
       request: {
         ...payload,
         resolution: "1080p",
+        // F1: Enhancor rates key on resolution x duration x video-inputs only —
+        // `bitrate_mode` is not priced, so "high" is free. This IS the Final
+        // master, so it always overrides whatever the draft was rendered at.
+        bitrate_mode: "high",
         ...(overrideApplies ? { duration: parsedBody.data.duration } : {}),
       },
       qualityTier: "final-1080p" as const,

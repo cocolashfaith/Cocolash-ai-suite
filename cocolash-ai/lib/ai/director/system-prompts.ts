@@ -449,12 +449,93 @@ export interface VisionDirectorPromptOptions {
   influencerCount?: number;
   /** Product images supplied (@product_image1..N). Default 1. */
   productImageCount?: number;
+  /**
+   * Clip runtime in seconds. `-1` (`AUTO_DURATION`) or omitted means the model
+   * picks the length; we still plan a concrete runtime so the beats have a
+   * shape. F2 (06-QUALITY-PASS.md): the Director used to write every prompt as
+   * if it were a 5-second clip regardless of what the user actually ordered.
+   */
+  durationSeconds?: number;
+  /** Frame the clip ships in, e.g. `"9:16"`. Default `"9:16"`. */
+  aspectRatio?: string;
+  /**
+   * H4: the first influencer reference already shows the creator holding the
+   * product (the opt-in composed avatar). The writer must not stage a pickup or
+   * re-introduce the product as if it were new.
+   */
+  influencerAlreadyHoldsProduct?: boolean;
 }
 
 /** `@product_image1 … @product_imageN` — one token per supplied product image. */
 export function productImageTokens(count: number): string[] {
   const n = Math.max(1, Math.floor(count));
   return Array.from({ length: n }, (_, i) => `@product_image${i + 1}`);
+}
+
+/** Runtime we plan for when the user chose Auto (the model picks the length). */
+export const VISION_AUTO_PLAN_SECONDS = 10;
+
+/** At or above this runtime the prompt must carry timed beats (F2). */
+export const VISION_BEATS_MIN_SECONDS = 10;
+
+/**
+ * How the clip is framed, in words the video model responds to.
+ * "9:16" on its own means nothing to it; "vertical 9:16 phone frame" does.
+ */
+export function describeVisionFrame(aspectRatio?: string): string {
+  const ratio = aspectRatio?.trim() || "9:16";
+  const [w, h] = ratio.split(":").map((part) => Number(part.trim()));
+  if (!Number.isFinite(w) || !Number.isFinite(h) || w <= 0 || h <= 0) {
+    return `${ratio} frame`;
+  }
+  if (h > w) return `vertical ${ratio} phone frame`;
+  if (w > h) return `horizontal ${ratio} frame`;
+  return `square ${ratio} frame`;
+}
+
+/**
+ * The runtime the prompt should be written for, and whether it needs beats.
+ *
+ * Auto (`-1`) is planned at ~10 s: long enough that a single undifferentiated
+ * action reads as a stall, so it gets beats like any other ≥10 s clip.
+ */
+export function visionClipPlan(durationSeconds?: number): {
+  isAuto: boolean;
+  plannedSeconds: number;
+  needsBeats: boolean;
+  beats: string[];
+} {
+  const raw = durationSeconds;
+  const isAuto =
+    raw === undefined || !Number.isFinite(raw) || (raw as number) < 0;
+  const plannedSeconds = isAuto
+    ? VISION_AUTO_PLAN_SECONDS
+    : Math.round(raw as number);
+  const needsBeats = plannedSeconds >= VISION_BEATS_MIN_SECONDS;
+  return {
+    isAuto,
+    plannedSeconds,
+    needsBeats,
+    beats: needsBeats ? timedBeatLabels(plannedSeconds) : [],
+  };
+}
+
+/**
+ * `[0–5s] [5–10s] …` covering the full runtime with no gap and no overlap.
+ * A trailing stub shorter than 4 s is absorbed by the previous beat, so a 12 s
+ * clip reads `[0–5s] [5–12s]` rather than ending on a 2-second fragment.
+ */
+function timedBeatLabels(totalSeconds: number): string[] {
+  const labels: string[] = [];
+  let start = 0;
+  while (start < totalSeconds) {
+    let end = Math.min(start + 5, totalSeconds);
+    const remainder = totalSeconds - end;
+    if (remainder > 0 && remainder < 4) end = totalSeconds;
+    labels.push(`[${start}–${end}s]`);
+    start = end;
+  }
+  return labels;
 }
 
 /**
@@ -478,6 +559,34 @@ export function buildSeedanceVisionDirectorPrompt(
   const productTokenList = productImageTokens(p).join(", ");
   const plural = p === 1 ? "" : "s";
 
+  // F2 — the clip's real length and frame, and the beat structure they imply.
+  const frame = describeVisionFrame(options.aspectRatio);
+  const clip = visionClipPlan(options.durationSeconds);
+  const runtimeLine = clip.isAuto
+    ? `This clip runs on AUTO — the model picks the length, so plan for about ${clip.plannedSeconds} seconds of screen time.`
+    : `This clip runs ${clip.plannedSeconds} seconds. Write for exactly that runtime — not a 5-second idea stretched over it, and not more than it can hold.`;
+  const beatBlock = clip.needsBeats
+    ? `At ${clip.plannedSeconds} seconds this is a multi-beat clip, so the prompt MUST be structured into timed beats that cover the WHOLE runtime, in this shape:
+
+${clip.beats.map((label) => `${label} …`).join("\n")}
+
+Each beat carries one action and one camera treatment. The beats run in order, with no gap and no overlap, and the last one ends at ${clip.plannedSeconds}s. If a beat has nothing new to do, let it breathe — hold the shot, let her finish a line — rather than inventing another product interaction to fill it.`
+    : `At ${clip.plannedSeconds} seconds this is a single-beat clip. Write it as ONE continuous action with ONE camera move. Do NOT split it into timed shot labels; there is not enough runtime for a second beat to land.`;
+
+  // H4 — the composed avatar: the creator is already holding the product in
+  // the first influencer reference, so a pickup beat would be a continuity
+  // break and a second product introduction.
+  const composedBlock = options.influencerAlreadyHoldsProduct
+    ? `\nTHE CREATOR IS ALREADY HOLDING THE PRODUCT:
+
+@influencer_image1 already shows the creator holding this product. Write from that state:
+- Do NOT stage a pickup. No reaching for it, no picking it up off a counter, no unpacking it, no "she grabs the box" — it is already in her hands when the clip starts.
+- Do NOT re-introduce the product as if it were new to the shot. It is established in frame from the first second; the beats are about what she does WITH it.
+- The PRODUCT images (${productTokenList}) stay authoritative for what the product looks like — colour, finish, text, contents. Describe its appearance from those, never from the composed influencer frame.
+- Use @influencer_image1 only for grip, pose and scale: which hand, how she holds it, how big it reads against her face.
+`
+    : "";
+
   const orderBlock =
     n === 1
       ? `1. Image 1 (first image): The influencer/creator → reference as @influencer_image1
@@ -498,6 +607,21 @@ ${orderBlock}
 
 Use ${influencerTokens} for the creator and ${productTokenList} for the products.
 
+PAIR EVERY TOKEN WITH A PLAIN NOUN:
+
+Every @-token you write in the OUTPUT must be immediately followed by a short, plain-language restatement of what it is, set off by a comma or brackets:
+- "@product_image1, the tan lash kit box"
+- "@influencer_image1, the creator with the dark curls"
+- "${productImageTokens(p).at(-1)} (the opened box, fitted tray of tools visible)"
+Never leave a bare token standing on its own. The tokens are documented for Seedance 2.0 and unverified on 2.5: if the model treats them as plain text, the sentence must still read correctly and still describe the right object.
+
+CLIP LENGTH AND FRAME:
+
+${runtimeLine}
+Shoot it for a ${frame}: compose for that frame, keep the creator and the product inside it, and do not describe a composition that only works in a wider frame.
+
+${beatBlock}
+${composedBlock}
 USE EVERY PRODUCT IMAGE — NON-NEGOTIABLE:
 
 You were given ${p} product image${plural}: ${productTokenList}.
@@ -515,6 +639,10 @@ The script was written by someone who never saw this product. It is dialogue, no
 4. A claim you CANNOT see: never turn it into a visual beat. Do not stage it, do not describe it, do not imply it with a camera move. It is not in the video.
 5. If a spoken line asserts a physical feature you cannot see, reword the minimum number of words so the line is true to the images (or drop that clause) and keep the rest of the line intact. The creator's meaning, tone and CTA stay; only the false visual claim goes.
 6. Report every claim you dropped or reworded in the SCRIPT AUDIT block described under OUTPUT. Never mention the audit inside the prompt itself.
+
+OPEN WITH THE CREATOR — NON-NEGOTIABLE:
+
+The FIRST SENTENCE of the prompt must name the subject: the creator from @influencer_image1, described concretely (who she is, what she looks like, what she is doing). She comes before the room, before the lighting, before the product, before any style word. Nothing may be prepended ahead of her — not a scene-setter, not a category line, not an establishing shot of the packaging. The video model weights the opening of the prompt most heavily; if the product opens the prompt, identity drifts.
 
 STYLE REQUIREMENTS:
 
@@ -536,14 +664,24 @@ STYLE REQUIREMENTS:
    - "natural sunlight"
    - "intimate / unpolished / real / casual vibe"
 
-3. Include VIBE and TONE:
+3. Give the CAMERA an explicit treatment — every prompt, ${
+    clip.needsBeats ? "and every beat" : "once"
+  }. State a SHOT SIZE (close-up · medium close-up · medium · wide) and ONE motion (slow push-in · handheld follow · static with natural sway), phrased as handheld phone footage shot by the creator or a friend — never a crane, dolly, drone or steadicam, and never the empty phrase "cinematic movement".
+
+4. Include VIBE and TONE:
    - casual, genuine, excited, authentic, candid
    - "talking casually and excitedly like a genuine product review"
    - "natural handheld shake, candid expressions"
 
-4. Append the spoken SCRIPT at the end:
-   - "Script she is speaking: [the script]"
-   - Reproduce it word-for-word EXCEPT for wording your audit found to be false to the images (rule 5 above).
+5. Place the spoken SCRIPT in its own delimited block, on its own line, near the end:
+
+   SPOKEN SCRIPT — verbatim dialogue, not staging: "[the script]"
+
+   - That label matters: it tells the model the words inside are to be SPOKEN, not rendered as on-screen text or acted out as literal staging.
+   - Reproduce it word-for-word EXCEPT for wording your audit found to be false to the images (rule 5 of the audit above).
+
+6. CLOSE the prompt with a one-line visual constraint tail AFTER the script block — the last thing the model reads must be the constraint, not the dialogue. One line, positive phrasing, covering: framing stays steady, the creator's identity stays consistent with @influencer_image1, and the product stays exactly as the product references show it. For example:
+   "Framing stays steady, her face and hair stay consistent with @influencer_image1 throughout, and the product keeps the exact shape, colour and text shown in the product references."
 
 PRODUCT TRUTH AND HONESTY:
 
@@ -556,6 +694,8 @@ There is no fourth source. You have no general knowledge of this brand's product
 
 Write POSITIVELY only. Never put a negation in the prompt ("no glass cover", "not magnetic", "without a mirror"): video models render the negated noun. Describe what IS there instead, and leave everything else unmentioned.
 ${truth ? `\n${truth}\n` : ""}
+${BRAND_NEGATIVE_PROMPT}
+
 OUTPUT:
 
 Return the Seedance prompt text first, with nothing before it: no markdown, no code fences, no preamble, no "Here's your prompt:" — just the raw prompt, ready to send to Seedance.

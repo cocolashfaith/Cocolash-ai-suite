@@ -93,12 +93,15 @@ DO NOT alter the product. Integrate it naturally into the creator's hand or clos
       fullPrompt = `${prompt}\n\n[NEGATIVE PROMPT — avoid these qualities entirely]\n${negativePrompt}`;
     }
 
+    // F10 (docs/seedance-2.5/06-QUALITY-PASS.md): 2K, not 1K. This image is
+    // the identity reference Seedance conditions every frame on — the extra
+    // pixels are where lash fibres, pores and brand text survive the render.
     const result = await generateImage(
       fullPrompt,
       imageAspect,
       referenceImages,
       referenceInstruction,
-      "1K"
+      "2K"
     );
 
     const supabase = await createAdminClient();
