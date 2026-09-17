@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useRef, useCallback } from "react";
+import { useState, useEffect, useMemo, useRef, useCallback } from "react";
 import { toast } from "sonner";
 import {
   Loader2,
@@ -54,6 +54,16 @@ interface GalleryAvatar {
   id: string;
   image_url: string;
   created_at: string;
+  /** Gallery tags — `ugc-avatar-composed` marks a shot already holding the product. */
+  tags?: string[] | null;
+}
+
+/** One composed-avatar generation attempt, kept until approved or discarded. */
+interface ComposedAttempt {
+  url: string;
+  /** H3(b) fact-check verdict (null = clean or still checking). */
+  warning: string | null;
+  checking: boolean;
 }
 
 function pickRandom<T>(arr: readonly { value: T }[]): T {
@@ -356,16 +366,28 @@ export function UgcMode({ state, setState, onReady }: UgcModeProps) {
   const [galleryAvatars, setGalleryAvatars] = useState<GalleryAvatar[]>([]);
   const [loadingGallery, setLoadingGallery] = useState(false);
 
-  // H3(a) — a composed avatar is NOT auto-added. It lands in a preview the
-  // user has to explicitly approve (or regenerate), clearly labelled as
-  // "holding product".
-  const [pendingComposed, setPendingComposed] = useState<string | null>(null);
+  // H3(a) — a composed avatar is NOT auto-added. Every attempt lands in a
+  // strip the user can regenerate into until satisfied, then explicitly
+  // approve the one they like (clearly labelled "holding product"). Attempts
+  // are also persisted server-side to the gallery (tag `ugc-avatar-composed`),
+  // so a good one can be reused for a video in a LATER session.
+  const [composedAttempts, setComposedAttempts] = useState<ComposedAttempt[]>(
+    []
+  );
+  const [selectedComposedUrl, setSelectedComposedUrl] = useState<string | null>(
+    null
+  );
+  /** The approved attempt's fact-check warning, carried into Continue. */
   const [composeWarning, setComposeWarning] = useState<string | null>(null);
-  const [checkingCompose, setCheckingCompose] = useState(false);
   /** The composed image the user approved, once it is in the selection. */
   const [approvedComposedUrl, setApprovedComposedUrl] = useState<string | null>(
     null
   );
+
+  const selectedAttempt =
+    composedAttempts.find((a) => a.url === selectedComposedUrl) ??
+    composedAttempts[composedAttempts.length - 1] ??
+    null;
 
   // F7 — provenance of every chosen reference, for the mixed-identity guard.
   const [refOrigins, setRefOrigins] = useState<
@@ -379,8 +401,21 @@ export function UgcMode({ state, setState, onReady }: UgcModeProps) {
   const maxInfluencers = Math.max(0, combinedCap - productCount);
   const atLimit = influencers.length >= maxInfluencers;
 
-  const composeEnabled = state.ugcComposeEnabled ?? false;
+  // H5 — default flipped ON 2026-09-17 after the A/B (compose-on won on
+  // identity/scene continuity and opening product presence at equal cost).
+  const composeEnabled = state.ugcComposeEnabled ?? true;
   const canCompose = productCount > 0;
+
+  /** Gallery avatars generated already holding the product (composed). */
+  const composedGalleryUrls = useMemo(
+    () =>
+      new Set(
+        galleryAvatars
+          .filter((a) => (a.tags ?? []).includes("ugc-avatar-composed"))
+          .map((a) => a.image_url)
+      ),
+    [galleryAvatars]
+  );
   /** Only true while the approved composed image is still in the selection. */
   const composedInSelection =
     !!approvedComposedUrl && influencers.includes(approvedComposedUrl);
@@ -515,8 +550,6 @@ export function UgcMode({ state, setState, onReady }: UgcModeProps) {
     }
     const composing = composeEnabled && canCompose;
     setIsGeneratingAvatar(true);
-    setPendingComposed(null);
-    setComposeWarning(null);
     try {
       const res = await fetch("/api/seedance/generate-ugc-image", {
         method: "POST",
@@ -549,32 +582,53 @@ export function UgcMode({ state, setState, onReady }: UgcModeProps) {
         return;
       }
 
-      // H3(a) — composed images wait for an explicit approval.
-      setPendingComposed(data.imageUrl);
+      // H3(a) — composed images wait for an explicit approval. Every attempt
+      // is KEPT in the strip so the user can regenerate until satisfied and
+      // then pick the best one — earlier attempts are never thrown away.
+      setComposedAttempts((prev) => [
+        ...prev,
+        { url: data.imageUrl, warning: null, checking: true },
+      ]);
+      setSelectedComposedUrl(data.imageUrl);
       toast.success("Composed avatar ready — review it below.");
 
       // H3(b) — best-effort fact check against the cached real-reference facts.
-      setCheckingCompose(true);
       const reason = await checkComposedProductFacts(
         data.imageUrl,
         state.productFacts
       );
-      setComposeWarning(reason);
+      setComposedAttempts((prev) =>
+        prev.map((a) =>
+          a.url === data.imageUrl
+            ? { ...a, warning: reason, checking: false }
+            : a
+        )
+      );
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Avatar generation failed");
     } finally {
-      setCheckingCompose(false);
       setIsGeneratingAvatar(false);
     }
   }
 
   /** H3(a) — the explicit approval gate on a composed avatar. */
   function handleApproveComposed() {
-    if (!pendingComposed) return;
-    addComposedFirst(pendingComposed, `gen-${++batchSeq.current}`);
-    setApprovedComposedUrl(pendingComposed);
-    setPendingComposed(null);
+    if (!selectedAttempt) return;
+    addComposedFirst(selectedAttempt.url, `gen-${++batchSeq.current}`);
+    setApprovedComposedUrl(selectedAttempt.url);
+    setComposeWarning(selectedAttempt.warning);
+    // The strip's job is done — unapproved attempts stay in the gallery.
+    setComposedAttempts([]);
+    setSelectedComposedUrl(null);
     toast.success("Composed avatar added as the first influencer reference.");
+  }
+
+  /** Drop just the selected attempt; the rest of the strip stays. */
+  function handleDiscardAttempt() {
+    if (!selectedAttempt) return;
+    const next = composedAttempts.filter((a) => a.url !== selectedAttempt.url);
+    setComposedAttempts(next);
+    setSelectedComposedUrl(next.length > 0 ? next[next.length - 1].url : null);
   }
 
   const handleContinue = useCallback(() => {
@@ -602,12 +656,18 @@ export function UgcMode({ state, setState, onReady }: UgcModeProps) {
       ? composedFirst(chosen, composedUrl, chosen.length)
       : chosen;
 
+    // A composed avatar picked from the GALLERY (a previous session's
+    // attempt, tag `ugc-avatar-composed`) counts too — the Director must know
+    // an influencer reference already holds the product either way.
+    const hasComposedRef =
+      !!composedUrl || ordered.some((u) => composedGalleryUrls.has(u));
+
     setState({
       ugcInfluencerImageUrls: ordered,
       ugcInfluencerImageUrl: ordered[0],
       // Clear legacy single-image compose fields so Step 3 uses the vision path.
       ugcComposedImageUrl: undefined,
-      ugcWasComposed: !!composedUrl,
+      ugcWasComposed: hasComposedRef,
       ugcSeparateProductUrl: undefined,
       ugcComposeWarning:
         composedUrl && composeWarning
@@ -620,6 +680,7 @@ export function UgcMode({ state, setState, onReady }: UgcModeProps) {
     state.ugcProductImageUrls,
     approvedComposedUrl,
     composeWarning,
+    composedGalleryUrls,
     setState,
     onReady,
   ]);
@@ -742,7 +803,9 @@ export function UgcMode({ state, setState, onReady }: UgcModeProps) {
             <Dropdown label="Vibe" value={vibe} options={UGC_VIBE_OPTIONS} onChange={(v) => setVibe(v as UGCVibe)} />
           </div>
 
-          {/* H1 — "Generate holding the product". Opt-in, default OFF (H5). */}
+          {/* H1 — "Generate holding the product". Default ON since the
+              2026-09-17 A/B (H5); still gated on Step-1 products and still
+              switchable off. */}
           <div className="space-y-2 rounded-lg border-2 border-coco-beige-dark bg-white/60 p-3">
             <div className="flex items-center justify-between gap-3">
               <div>
@@ -767,7 +830,8 @@ export function UgcMode({ state, setState, onReady }: UgcModeProps) {
                   const next = !composeEnabled;
                   setState({ ugcComposeEnabled: next });
                   if (!next) {
-                    setPendingComposed(null);
+                    setComposedAttempts([]);
+                    setSelectedComposedUrl(null);
                     setComposeWarning(null);
                   }
                 }}
@@ -853,14 +917,25 @@ export function UgcMode({ state, setState, onReady }: UgcModeProps) {
             </Button>
           </div>
 
-          {/* H3(a) — approval gate. The composed shot is never auto-selected. */}
-          {pendingComposed && (
+          {/* H3(a) — approval gate. Composed shots are never auto-selected;
+              every attempt is kept so you can regenerate until satisfied and
+              pick the best one. */}
+          {selectedAttempt && (
             <div className="space-y-3 rounded-xl border-2 border-coco-golden/40 bg-coco-golden/5 p-3">
               <div className="flex items-baseline justify-between gap-3">
                 <h4 className="text-xs font-semibold text-coco-brown">
                   Composed avatar — holding product
+                  {composedAttempts.length > 1 && (
+                    <span className="ml-1.5 font-normal text-coco-brown-medium/60">
+                      (attempt{" "}
+                      {composedAttempts.findIndex(
+                        (a) => a.url === selectedAttempt.url
+                      ) + 1}{" "}
+                      of {composedAttempts.length})
+                    </span>
+                  )}
                 </h4>
-                {checkingCompose && (
+                {selectedAttempt.checking && (
                   <span className="flex items-center gap-1 text-[10px] text-coco-brown-medium/60">
                     <Loader2 className="h-3 w-3 animate-spin" />
                     Checking the product…
@@ -871,7 +946,7 @@ export function UgcMode({ state, setState, onReady }: UgcModeProps) {
                 <div className="relative w-24 shrink-0">
                   {/* eslint-disable-next-line @next/next/no-img-element */}
                   <img
-                    src={pendingComposed}
+                    src={selectedAttempt.url}
                     alt="Composed avatar holding product"
                     className="aspect-[9/16] w-full rounded-lg border-2 border-coco-golden/40 object-cover"
                   />
@@ -881,13 +956,16 @@ export function UgcMode({ state, setState, onReady }: UgcModeProps) {
                 </div>
                 <div className="flex-1 space-y-2">
                   <p className="text-[11px] text-coco-brown-medium/70">
-                    Check the product looks right before you use it. Approving adds
-                    it as your FIRST influencer reference; your Step-1 product
-                    photos still go to Seedance untouched.
+                    Check the product: the front label should face the camera,
+                    upright and readable. Not right? Regenerate as many times as
+                    you like — every attempt stays here AND in your gallery, so
+                    you can also come back and make the video later. Approving
+                    adds the shown image as your FIRST influencer reference;
+                    your Step-1 product photos still go to Seedance untouched.
                   </p>
 
                   {/* H3(b) — amber, never blocking. */}
-                  {composeWarning && (
+                  {selectedAttempt.warning && (
                     <div className="flex items-start gap-2 rounded-lg border-2 border-amber-200 bg-amber-50 px-2.5 py-2">
                       <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0 text-amber-600" />
                       <div>
@@ -895,7 +973,7 @@ export function UgcMode({ state, setState, onReady }: UgcModeProps) {
                           {COMPOSE_FACT_WARNING}
                         </p>
                         <p className="mt-0.5 text-[10px] text-amber-800">
-                          {composeWarning}.
+                          {selectedAttempt.warning}.
                         </p>
                       </div>
                     </div>
@@ -926,17 +1004,43 @@ export function UgcMode({ state, setState, onReady }: UgcModeProps) {
                       type="button"
                       size="sm"
                       variant="ghost"
-                      onClick={() => {
-                        setPendingComposed(null);
-                        setComposeWarning(null);
-                      }}
+                      onClick={handleDiscardAttempt}
                       className="text-xs text-coco-brown-medium/70"
                     >
-                      Discard
+                      Discard attempt
                     </Button>
                   </div>
                 </div>
               </div>
+
+              {/* The attempts strip — tap to compare, then approve the best. */}
+              {composedAttempts.length > 1 && (
+                <div className="flex gap-1.5 overflow-x-auto pb-1">
+                  {composedAttempts.map((a, i) => (
+                    <button
+                      key={a.url}
+                      type="button"
+                      onClick={() => setSelectedComposedUrl(a.url)}
+                      className={cn(
+                        "relative aspect-[9/16] h-20 shrink-0 overflow-hidden rounded-md border-2 transition-all",
+                        a.url === selectedAttempt.url
+                          ? "border-coco-golden ring-2 ring-coco-golden/30"
+                          : "border-transparent hover:border-coco-golden/40"
+                      )}
+                    >
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img
+                        src={a.url}
+                        alt={`Composed attempt ${i + 1}`}
+                        className="h-full w-full object-cover"
+                      />
+                      <span className="absolute right-0.5 bottom-0.5 rounded bg-coco-brown/80 px-1 text-[8px] font-semibold text-white">
+                        {i + 1}
+                      </span>
+                    </button>
+                  ))}
+                </div>
+              )}
             </div>
           )}
         </section>
@@ -993,6 +1097,11 @@ export function UgcMode({ state, setState, onReady }: UgcModeProps) {
                       alt="UGC avatar"
                       className="h-full w-full object-cover"
                     />
+                    {(img.tags ?? []).includes("ugc-avatar-composed") && (
+                      <span className="absolute bottom-1 left-1 rounded-full bg-coco-brown/80 px-1.5 py-0.5 text-[9px] font-semibold text-white">
+                        holding product
+                      </span>
+                    )}
                     {isSelected && (
                       <div className="absolute inset-0 flex items-center justify-center bg-coco-golden/20">
                         <div className="flex h-6 w-6 items-center justify-center rounded-full bg-coco-golden">

@@ -84,11 +84,18 @@ export async function POST(request: NextRequest) {
       referenceInstruction = `[PRODUCT INTEGRATION — 1 reference image provided]
 The reference image is the EXACT product the creator must be holding. Preserve:
 - The exact product packaging, colors, branding, label text, and proportions
-- Natural hand positioning — fingers wrap around the product realistically
+- Orientation: the product's FRONT face — the one with the main brand lettering — faces the camera squarely and upright, so the lettering reads correctly left-to-right, exactly as printed in the reference
+- Natural hand positioning — fingers wrap around the product realistically without covering the brand lettering
 - Lighting consistent with the bedroom / scene
 DO NOT alter the product. Integrate it naturally into the creator's hand or close to her face. The product should be clearly visible to camera.`;
+      // Orientation is the #1 compose failure mode (label away from camera,
+      // tilted, or mirrored) — say it positively in the prompt AND list the
+      // failure modes in the image negative prompt (image models honour
+      // negatives; this never reaches the video prompt).
+      const composeNegatives =
+        "mirrored or reversed brand lettering, upside-down packaging, back of the packaging to camera, label turned away from camera, product tilted so the text is unreadable, fingers covering the brand name";
       fullPrompt =
-        `${prompt}\n\nThe creator is naturally holding the product shown in the reference image — at chest level, in one hand, with the brand label angled to camera. Treat this composition as if it's the same UGC photograph already framed; the product should look like it was naturally part of the scene.\n\n[NEGATIVE PROMPT — avoid these qualities entirely]\n${negativePrompt}`;
+        `${prompt}\n\nThe creator is naturally holding the product shown in the reference image — at chest level, in one hand, the FRONT label facing the camera squarely, upright and fully readable. Treat this composition as if it's the same UGC photograph already framed; the product should look like it was naturally part of the scene.\n\n[NEGATIVE PROMPT — avoid these qualities entirely]\n${negativePrompt}, ${composeNegatives}`;
     } else {
       fullPrompt = `${prompt}\n\n[NEGATIVE PROMPT — avoid these qualities entirely]\n${negativePrompt}`;
     }
@@ -133,7 +140,12 @@ DO NOT alter the product. Integrate it naturally into the creator's hand or clos
         aspectRatio: imageAspect,
         promptUsed: fullPrompt.slice(0, 8000),
         selections,
-        tags: ["ugc-avatar"],
+        // Composed shots carry a second tag so the wizard's gallery can mark
+        // them "holding product" and restore the composed flag in a later
+        // session.
+        tags: productImageUrl
+          ? ["ugc-avatar", "ugc-avatar-composed"]
+          : ["ugc-avatar"],
         geminiModel: result.model,
       });
       galleryImageId = inserted?.id;

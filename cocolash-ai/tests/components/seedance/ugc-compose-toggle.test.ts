@@ -160,8 +160,11 @@ describe("H2 — composedFirst", () => {
 });
 
 describe("H2 — Continue wiring (component source)", () => {
-  it("sets ugcWasComposed from the approved composed image, not a constant false", () => {
-    expect(source).toContain("ugcWasComposed: !!composedUrl");
+  it("sets ugcWasComposed from composed provenance, not a constant false", () => {
+    // TRUE for a freshly-approved composed shot AND for a gallery pick that
+    // was composed in an earlier session (tag `ugc-avatar-composed`).
+    expect(source).toContain("ugcWasComposed: hasComposedRef");
+    expect(source).toContain("composedGalleryUrls.has(u)");
     expect(source).not.toContain("ugcWasComposed: false");
   });
 
@@ -273,14 +276,30 @@ describe("H3(b) — checkComposedProductFacts", () => {
 });
 
 describe("H3(a) — the composed image is approved, never auto-selected", () => {
-  it("routes composed results into a pending preview rather than the selection", () => {
-    expect(source).toContain("setPendingComposed(data.imageUrl)");
+  it("routes composed results into a kept attempts strip rather than the selection", () => {
+    expect(source).toContain("setSelectedComposedUrl(data.imageUrl)");
     expect(source).toContain("handleApproveComposed");
+    // Attempts APPEND — regenerating must never wipe earlier attempts.
+    expect(source).toContain(
+      "{ url: data.imageUrl, warning: null, checking: true },"
+    );
+    expect(source).not.toContain("setComposedAttempts([]);\n    try {");
   });
 
   it("labels the preview as holding the product and offers a regenerate", () => {
     expect(source).toContain("holding product");
     expect(source).toContain("Regenerate");
+  });
+
+  it("lets the user discard ONE attempt while keeping the rest", () => {
+    expect(source).toContain("handleDiscardAttempt");
+    expect(source).toContain(
+      "composedAttempts.filter((a) => a.url !== selectedAttempt.url)"
+    );
+  });
+
+  it("marks composed gallery avatars so a later session can reuse them", () => {
+    expect(source).toContain('includes("ugc-avatar-composed")');
   });
 
   it("never hard-blocks on the fact-check warning", () => {
@@ -345,8 +364,9 @@ describe("H1 — the toggle in the Generate tab (component source)", () => {
     expect(source).toContain('aria-label="Generate holding the product"');
   });
 
-  it("defaults OFF (H5)", () => {
-    expect(source).toContain("state.ugcComposeEnabled ?? false");
+  it("defaults ON (H5 — flipped after the 2026-09-16 A/B win)", () => {
+    expect(source).toContain("state.ugcComposeEnabled ?? true");
+    expect(source).not.toContain("state.ugcComposeEnabled ?? false");
   });
 
   it("is disabled with a hint until Step 1 has product images", () => {

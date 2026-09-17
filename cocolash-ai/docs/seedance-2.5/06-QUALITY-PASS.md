@@ -13,7 +13,7 @@ are deliberately HELD until after the A/B so we change one variable at a time.
 | H2 | **Composed shot = FIRST influencer reference, added alongside** — never replacing the clean product photos, which stay authoritative for product detail. It enters via the normal influencer array and rides `influencers[]` untouched. |
 | H3 | **Two gates on the composed image**: (a) the user sees it and approves/regenerates before continuing; (b) it is fact-checked by the same product-fact extractor used for scripts — if the composed product contradicts the real refs, warn before use. |
 | H4 | **The Director is told** when the influencer reference already holds the product (`influencerAlreadyHoldsProduct`), so it stops staging a pickup and doesn't double-describe the product. |
-| H5 | Default stays OFF until an A/B on the kit proves it (~$4.30: compose-off vs compose-on, same script/settings). Flip the default only on evidence. |
+| H5 | ~~Default stays OFF until an A/B on the kit proves it~~ **Ran 2026-09-16, compose-on won → default flipped ON 2026-09-17** (see below). Still gated on Step-1 products, still switchable off. |
 
 ## Findings implemented now (from the 15-point quality review)
 
@@ -43,6 +43,33 @@ are deliberately HELD until after the A/B so we change one variable at a time.
 1. Compose-off vs compose-on: same kit, same script, 720p/8s each ($2.15 ×2).
 2. One Final-1080p at the new high bitrate, 8 s ($3.90) — hair/lash/skin gradient check vs the standard-bitrate final.
 3. Then (separate go): Faith's two failure cases, 2.0 vs 2.5.
+
+## A/B outcome + follow-ups (2026-09-16/17)
+
+The verification set ran on production for $8.20 exactly: A compose-off `0c4babea` and
+B compose-on `5033cdea` (720p/8s, 2154.4 cr each), C = B re-rendered as Final 1080p
+`7781beb0` (3898.4 cr = exact estimate — **free high bitrate proven on the bill**;
+18.1 Mbps vs 10.6/7.9). Compose-on won: the video opens ON the composed reference
+(identity, scene, grip locked from frame 0, no invented handoff), while compose-off
+drifted the scene. Both showed the grounding fix live (real lid mirror with correct
+reflections, right tools/labels, no glass, no strips; validator had nothing to fix).
+Remaining model-level artifacts: fabricated fine-print near the wordmark, box-edge
+URL occasionally misspelled.
+
+Harry's follow-ups (2026-09-17), all shipped:
+
+- **Default ON** (H5 flipped) — `state.ugcComposeEnabled ?? true`, still product-gated.
+- **Orientation** — the composed shot sometimes held the box with the label away
+  from camera / tilted / mirrored. The compose route now pins orientation positively
+  (front face square to camera, lettering left-to-right, fingers off the wordmark)
+  and lists the failure modes in the IMAGE negative prompt (image models honour
+  negatives; nothing reaches the video prompt).
+- **Regenerate until satisfied** — every composed attempt is kept in a strip
+  (numbered thumbnails, tap to compare); Discard removes one attempt; approving
+  the shown attempt clears the strip.
+- **Make the video later** — composed shots are tagged `ugc-avatar-composed` in the
+  gallery, badged "holding product" in the wizard's Gallery tab, and picking one in a
+  later session restores `ugcWasComposed` so the Director still skips the staged pickup.
 
 ## Codex note
 

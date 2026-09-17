@@ -143,3 +143,31 @@ describe("F10 — the avatar route renders at 2K", () => {
     expect(routeSource).not.toContain('"1K"');
   });
 });
+
+// ── Compose orientation (2026-09-17, Harry's report) ─────────
+//
+// The #1 composed-avatar failure mode is product orientation: label away from
+// camera, tilted, or mirrored. The route must pin the orientation positively
+// in the prompt AND list the failure modes in the IMAGE negative prompt
+// (image models honour negatives; nothing here ever reaches a video prompt).
+
+describe("compose orientation constraints", () => {
+  it("pins the front label to camera in the reference instruction", () => {
+    expect(routeSource).toContain("faces the camera squarely and upright");
+    expect(routeSource).toContain("reads correctly left-to-right");
+  });
+
+  it("repeats the orientation in the composition prompt itself", () => {
+    expect(routeSource).toContain("FRONT label facing the camera squarely");
+  });
+
+  it("lists the orientation failure modes in the image negative prompt", () => {
+    expect(routeSource).toContain("mirrored or reversed brand lettering");
+    expect(routeSource).toContain("upside-down packaging");
+    expect(routeSource).toContain("fingers covering the brand name");
+  });
+
+  it("tags composed shots ugc-avatar-composed for later-session reuse", () => {
+    expect(routeSource).toContain('"ugc-avatar-composed"');
+  });
+});
