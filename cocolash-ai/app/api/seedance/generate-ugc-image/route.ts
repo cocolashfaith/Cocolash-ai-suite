@@ -20,6 +20,12 @@ import {
 } from "@/lib/seedance/ugc-image-prompt";
 import type { LashStyle, VideoAspectRatio } from "@/lib/types";
 
+/** Cap on product reference images sent to the image model per compose. */
+const MAX_COMPOSE_PRODUCT_REFS = 6;
+
+/** Marks a product-image download failure (surfaces as a 400, not a 500). */
+class ProductFetchError extends Error {}
+
 /**
  * POST /api/seedance/generate-ugc-image
  *
@@ -52,37 +58,59 @@ export async function POST(request: NextRequest) {
 
     const { prompt, negativePrompt } = buildUGCImagePrompt(params);
 
-    // v4.1 — when the user has selected a productImageUrl AND toggled
+    // v4.1 — when the user has selected product images AND toggled
     // "Show holding product", we ask Gemini to compose the avatar already
     // holding the product. This produces ONE image instead of two separate
     // images (the BROKEN-04 fix from the audit) AND moves composition to
     // gen-time so the user only generates one image, not two.
-    const productImageUrl: string | undefined =
+    //
+    // ALL selected product images go to the model (capped) — the FIRST is the
+    // shot the creator holds; the rest show the same product from other
+    // angles so the model stops guessing hidden faces of the packaging.
+    const bodyUrls: string[] = Array.isArray(body.productImageUrls)
+      ? (body.productImageUrls as unknown[]).filter(
+          (u): u is string => typeof u === "string" && u.length > 0
+        )
+      : [];
+    const legacyUrl =
       typeof body.productImageUrl === "string" && body.productImageUrl
-        ? body.productImageUrl
-        : undefined;
+        ? [body.productImageUrl as string]
+        : [];
+    const productImageUrls = [
+      ...new Set([...(bodyUrls.length > 0 ? bodyUrls : legacyUrl)]),
+    ].slice(0, MAX_COMPOSE_PRODUCT_REFS);
+    const productImageUrl: string | undefined = productImageUrls[0];
 
     let fullPrompt: string;
     let referenceImages: ReferenceImage[] | undefined;
     let referenceInstruction: string | undefined;
 
     if (productImageUrl) {
-      // Download the product image to pass as a reference to Gemini.
-      const productResp = await fetch(productImageUrl);
-      if (!productResp.ok) {
+      // Download every product image to pass as references to Gemini.
+      referenceImages = await Promise.all(
+        productImageUrls.map(async (url) => {
+          const resp = await fetch(url);
+          if (!resp.ok) {
+            throw new ProductFetchError(`Failed to fetch product image (${resp.status})`);
+          }
+          const buf = Buffer.from(await resp.arrayBuffer());
+          return {
+            base64Data: buf.toString("base64"),
+            mimeType: resp.headers.get("content-type") || "image/png",
+          } satisfies ReferenceImage;
+        })
+      ).catch((err) => {
+        if (err instanceof ProductFetchError) return undefined;
+        throw err;
+      });
+      if (!referenceImages) {
         return NextResponse.json(
-          { error: `Failed to fetch product image (${productResp.status})` },
+          { error: "Failed to fetch a product image" },
           { status: 400 }
         );
       }
-      const buf = Buffer.from(await productResp.arrayBuffer());
-      const productRef: ReferenceImage = {
-        base64Data: buf.toString("base64"),
-        mimeType: productResp.headers.get("content-type") || "image/png",
-      };
-      referenceImages = [productRef];
-      referenceInstruction = `[PRODUCT INTEGRATION — 1 reference image provided]
-The reference image is the EXACT product the creator must be holding. Preserve:
+      referenceInstruction = `[PRODUCT INTEGRATION — ${referenceImages.length} reference image(s) provided]
+The FIRST reference image is the EXACT product the creator must be holding; any further reference images show the SAME product from other angles or opened — use them to get every face of the packaging right, but the creator holds it CLOSED as in the first image. Preserve:
 - The exact product packaging, colors, branding, label text, and proportions
 - Orientation: the product's FRONT face — the one with the main brand lettering — faces the camera squarely and upright, so the lettering reads correctly left-to-right, exactly as printed in the reference
 - Natural hand positioning — fingers wrap around the product realistically without covering the brand lettering

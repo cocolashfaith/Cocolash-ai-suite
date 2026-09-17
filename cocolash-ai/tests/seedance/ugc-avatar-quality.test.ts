@@ -171,3 +171,23 @@ describe("compose orientation constraints", () => {
     expect(routeSource).toContain('"ugc-avatar-composed"');
   });
 });
+
+// ── All product images reach the image model (2026-09-17) ────
+
+describe("compose sends every selected product image", () => {
+  it("accepts the productImageUrls array with a hard cap", () => {
+    expect(routeSource).toContain("MAX_COMPOSE_PRODUCT_REFS = 6");
+    expect(routeSource).toContain("body.productImageUrls");
+  });
+
+  it("keeps the legacy single productImageUrl working", () => {
+    expect(routeSource).toContain("body.productImageUrl");
+  });
+
+  it("tells the model the FIRST reference is the held product", () => {
+    expect(routeSource).toContain(
+      "The FIRST reference image is the EXACT product the creator must be holding"
+    );
+    expect(routeSource).toContain("SAME product from other angles");
+  });
+});

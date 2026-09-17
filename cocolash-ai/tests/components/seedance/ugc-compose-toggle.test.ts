@@ -71,7 +71,7 @@ describe("H1 — buildAvatarRequestBody (compose toggle wiring)", () => {
     expect("productDescription" in body).toBe(false);
   });
 
-  it("sends the FIRST product image + hasProduct:true when the toggle is on", () => {
+  it("sends ALL product images (first = held) + hasProduct:true when the toggle is on", () => {
     const body = buildAvatarRequestBody({
       ...LOOK,
       composeEnabled: true,
@@ -82,7 +82,13 @@ describe("H1 — buildAvatarRequestBody (compose toggle wiring)", () => {
       productFacts: facts(),
     });
     expect(body.hasProduct).toBe(true);
+    // Back-compat single field mirrors [0]; the full set rides alongside so
+    // the image model sees every angle of the packaging.
     expect(body.productImageUrl).toBe("https://cdn.example.com/kit-1.png");
+    expect(body.productImageUrls).toEqual([
+      "https://cdn.example.com/kit-1.png",
+      "https://cdn.example.com/kit-2.png",
+    ]);
     expect(body.productDescription).toContain("full lash kit");
   });
 

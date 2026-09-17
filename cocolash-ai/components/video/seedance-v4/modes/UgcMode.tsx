@@ -161,7 +161,11 @@ export interface AvatarRequestArgs {
   aspectRatio: string;
   /** H1 toggle. */
   composeEnabled: boolean;
-  /** Step-1 selection — only [0] is composed in. */
+  /**
+   * Step-1 selection. ALL of them go to the image model — [0] is the shot the
+   * avatar holds, the rest show the same product from other angles (the route
+   * caps how many it downloads).
+   */
   productImageUrls?: readonly string[];
   productFacts?: ProductFacts;
 }
@@ -184,14 +188,16 @@ export function buildAvatarRequestBody(
     lashStyle: args.lashStyle,
     aspectRatio: args.aspectRatio,
   };
-  const productImageUrl = args.composeEnabled
-    ? args.productImageUrls?.[0]
-    : undefined;
-  if (!productImageUrl) return { ...base, hasProduct: false };
+  const productImageUrls = args.composeEnabled
+    ? (args.productImageUrls ?? []).filter(Boolean)
+    : [];
+  if (productImageUrls.length === 0) return { ...base, hasProduct: false };
   return {
     ...base,
     hasProduct: true,
-    productImageUrl,
+    // Back-compat single field + the full set for multi-angle grounding.
+    productImageUrl: productImageUrls[0],
+    productImageUrls,
     productDescription: composeProductDescription(args.productFacts),
   };
 }
