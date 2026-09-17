@@ -1,6 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createAdminClient, createClient, getCurrentUserId } from "@/lib/supabase/server";
 import { generateImage, type ReferenceImage } from "@/lib/gemini/generate";
+import {
+  generateOpenAIImage,
+  openAIImageConfigured,
+} from "@/lib/openai/image";
 import { uploadGeneratedImage } from "@/lib/supabase/storage";
 import {
   buildMinimalSelectionsForVideoAsset,
@@ -21,7 +25,7 @@ import {
 import type { LashStyle, VideoAspectRatio } from "@/lib/types";
 
 /** Cap on product reference images sent to the image model per compose. */
-const MAX_COMPOSE_PRODUCT_REFS = 6;
+const MAX_COMPOSE_PRODUCT_REFS = 9;
 
 /** Marks a product-image download failure (surfaces as a 400, not a 500). */
 class ProductFetchError extends Error {}
@@ -82,34 +86,10 @@ export async function POST(request: NextRequest) {
     const productImageUrl: string | undefined = productImageUrls[0];
 
     let fullPrompt: string;
-    let referenceImages: ReferenceImage[] | undefined;
     let referenceInstruction: string | undefined;
 
     if (productImageUrl) {
-      // Download every product image to pass as references to Gemini.
-      referenceImages = await Promise.all(
-        productImageUrls.map(async (url) => {
-          const resp = await fetch(url);
-          if (!resp.ok) {
-            throw new ProductFetchError(`Failed to fetch product image (${resp.status})`);
-          }
-          const buf = Buffer.from(await resp.arrayBuffer());
-          return {
-            base64Data: buf.toString("base64"),
-            mimeType: resp.headers.get("content-type") || "image/png",
-          } satisfies ReferenceImage;
-        })
-      ).catch((err) => {
-        if (err instanceof ProductFetchError) return undefined;
-        throw err;
-      });
-      if (!referenceImages) {
-        return NextResponse.json(
-          { error: "Failed to fetch a product image" },
-          { status: 400 }
-        );
-      }
-      referenceInstruction = `[PRODUCT INTEGRATION — ${referenceImages.length} reference image(s) provided]
+      referenceInstruction = `[PRODUCT INTEGRATION — ${productImageUrls.length} reference image(s) provided]
 The FIRST reference image is the EXACT product the creator must be holding; any further reference images show the SAME product from other angles or opened — use them to get every face of the packaging right, but the creator holds it CLOSED as in the first image. Preserve:
 - The exact product packaging, colors, branding, label text, and proportions
 - Orientation: the product's FRONT face — the one with the main brand lettering — faces the camera squarely and upright, so the lettering reads correctly left-to-right, exactly as printed in the reference
@@ -128,16 +108,57 @@ DO NOT alter the product. Integrate it naturally into the creator's hand or clos
       fullPrompt = `${prompt}\n\n[NEGATIVE PROMPT — avoid these qualities entirely]\n${negativePrompt}`;
     }
 
-    // F10 (docs/seedance-2.5/06-QUALITY-PASS.md): 2K, not 1K. This image is
-    // the identity reference Seedance conditions every frame on — the extra
-    // pixels are where lash fibres, pores and brand text survive the render.
-    const result = await generateImage(
-      fullPrompt,
-      imageAspect,
-      referenceImages,
-      referenceInstruction,
-      "2K"
-    );
+    // Engine selection (2026-09-17, Harry): GPT Image 2.5 whenever the key is
+    // configured — reference URLs go straight to /v1/images/edits, no
+    // downloads needed. Gemini remains the fallback ONLY for environments
+    // missing OPENAI_API_KEY (a failed OpenAI call is surfaced, not swapped).
+    let result: { buffer: Buffer; mimeType: string; model: string };
+    if (openAIImageConfigured()) {
+      result = await generateOpenAIImage({
+        prompt: referenceInstruction
+          ? `${referenceInstruction}\n\n${fullPrompt}`
+          : fullPrompt,
+        aspect: aspectRatio,
+        referenceImageUrls: productImageUrls,
+      });
+    } else {
+      // Gemini fallback — download the references to base64.
+      let referenceImages: ReferenceImage[] | undefined;
+      if (productImageUrl) {
+        referenceImages = await Promise.all(
+          productImageUrls.map(async (url) => {
+            const resp = await fetch(url);
+            if (!resp.ok) {
+              throw new ProductFetchError(`Failed to fetch product image (${resp.status})`);
+            }
+            const buf = Buffer.from(await resp.arrayBuffer());
+            return {
+              base64Data: buf.toString("base64"),
+              mimeType: resp.headers.get("content-type") || "image/png",
+            } satisfies ReferenceImage;
+          })
+        ).catch((err) => {
+          if (err instanceof ProductFetchError) return undefined;
+          throw err;
+        });
+        if (!referenceImages) {
+          return NextResponse.json(
+            { error: "Failed to fetch a product image" },
+            { status: 400 }
+          );
+        }
+      }
+      // F10 (docs/seedance-2.5/06-QUALITY-PASS.md): 2K, not 1K. This image is
+      // the identity reference Seedance conditions every frame on — the extra
+      // pixels are where lash fibres, pores and brand text survive the render.
+      result = await generateImage(
+        fullPrompt,
+        imageAspect,
+        referenceImages,
+        referenceInstruction,
+        "2K"
+      );
+    }
 
     const supabase = await createAdminClient();
     const { url: imageUrl, path: storagePath } = await uploadGeneratedImage(

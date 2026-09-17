@@ -176,7 +176,7 @@ describe("compose orientation constraints", () => {
 
 describe("compose sends every selected product image", () => {
   it("accepts the productImageUrls array with a hard cap", () => {
-    expect(routeSource).toContain("MAX_COMPOSE_PRODUCT_REFS = 6");
+    expect(routeSource).toContain("MAX_COMPOSE_PRODUCT_REFS = 9");
     expect(routeSource).toContain("body.productImageUrls");
   });
 
