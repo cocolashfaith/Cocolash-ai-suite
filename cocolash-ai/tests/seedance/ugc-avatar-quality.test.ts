@@ -176,7 +176,7 @@ describe("compose orientation constraints", () => {
 
 describe("compose sends every selected product image", () => {
   it("accepts the productImageUrls array with a hard cap", () => {
-    expect(routeSource).toContain("MAX_COMPOSE_PRODUCT_REFS = 9");
+    expect(routeSource).toContain("MAX_COMPOSE_PRODUCT_REFS = 16");
     expect(routeSource).toContain("body.productImageUrls");
   });
 
@@ -184,10 +184,20 @@ describe("compose sends every selected product image", () => {
     expect(routeSource).toContain("body.productImageUrl");
   });
 
-  it("tells the model the FIRST reference is the held product", () => {
+  it("tells the model the refs are ONE product and to copy the CLOSED silhouette", () => {
+    // 2026-09-18 (Harry's shape report): anchoring on "the first image"
+    // mis-shaped the box when the first pick was an open flat-lay — the
+    // instruction now derives the closed shape from whichever ref shows it.
+    expect(routeSource).toContain("The creator holds the product CLOSED");
     expect(routeSource).toContain(
-      "The FIRST reference image is the EXACT product the creator must be holding"
+      "reproduce the CLOSED product's true width-to-height silhouette"
     );
-    expect(routeSource).toContain("SAME product from other angles");
+    expect(routeSource).not.toContain(
+      "The FIRST reference image is the EXACT product"
+    );
+  });
+
+  it("lists proportion drift in the image negative prompt", () => {
+    expect(routeSource).toContain("box proportions altered");
   });
 });

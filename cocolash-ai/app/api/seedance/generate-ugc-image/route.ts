@@ -24,8 +24,8 @@ import {
 } from "@/lib/seedance/ugc-image-prompt";
 import type { LashStyle, VideoAspectRatio } from "@/lib/types";
 
-/** Cap on product reference images sent to the image model per compose. */
-const MAX_COMPOSE_PRODUCT_REFS = 9;
+/** Per-compose reference cap = the OpenAI images/edits API maximum (16). */
+const MAX_COMPOSE_PRODUCT_REFS = 16;
 
 /** Marks a product-image download failure (surfaces as a 400, not a 500). */
 class ProductFetchError extends Error {}
@@ -68,9 +68,11 @@ export async function POST(request: NextRequest) {
     // images (the BROKEN-04 fix from the audit) AND moves composition to
     // gen-time so the user only generates one image, not two.
     //
-    // ALL selected product images go to the model (capped) — the FIRST is the
-    // shot the creator holds; the rest show the same product from other
-    // angles so the model stops guessing hidden faces of the packaging.
+    // ALL selected product images go to the model (capped). The prompt tells
+    // the model the set shows ONE product in various states (closed / open /
+    // flat-lay) and to copy the CLOSED silhouette from whichever reference
+    // shows it — anchoring on "the first image" mis-shaped the box whenever
+    // the user's first pick was an open flat-lay.
     const bodyUrls: string[] = Array.isArray(body.productImageUrls)
       ? (body.productImageUrls as unknown[]).filter(
           (u): u is string => typeof u === "string" && u.length > 0
@@ -90,20 +92,22 @@ export async function POST(request: NextRequest) {
 
     if (productImageUrl) {
       referenceInstruction = `[PRODUCT INTEGRATION — ${productImageUrls.length} reference image(s) provided]
-The FIRST reference image is the EXACT product the creator must be holding; any further reference images show the SAME product from other angles or opened — use them to get every face of the packaging right, but the creator holds it CLOSED as in the first image. Preserve:
-- The exact product packaging, colors, branding, label text, and proportions
+The reference images all show the EXACT SAME product — some may show it closed, some open, some from other angles or in flat-lays. The creator holds the product CLOSED. Preserve:
+- The exact packaging, colors, branding, label text, materials, and construction from the references
+- PROPORTIONS — the most common failure: reproduce the CLOSED product's true width-to-height silhouette exactly as photographed. Find the reference(s) showing the product closed and copy that shape precisely, including any contrasting spine or edge. NEVER re-imagine the closed box as a wider, flatter, or more elongated box than the references show
 - Orientation: the product's FRONT face — the one with the main brand lettering — faces the camera squarely and upright, so the lettering reads correctly left-to-right, exactly as printed in the reference
 - Natural hand positioning — fingers wrap around the product realistically without covering the brand lettering
-- Lighting consistent with the bedroom / scene
+- Lighting consistent with the scene
 DO NOT alter the product. Integrate it naturally into the creator's hand or close to her face. The product should be clearly visible to camera.`;
-      // Orientation is the #1 compose failure mode (label away from camera,
-      // tilted, or mirrored) — say it positively in the prompt AND list the
-      // failure modes in the image negative prompt (image models honour
+      // Orientation + proportions are the top compose failure modes (label
+      // away from camera, tilted, mirrored — or the closed box re-imagined
+      // wider/flatter than it is). Say it positively in the prompt AND list
+      // the failure modes in the image negative prompt (image models honour
       // negatives; this never reaches the video prompt).
       const composeNegatives =
-        "mirrored or reversed brand lettering, upside-down packaging, back of the packaging to camera, label turned away from camera, product tilted so the text is unreadable, fingers covering the brand name";
+        "mirrored or reversed brand lettering, upside-down packaging, back of the packaging to camera, label turned away from camera, product tilted so the text is unreadable, fingers covering the brand name, box proportions altered (stretched wider, flattened, or elongated relative to the reference photos)";
       fullPrompt =
-        `${prompt}\n\nThe creator is naturally holding the product shown in the reference image — at chest level, in one hand, the FRONT label facing the camera squarely, upright and fully readable. Treat this composition as if it's the same UGC photograph already framed; the product should look like it was naturally part of the scene.\n\n[NEGATIVE PROMPT — avoid these qualities entirely]\n${negativePrompt}, ${composeNegatives}`;
+        `${prompt}\n\nThe creator is naturally holding the CLOSED product from the reference images — at chest level, in one hand, the FRONT label facing the camera squarely, upright and fully readable, the closed box's true proportions kept exactly as photographed. Treat this composition as if it's the same UGC photograph already framed; the product should look like it was naturally part of the scene.\n\n[NEGATIVE PROMPT — avoid these qualities entirely]\n${negativePrompt}, ${composeNegatives}`;
     } else {
       fullPrompt = `${prompt}\n\n[NEGATIVE PROMPT — avoid these qualities entirely]\n${negativePrompt}`;
     }

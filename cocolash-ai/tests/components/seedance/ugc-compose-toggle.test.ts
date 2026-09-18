@@ -380,3 +380,30 @@ describe("H1 — the toggle in the Generate tab (component source)", () => {
     expect(source).toContain("disabled={!canCompose}");
   });
 });
+
+// ── Click-to-zoom viewer (2026-09-18) ────────────────────────
+
+describe("image lightbox — click a generated image to inspect it", () => {
+  const lightboxSource = readFileSync(
+    resolve(ROOT, "components/video/seedance-v4/ImageLightbox.tsx"),
+    "utf8"
+  );
+
+  it("the composed preview and gallery tiles open the lightbox", () => {
+    expect(source).toContain("setLightboxSrc(selectedAttempt.url)");
+    expect(source).toContain("setLightboxSrc(img.image_url)");
+    expect(source).toContain("<ImageLightbox");
+  });
+
+  it("zooms by wheel, buttons, and double-click; closes on Esc/backdrop", () => {
+    expect(lightboxSource).toContain('addEventListener("wheel", onWheel, { passive: false })');
+    expect(lightboxSource).toContain("onDoubleClick");
+    expect(lightboxSource).toContain('e.key === "Escape"');
+    expect(lightboxSource).toContain("e.target === e.currentTarget");
+  });
+
+  it("clamps the zoom range", () => {
+    expect(lightboxSource).toContain("MIN_SCALE = 0.5");
+    expect(lightboxSource).toContain("MAX_SCALE = 6");
+  });
+});

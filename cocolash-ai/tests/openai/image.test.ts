@@ -86,7 +86,7 @@ describe("route engine selection", () => {
     expect(routeSource).toContain("referenceImageUrls: productImageUrls");
   });
 
-  it("allows up to 9 product references, per Harry's ask", () => {
-    expect(routeSource).toContain("MAX_COMPOSE_PRODUCT_REFS = 9");
+  it("sends every selected product image up to the API max of 16", () => {
+    expect(routeSource).toContain("MAX_COMPOSE_PRODUCT_REFS = 16");
   });
 });

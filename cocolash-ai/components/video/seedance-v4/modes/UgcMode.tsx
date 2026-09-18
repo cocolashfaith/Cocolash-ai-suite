@@ -13,6 +13,7 @@ import {
   X,
   AlertTriangle,
   Package,
+  ZoomIn,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -38,6 +39,7 @@ import {
 } from "@/lib/ai/director/product-fact-extractor";
 import type { SeedanceV4WizardState } from "../types";
 import { CapabilityCard } from "../CapabilityCard";
+import { ImageLightbox } from "../ImageLightbox";
 import { inputLimitsFor } from "../lib/mode-input-rules";
 
 interface UgcModeProps {
@@ -394,6 +396,9 @@ export function UgcMode({ state, setState, onReady }: UgcModeProps) {
     composedAttempts.find((a) => a.url === selectedComposedUrl) ??
     composedAttempts[composedAttempts.length - 1] ??
     null;
+
+  /** Click-to-zoom viewer for generated images (composed attempts, gallery). */
+  const [lightboxSrc, setLightboxSrc] = useState<string | null>(null);
 
   // F7 — provenance of every chosen reference, for the mixed-identity guard.
   const [refOrigins, setRefOrigins] = useState<
@@ -821,7 +826,7 @@ export function UgcMode({ state, setState, onReady }: UgcModeProps) {
                 </p>
                 <p className="mt-0.5 text-[11px] text-coco-brown-medium/60">
                   {canCompose
-                    ? "Composes your first Step-1 product image into the avatar's hand. You review the result before it's used — the clean product photos still go to Seedance separately."
+                    ? "Sends ALL your Step-1 product photos (up to 16) to the image model and composes the closed product into the avatar's hand. You review the result before it's used — the clean product photos still go to Seedance separately."
                     : "Pick product images in Step 1 first."}
                 </p>
               </div>
@@ -949,7 +954,12 @@ export function UgcMode({ state, setState, onReady }: UgcModeProps) {
                 )}
               </div>
               <div className="flex gap-3">
-                <div className="relative w-24 shrink-0">
+                <button
+                  type="button"
+                  onClick={() => setLightboxSrc(selectedAttempt.url)}
+                  title="Click to zoom"
+                  className="relative w-24 shrink-0 cursor-zoom-in"
+                >
                   {/* eslint-disable-next-line @next/next/no-img-element */}
                   <img
                     src={selectedAttempt.url}
@@ -959,7 +969,7 @@ export function UgcMode({ state, setState, onReady }: UgcModeProps) {
                   <span className="absolute bottom-1 left-1 rounded-full bg-coco-brown/80 px-1.5 py-0.5 text-[9px] font-semibold text-white">
                     holding product
                   </span>
-                </div>
+                </button>
                 <div className="flex-1 space-y-2">
                   <p className="text-[11px] text-coco-brown-medium/70">
                     Check the product: the front label should face the camera,
@@ -1108,6 +1118,18 @@ export function UgcMode({ state, setState, onReady }: UgcModeProps) {
                         holding product
                       </span>
                     )}
+                    <span
+                      role="button"
+                      aria-label="Zoom image"
+                      title="Zoom"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setLightboxSrc(img.image_url);
+                      }}
+                      className="absolute top-1 right-1 rounded-md bg-coco-brown/70 p-1 text-white opacity-0 transition-opacity group-hover:opacity-100"
+                    >
+                      <ZoomIn className="h-3.5 w-3.5" />
+                    </span>
                     {isSelected && (
                       <div className="absolute inset-0 flex items-center justify-center bg-coco-golden/20">
                         <div className="flex h-6 w-6 items-center justify-center rounded-full bg-coco-golden">
@@ -1150,6 +1172,14 @@ export function UgcMode({ state, setState, onReady }: UgcModeProps) {
       >
         Continue to Prompt Review →
       </Button>
+
+      {lightboxSrc && (
+        <ImageLightbox
+          src={lightboxSrc}
+          alt="Generated image, zoomed"
+          onClose={() => setLightboxSrc(null)}
+        />
+      )}
     </div>
   );
 }
