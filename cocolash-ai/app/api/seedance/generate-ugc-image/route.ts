@@ -23,6 +23,11 @@ import {
   type UGCVibe,
 } from "@/lib/seedance/ugc-image-prompt";
 import type { LashStyle, VideoAspectRatio } from "@/lib/types";
+import {
+  composePosePrompt,
+  isComposePose,
+  type ComposePose,
+} from "@/lib/seedance/staging";
 
 /** Per-compose reference cap = the OpenAI images/edits API maximum (16). */
 const MAX_COMPOSE_PRODUCT_REFS = 16;
@@ -48,6 +53,19 @@ export async function POST(request: NextRequest) {
     const aspectRatio = (body.aspectRatio as VideoAspectRatio) ?? "9:16";
     const imageAspect = videoAspectToImageAspect(aspectRatio);
 
+    // Staging pose (Codex F7): absent → "holding" (back-compat); a SUPPLIED
+    // value must be valid — silently composing the wrong pose would charge
+    // the user for an image they didn't ask for.
+    if (body.composePose !== undefined && !isComposePose(body.composePose)) {
+      return NextResponse.json(
+        { error: `composePose must be one of: holding, desk-closed, desk-open` },
+        { status: 400 }
+      );
+    }
+    const composePose: ComposePose = isComposePose(body.composePose)
+      ? body.composePose
+      : "holding";
+
     const params: UGCImageParams = {
       ethnicity: body.ethnicity as UGCEthnicity,
       skinTone: body.skinTone as UGCSkinTone,
@@ -58,6 +76,9 @@ export async function POST(request: NextRequest) {
       lashStyle: body.lashStyle as LashStyle,
       hasProduct: Boolean(body.hasProduct),
       productDescription: body.productDescription,
+      // Codex F2: the base prompt must agree with the staging pose (a desk
+      // pose can't ride a "holding near her chin" base).
+      pose: composePose,
     };
 
     const { prompt, negativePrompt } = buildUGCImagePrompt(params);
@@ -91,14 +112,24 @@ export async function POST(request: NextRequest) {
     let referenceInstruction: string | undefined;
 
     if (productImageUrl) {
+      const stagingLine =
+        composePose === "desk-open"
+          ? "The product appears OPEN on the desk in front of the creator, exactly as the open-box references show."
+          : composePose === "desk-closed"
+            ? "The product sits CLOSED on the desk in front of the creator."
+            : "The creator holds the product CLOSED.";
+      const shapeRule =
+        composePose === "desk-open"
+          ? "- CONTENTS — the most common failure: reproduce the OPEN box exactly as the open-reference photos show — same tray layout, same items in the same slots, same lid. NEVER invent, rearrange, or omit contents"
+          : "- PROPORTIONS — the most common failure: reproduce the CLOSED product's true width-to-height silhouette exactly as photographed. Find the reference(s) showing the product closed and copy that shape precisely, including any contrasting spine or edge. NEVER re-imagine the closed box as a wider, flatter, or more elongated box than the references show";
       referenceInstruction = `[PRODUCT INTEGRATION — ${productImageUrls.length} reference image(s) provided]
-The reference images all show the EXACT SAME product — some may show it closed, some open, some from other angles or in flat-lays. The creator holds the product CLOSED. Preserve:
+The reference images all show the EXACT SAME product — some may show it closed, some open, some from other angles or in flat-lays. ${stagingLine} Preserve:
 - The exact packaging, colors, branding, label text, materials, and construction from the references
-- PROPORTIONS — the most common failure: reproduce the CLOSED product's true width-to-height silhouette exactly as photographed. Find the reference(s) showing the product closed and copy that shape precisely, including any contrasting spine or edge. NEVER re-imagine the closed box as a wider, flatter, or more elongated box than the references show
+${shapeRule}
 - Orientation: the product's FRONT face — the one with the main brand lettering — faces the camera squarely and upright, so the lettering reads correctly left-to-right, exactly as printed in the reference
-- Natural hand positioning — fingers wrap around the product realistically without covering the brand lettering
+- Natural hand positioning — fingers positioned realistically without covering the brand lettering
 - Lighting consistent with the scene
-DO NOT alter the product. Integrate it naturally into the creator's hand or close to her face. The product should be clearly visible to camera.`;
+DO NOT alter the product. Integrate it naturally into the scene. The product should be clearly visible to camera.`;
       // Orientation + proportions are the top compose failure modes (label
       // away from camera, tilted, mirrored — or the closed box re-imagined
       // wider/flatter than it is). Say it positively in the prompt AND list
@@ -107,7 +138,7 @@ DO NOT alter the product. Integrate it naturally into the creator's hand or clos
       const composeNegatives =
         "mirrored or reversed brand lettering, upside-down packaging, back of the packaging to camera, label turned away from camera, product tilted so the text is unreadable, fingers covering the brand name, box proportions altered (stretched wider, flattened, or elongated relative to the reference photos)";
       fullPrompt =
-        `${prompt}\n\nThe creator is naturally holding the CLOSED product from the reference images — at chest level, in one hand, the FRONT label facing the camera squarely, upright and fully readable, the closed box's true proportions kept exactly as photographed. Treat this composition as if it's the same UGC photograph already framed; the product should look like it was naturally part of the scene.\n\n[NEGATIVE PROMPT — avoid these qualities entirely]\n${negativePrompt}, ${composeNegatives}`;
+        `${prompt}\n\n${composePosePrompt(composePose)} Treat this composition as if it's the same UGC photograph already framed; the product should look like it was naturally part of the scene.\n\n[NEGATIVE PROMPT — avoid these qualities entirely]\n${negativePrompt}, ${composeNegatives}`;
     } else {
       fullPrompt = `${prompt}\n\n[NEGATIVE PROMPT — avoid these qualities entirely]\n${negativePrompt}`;
     }
@@ -195,9 +226,10 @@ DO NOT alter the product. Integrate it naturally into the creator's hand or clos
         selections,
         // Composed shots carry a second tag so the wizard's gallery can mark
         // them "holding product" and restore the composed flag in a later
-        // session.
+        // session — plus the pose (Codex F4), so a later session stages the
+        // video against the SAME rig the image was composed with.
         tags: productImageUrl
-          ? ["ugc-avatar", "ugc-avatar-composed"]
+          ? ["ugc-avatar", "ugc-avatar-composed", `compose-pose:${composePose}`]
           : ["ugc-avatar"],
         geminiModel: result.model,
       });

@@ -83,6 +83,8 @@ export interface SeedanceV4WizardState {
   ugcComposedImageUrl?: string;
   /** UGC: was Gemini compose run? false = avatar-only (toggle off). */
   ugcWasComposed?: boolean;
+  /** Staging (2026-09-18): camera rig + product staging for the UGC clip. */
+  ugcComposeStaging?: "holding-selfie" | "desk-propped";
   /** UGC toggle-off path only — the separate product image that goes
    *  alongside the avatar to Seedance as a second reference. */
   ugcSeparateProductUrl?: string;

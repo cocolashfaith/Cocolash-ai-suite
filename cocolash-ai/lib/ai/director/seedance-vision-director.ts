@@ -17,6 +17,11 @@ import type { ProductTruthEntry } from "@/lib/brand/product-truth";
 import { getOpenRouterClient, openrouterRequest } from "@/lib/openrouter/client";
 import { SEEDANCE_25_LIMITS } from "@/lib/seedance/v25/types";
 import {
+  resolveStagingMode,
+  stagingDirectorBlock,
+  type StagingMode,
+} from "@/lib/seedance/staging";
+import {
   buildSeedanceVisionDirectorPrompt,
   describeVisionFrame,
   productImageTokens,
@@ -103,10 +108,15 @@ export interface VisionPromptInput {
   /** OPTIONAL (F2): the frame the clip ships in, e.g. `"9:16"`. Default `"9:16"`. */
   aspectRatio?: string;
   /** OPTIONAL (H4): the first influencer reference is a composed shot in which
-   *  the creator is ALREADY holding the product. The Director must not stage a
-   *  pickup or re-introduce the product; product appearance still comes from the
+   *  the creator is ALREADY staged with the product (holding it, or with it on
+   *  the desk per `stagingMode`). The Director must not stage a pickup or
+   *  re-introduce the product; product appearance still comes from the
    *  product references. */
   influencerAlreadyHoldsProduct?: boolean;
+  /** OPTIONAL (staging, 2026-09-18): the camera rig + product staging for the
+   *  clip. When absent, the default for the campaign type applies — so every
+   *  run gets rig physics and hand accounting, composed or not. */
+  stagingMode?: StagingMode;
 }
 
 /**
@@ -178,6 +188,10 @@ export async function generateSeedanceVisionPrompt(
     durationSeconds: input.durationSeconds,
     aspectRatio: input.aspectRatio,
     influencerAlreadyHoldsProduct: input.influencerAlreadyHoldsProduct,
+    // Codex F5: resolve staging ONCE (legacy composed requests without
+    // staging metadata are holding shots) and hand the SAME value to the
+    // system prompt and the user prompt, so they can never disagree.
+    stagingMode: resolveStagingMode(input),
   });
 
   // Build user prompt (context for this specific task)
@@ -520,6 +534,15 @@ function buildVisionDirectorUserPrompt(
 
   lines.push(`Campaign type: ${input.campaignType}`);
 
+  // Staging (2026-09-18): rig physics + hand accounting + product-state
+  // timeline. Without this the aesthetic rules forced "handheld selfie" while
+  // unboxing guidance ordered a two-hand opening — and Seedance resolved the
+  // contradiction by inventing an extra arm. resolveStagingMode keeps this in
+  // lock-step with the system prompt (Codex F5).
+  const staging = resolveStagingMode(input);
+  lines.push("");
+  lines.push(stagingDirectorBlock(staging, input.campaignType));
+
   // F2 — the concrete order the user placed. The system prompt spells out the
   // beat structure these imply; repeating the numbers here keeps them in the
   // model's working context next to the script it has to pace.
@@ -532,7 +555,9 @@ function buildVisionDirectorUserPrompt(
   lines.push(`Frame: ${describeVisionFrame(input.aspectRatio)}`);
   if (input.influencerAlreadyHoldsProduct) {
     lines.push(
-      "The creator in @influencer_image1 is ALREADY holding this product — start from that state, stage no pickup."
+      staging === "desk-propped"
+        ? "The creator in @influencer_image1 is ALREADY staged with this product on the desk in front of her — start from that exact state, stage no pickup and no re-placement."
+        : "The creator in @influencer_image1 is ALREADY holding this product — start from that state, stage no pickup."
     );
   }
 
@@ -562,7 +587,7 @@ function buildVisionDirectorUserPrompt(
     } — ${tokens.join(", ")} — each with a short description of what that image shows`
   );
   lines.push(
-    "- Explicit actions (hold, turn, open, demonstrate) — but only on things visible in the images"
+    "- Explicit actions (hold, turn, open, demonstrate) — but only on things visible in the images, and only within the CAMERA RIG and HAND ACCOUNTING rules above"
   );
   lines.push("- Scene and lighting description");
   lines.push(
@@ -593,6 +618,7 @@ function summarizeVisionInput(
   summary.push(clip.isAuto ? "duration=auto" : `duration=${clip.plannedSeconds}s`);
   summary.push(`aspect=${input.aspectRatio?.trim() || "9:16"}`);
   if (input.influencerAlreadyHoldsProduct) summary.push("composed=yes");
+  summary.push(`staging=${resolveStagingMode(input)}`);
 
   if (input.intent) summary.push(`intent=yes`);
   if (input.productFacts) summary.push(`facts=yes`);

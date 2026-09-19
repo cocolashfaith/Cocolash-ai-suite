@@ -153,9 +153,14 @@ export function Step3PromptReviewAndGenerate({ state, setState, onReset, isActiv
           // `-1` (AUTO_DURATION) is Auto: the Director plans ~10 s for it.
           durationSeconds: effectiveDuration(state),
           aspectRatio: state.aspectRatio,
-          // H4: when the avatar was composed holding the product, the first
-          // influencer reference already shows the pickup as done.
+          // H4: when the avatar was composed with the product, the first
+          // influencer reference already shows the staging as done.
           influencerAlreadyHoldsProduct: state.ugcWasComposed === true,
+          // Staging: the rig + product staging chosen in the avatar step;
+          // absent → the server derives the campaign-type default.
+          ...(state.ugcComposeStaging
+            ? { stagingMode: state.ugcComposeStaging }
+            : {}),
           // The wizard holds "" until a library category is chosen (the picker
           // sets it): send it only when it is real, so the Director's DB lookup
           // is either right or absent — never a lookup for "".

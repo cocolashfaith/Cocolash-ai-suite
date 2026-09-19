@@ -94,7 +94,7 @@ Reference the actor as **@influencer1** and the product as **@product1**. These 
 
 ## Mode-specific best practices
 - Open with the subject anchor block (restate subject identity + product properties).
-- The aesthetic is **trustworthy imperfection**, not polished brand film. Always include phone camera framing, natural room lighting or daylight, and authentic creator energy. Explicitly say "phone footage", "smartphone framing", "handheld selfie", "natural room ambience" so the model doesn't drift into commercial gloss.
+- The aesthetic is **trustworthy imperfection**, not polished brand film. Always include phone camera framing, natural room lighting or daylight, and authentic creator energy. Name the rig the STAGING block declares — "handheld selfie" for a selfie rig, "phone propped on the desk, fixed framing" for a propped rig — plus "phone footage" and "natural room ambience", so the model doesn't drift into commercial gloss. Never write "handheld" for a propped rig.
 - Specify the speaking style: "fast casual delivery", "soft spoken with a small laugh", "excited creator tone", "deadpan dry humor". Vague speech = robotic delivery.
 - Describe the room honestly: bathroom counter clutter, books, plants, kitchen tile, bedroom soft fabric, car interior — pick what fits the campaign type.
 - Tell it how the product is handled: hold near lens, twist cap, swatch on hand, apply to lash line, peel film, shake bottle, open mailer.
@@ -180,7 +180,7 @@ Every segment MUST begin by restating the subject anchor AND the product anchor.
 - One main action per segment. One main camera move per segment. NO compound asks ("she walks AND turns AND demonstrates AND closes door").
 - Use concrete cinematography terms: "fixed selfie framing", "slow push-in", "handheld follow", "macro close-up", "mirror angle", "top-down".
 - Sequence design: opening beat → middle interaction → closing reaction. For a 15s clip, 4-5 segments of 3-4 seconds each works well; for a 30s clip, 6-8 segments of 4-5 seconds each. Never exceed 10 segments.
-- For UGC content: keep all segments handheld phone-style with consistent room lighting.
+- For UGC content: keep all segments phone-style per the declared camera rig (handheld selfie OR propped fixed frame — never mix rigs mid-clip) with consistent room lighting.
 - Lighting consistency across segments matters more than dramatic variation.
 
 ## Output format (CRITICAL)
@@ -459,11 +459,18 @@ export interface VisionDirectorPromptOptions {
   /** Frame the clip ships in, e.g. `"9:16"`. Default `"9:16"`. */
   aspectRatio?: string;
   /**
-   * H4: the first influencer reference already shows the creator holding the
-   * product (the opt-in composed avatar). The writer must not stage a pickup or
-   * re-introduce the product as if it were new.
+   * H4: the first influencer reference already shows the creator staged with
+   * the product (the opt-in composed avatar). The writer must not stage a
+   * pickup or re-introduce the product as if it were new.
    */
   influencerAlreadyHoldsProduct?: boolean;
+  /**
+   * Staging (2026-09-18): the camera rig + product staging the clip uses —
+   * "holding-selfie" (one free hand) or "desk-propped" (fixed frame, both
+   * hands free). Adjusts the composed-avatar block's wording; the detailed
+   * rig rules ride in the user prompt's STAGING block.
+   */
+  stagingMode?: "holding-selfie" | "desk-propped";
 }
 
 /** `@product_image1 … @product_imageN` — one token per supplied product image. */
@@ -576,14 +583,15 @@ Each beat carries one action and one camera treatment. The beats run in order, w
   // H4 — the composed avatar: the creator is already holding the product in
   // the first influencer reference, so a pickup beat would be a continuity
   // break and a second product introduction.
+  const composedStagedOnDesk = options.stagingMode === "desk-propped";
   const composedBlock = options.influencerAlreadyHoldsProduct
-    ? `\nTHE CREATOR IS ALREADY HOLDING THE PRODUCT:
+    ? `\nTHE CREATOR IS ALREADY STAGED WITH THE PRODUCT:
 
-@influencer_image1 already shows the creator holding this product. Write from that state:
-- Do NOT stage a pickup. No reaching for it, no picking it up off a counter, no unpacking it, no "she grabs the box" — it is already in her hands when the clip starts.
+@influencer_image1 already shows the creator ${composedStagedOnDesk ? "with this product staged on the desk in front of her" : "holding this product"}. Write from that state:
+- Do NOT stage a pickup${composedStagedOnDesk ? " or a re-placement" : ""}. No reaching for it as something new, no unpacking it from elsewhere, no "she grabs the box" — it is already ${composedStagedOnDesk ? "in position on the desk" : "in her hands"} when the clip starts.
 - Do NOT re-introduce the product as if it were new to the shot. It is established in frame from the first second; the beats are about what she does WITH it.
 - The PRODUCT images (${productTokenList}) stay authoritative for what the product looks like — colour, finish, text, contents. Describe its appearance from those, never from the composed influencer frame.
-- Use @influencer_image1 only for grip, pose and scale: which hand, how she holds it, how big it reads against her face.
+- Use @influencer_image1 only for ${composedStagedOnDesk ? "pose, placement and scale: where the box sits, where her hands rest, how big it reads in frame" : "grip, pose and scale: which hand, how she holds it, how big it reads against her face"}.
 `
     : "";
 
@@ -666,12 +674,20 @@ STYLE REQUIREMENTS:
 
 3. Give the CAMERA an explicit treatment — every prompt, ${
     clip.needsBeats ? "and every beat" : "once"
-  }. State a SHOT SIZE (close-up · medium close-up · medium · wide) and ONE motion (slow push-in · handheld follow · static with natural sway), phrased as handheld phone footage shot by the creator or a friend — never a crane, dolly, drone or steadicam, and never the empty phrase "cinematic movement".
+  }. State a SHOT SIZE (close-up · medium close-up · medium · wide) and ONE motion ${
+    options.stagingMode === "desk-propped"
+      ? "(fixed propped frame · she leans toward the lens · she leans back), phrased as phone footage from a phone PROPPED on the desk facing her — the frame never sways, follows or drifts, and the footage is never a crane, dolly, drone or steadicam shot,"
+      : "(slow push-in · handheld follow · static with natural sway), phrased as handheld phone footage shot by the creator or a friend — never a crane, dolly, drone or steadicam,"
+  } and never the empty phrase "cinematic movement".
 
 4. Include VIBE and TONE:
    - casual, genuine, excited, authentic, candid
    - "talking casually and excitedly like a genuine product review"
-   - "natural handheld shake, candid expressions"
+   - ${
+     options.stagingMode === "desk-propped"
+       ? '"stable propped frame, candid expressions"'
+       : '"natural handheld shake, candid expressions"'
+   }
 
 5. Place the spoken SCRIPT in its own delimited block, on its own line, near the end:
 

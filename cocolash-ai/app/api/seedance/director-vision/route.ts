@@ -105,9 +105,14 @@ const VisionDirectorBodySchema = z
     aspectRatio: z.string().trim().max(16).optional(),
     /**
      * H4 — the first influencer reference is the composed shot in which the
-     * creator is already holding the product.
+     * creator is already staged with the product.
      */
     influencerAlreadyHoldsProduct: z.boolean().optional(),
+    /**
+     * Staging (2026-09-18) — camera rig + product staging for the clip.
+     * Absent → the campaign type's default applies server-side.
+     */
+    stagingMode: z.enum(["holding-selfie", "desk-propped"]).optional(),
   })
   .refine(
     (body) => !!body.influencerImageUrl || !!body.influencerImageUrls?.length,
@@ -162,6 +167,7 @@ export async function POST(request: NextRequest) {
       durationSeconds: parsed.durationSeconds,
       aspectRatio: parsed.aspectRatio,
       influencerAlreadyHoldsProduct: parsed.influencerAlreadyHoldsProduct,
+      stagingMode: parsed.stagingMode,
     };
 
     const result = await generateSeedanceVisionPrompt(visionPromptInput);

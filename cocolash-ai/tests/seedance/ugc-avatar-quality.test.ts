@@ -158,7 +158,14 @@ describe("compose orientation constraints", () => {
   });
 
   it("repeats the orientation in the composition prompt itself", () => {
-    expect(routeSource).toContain("FRONT label facing the camera squarely");
+    // The pose sentence moved into lib/seedance/staging.ts (composePosePrompt);
+    // the route composes it per staging pose.
+    expect(routeSource).toContain("composePosePrompt(composePose)");
+    const stagingSource = readFileSync(
+      resolve(ROOT, "lib/seedance/staging.ts"),
+      "utf8"
+    );
+    expect(stagingSource).toContain("FRONT label facing the camera squarely");
   });
 
   it("lists the orientation failure modes in the image negative prompt", () => {

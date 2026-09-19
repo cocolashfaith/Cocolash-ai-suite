@@ -41,6 +41,16 @@ import type { SeedanceV4WizardState } from "../types";
 import { CapabilityCard } from "../CapabilityCard";
 import { ImageLightbox } from "../ImageLightbox";
 import { inputLimitsFor } from "../lib/mode-input-rules";
+import {
+  STAGING_MODES,
+  STAGING_MODE_LABELS,
+  composePoseFor,
+  defaultStagingMode,
+  isComposePose,
+  stagingModeForPose,
+  type ComposePose,
+  type StagingMode,
+} from "@/lib/seedance/staging";
 
 interface UgcModeProps {
   state: SeedanceV4WizardState;
@@ -66,6 +76,8 @@ interface ComposedAttempt {
   /** H3(b) fact-check verdict (null = clean or still checking). */
   warning: string | null;
   checking: boolean;
+  /** The staging pose this attempt was generated with (mismatch guard). */
+  pose: ComposePose;
 }
 
 function pickRandom<T>(arr: readonly { value: T }[]): T {
@@ -164,12 +176,13 @@ export interface AvatarRequestArgs {
   /** H1 toggle. */
   composeEnabled: boolean;
   /**
-   * Step-1 selection. ALL of them go to the image model — [0] is the shot the
-   * avatar holds, the rest show the same product from other angles (the route
-   * caps how many it downloads).
+   * Step-1 selection. ALL of them go to the image model — the route caps how
+   * many it forwards (the API max).
    */
   productImageUrls?: readonly string[];
   productFacts?: ProductFacts;
+  /** Staging pose for the composed shot (from the Staging control). */
+  composePose?: ComposePose;
 }
 
 /**
@@ -201,6 +214,7 @@ export function buildAvatarRequestBody(
     productImageUrl: productImageUrls[0],
     productImageUrls,
     productDescription: composeProductDescription(args.productFacts),
+    ...(args.composePose ? { composePose: args.composePose } : {}),
   };
 }
 
@@ -391,6 +405,9 @@ export function UgcMode({ state, setState, onReady }: UgcModeProps) {
   const [approvedComposedUrl, setApprovedComposedUrl] = useState<string | null>(
     null
   );
+  /** The approved image's pose — Continue aligns staging to it (Codex F3). */
+  const [approvedComposedPose, setApprovedComposedPose] =
+    useState<ComposePose | null>(null);
 
   const selectedAttempt =
     composedAttempts.find((a) => a.url === selectedComposedUrl) ??
@@ -417,16 +434,29 @@ export function UgcMode({ state, setState, onReady }: UgcModeProps) {
   const composeEnabled = state.ugcComposeEnabled ?? true;
   const canCompose = productCount > 0;
 
-  /** Gallery avatars generated already holding the product (composed). */
-  const composedGalleryUrls = useMemo(
-    () =>
-      new Set(
-        galleryAvatars
-          .filter((a) => (a.tags ?? []).includes("ugc-avatar-composed"))
-          .map((a) => a.image_url)
-      ),
-    [galleryAvatars]
-  );
+  // Staging (2026-09-18): rig + product staging, auto-defaulted from the
+  // Step-1 campaign type, overridable here. Drives the compose pose AND the
+  // Director's rig physics in Step 3.
+  const stagingMode: StagingMode =
+    state.ugcComposeStaging ?? defaultStagingMode(state.campaignType);
+  const activePose = composePoseFor(stagingMode, state.campaignType);
+
+  /**
+   * Gallery avatars composed with the product → their pose. Legacy composed
+   * shots (before pose tags) were always "holding" (Codex F4).
+   */
+  const composedGalleryPoses = useMemo(() => {
+    const map = new Map<string, ComposePose>();
+    for (const a of galleryAvatars) {
+      const tags = a.tags ?? [];
+      if (!tags.includes("ugc-avatar-composed")) continue;
+      const poseTag = tags
+        .find((t) => t.startsWith("compose-pose:"))
+        ?.slice("compose-pose:".length);
+      map.set(a.image_url, isComposePose(poseTag) ? poseTag : "holding");
+    }
+    return map;
+  }, [galleryAvatars]);
   /** Only true while the approved composed image is still in the selection. */
   const composedInSelection =
     !!approvedComposedUrl && influencers.includes(approvedComposedUrl);
@@ -581,6 +611,7 @@ export function UgcMode({ state, setState, onReady }: UgcModeProps) {
             composeEnabled,
             productImageUrls: state.ugcProductImageUrls,
             productFacts: state.productFacts,
+            composePose: activePose,
           })
         ),
       });
@@ -598,7 +629,7 @@ export function UgcMode({ state, setState, onReady }: UgcModeProps) {
       // then pick the best one — earlier attempts are never thrown away.
       setComposedAttempts((prev) => [
         ...prev,
-        { url: data.imageUrl, warning: null, checking: true },
+        { url: data.imageUrl, warning: null, checking: true, pose: activePose },
       ]);
       setSelectedComposedUrl(data.imageUrl);
       toast.success("Composed avatar ready — review it below.");
@@ -627,7 +658,13 @@ export function UgcMode({ state, setState, onReady }: UgcModeProps) {
     if (!selectedAttempt) return;
     addComposedFirst(selectedAttempt.url, `gen-${++batchSeq.current}`);
     setApprovedComposedUrl(selectedAttempt.url);
+    setApprovedComposedPose(selectedAttempt.pose);
     setComposeWarning(selectedAttempt.warning);
+    // Pin the staging the approved shot was generated with, so Step 3's
+    // Director stages the video against the SAME rig.
+    setState({
+      ugcComposeStaging: stagingModeForPose(selectedAttempt.pose),
+    });
     // The strip's job is done — unapproved attempts stay in the gallery.
     setComposedAttempts([]);
     setSelectedComposedUrl(null);
@@ -669,9 +706,28 @@ export function UgcMode({ state, setState, onReady }: UgcModeProps) {
 
     // A composed avatar picked from the GALLERY (a previous session's
     // attempt, tag `ugc-avatar-composed`) counts too — the Director must know
-    // an influencer reference already holds the product either way.
-    const hasComposedRef =
-      !!composedUrl || ordered.some((u) => composedGalleryUrls.has(u));
+    // an influencer reference is already staged with the product either way.
+    const galleryComposedUrl = ordered.find((u) => composedGalleryPoses.has(u));
+    const composedPose: ComposePose | null = composedUrl
+      ? (approvedComposedPose ?? "holding")
+      : galleryComposedUrl
+        ? (composedGalleryPoses.get(galleryComposedUrl) ?? "holding")
+        : null;
+    const hasComposedRef = composedPose !== null;
+
+    // Codex F3/F4 — the composed reference's pose is authoritative: a desk
+    // image cannot drive a selfie clip (or vice versa). If the Staging
+    // control disagrees, align it to the reference and say so.
+    let effectiveStaging = stagingMode;
+    if (composedPose) {
+      const implied = stagingModeForPose(composedPose);
+      if (implied !== stagingMode) {
+        toast.info(
+          `Staging aligned to your composed reference (${STAGING_MODE_LABELS[implied].label}) — regenerate the composed avatar if you want the other setup.`
+        );
+      }
+      effectiveStaging = implied;
+    }
 
     setState({
       ugcInfluencerImageUrls: ordered,
@@ -679,6 +735,9 @@ export function UgcMode({ state, setState, onReady }: UgcModeProps) {
       // Clear legacy single-image compose fields so Step 3 uses the vision path.
       ugcComposedImageUrl: undefined,
       ugcWasComposed: hasComposedRef,
+      // Pin the effective staging so Step 3's Director gets the same rig the
+      // composed reference (or, without one, the control/default) implies.
+      ugcComposeStaging: effectiveStaging,
       ugcSeparateProductUrl: undefined,
       ugcComposeWarning:
         composedUrl && composeWarning
@@ -690,8 +749,10 @@ export function UgcMode({ state, setState, onReady }: UgcModeProps) {
     state.ugcInfluencerImageUrls,
     state.ugcProductImageUrls,
     approvedComposedUrl,
+    approvedComposedPose,
     composeWarning,
-    composedGalleryUrls,
+    composedGalleryPoses,
+    stagingMode,
     setState,
     onReady,
   ]);
@@ -864,6 +925,46 @@ export function UgcMode({ state, setState, onReady }: UgcModeProps) {
                 />
               </button>
             </div>
+
+            {/* Staging control — auto-set from the campaign type, overridable.
+                Decides the camera rig (how many hands are free) and whether
+                the product sits on a desk or in her hand. */}
+            {composeEnabled && canCompose && (
+              <div className="border-t border-coco-beige-dark/60 pt-2">
+                <p className="mb-1.5 text-[10px] font-medium text-coco-brown-medium/60">
+                  Staging{" "}
+                  <span className="font-normal">
+                    (auto-picked for {state.campaignType} — change it if you
+                    want a different setup)
+                  </span>
+                </p>
+                <div className="flex flex-wrap gap-1.5">
+                  {STAGING_MODES.map((mode) => {
+                    const active = stagingMode === mode;
+                    const { label, hint } = STAGING_MODE_LABELS[mode];
+                    return (
+                      <button
+                        key={mode}
+                        type="button"
+                        title={hint}
+                        onClick={() => setState({ ugcComposeStaging: mode })}
+                        className={cn(
+                          "rounded-lg border-2 px-2 py-1 text-[10px] font-medium transition-all",
+                          active
+                            ? "border-coco-golden bg-coco-golden/10 text-coco-brown"
+                            : "border-coco-beige-dark bg-white text-coco-brown-medium hover:border-coco-golden/40"
+                        )}
+                      >
+                        {label}
+                      </button>
+                    );
+                  })}
+                </div>
+                <p className="mt-1 text-[10px] text-coco-brown-medium/50">
+                  {STAGING_MODE_LABELS[stagingMode].hint}
+                </p>
+              </div>
+            )}
           </div>
 
           <div>
@@ -979,6 +1080,20 @@ export function UgcMode({ state, setState, onReady }: UgcModeProps) {
                     adds the shown image as your FIRST influencer reference;
                     your Step-1 product photos still go to Seedance untouched.
                   </p>
+
+                  {/* Mismatch guard: the shown attempt was generated under a
+                      different staging than the current selection. */}
+                  {selectedAttempt.pose !== activePose && (
+                    <div className="flex items-start gap-2 rounded-lg border-2 border-amber-200 bg-amber-50 px-2.5 py-2">
+                      <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0 text-amber-600" />
+                      <p className="text-[11px] font-medium text-amber-900">
+                        This attempt was generated with different staging than
+                        you have selected now — regenerate so the reference
+                        matches the video&apos;s setup, or switch the staging
+                        back before approving.
+                      </p>
+                    </div>
+                  )}
 
                   {/* H3(b) — amber, never blocking. */}
                   {selectedAttempt.warning && (

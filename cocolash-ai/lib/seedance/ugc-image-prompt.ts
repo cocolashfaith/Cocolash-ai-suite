@@ -11,6 +11,7 @@
 
 import type { LashStyle } from "@/lib/types";
 import { getLashStyleDescriptor } from "@/lib/prompts/modules/lash-styles";
+import type { ComposePose } from "./staging";
 
 // ── UGC-Specific Types ───────────────────────────────────────
 
@@ -71,6 +72,12 @@ export interface UGCImageParams {
   lashStyle: LashStyle;
   hasProduct: boolean;
   productDescription?: string;
+  /**
+   * Staging pose (Codex F2): the BASE prompt must agree with the composed
+   * pose — a desk pose cannot ride a "holding near her chin / camera held at
+   * eye level" base. Default "holding" keeps the classic selfie.
+   */
+  pose?: ComposePose;
 }
 
 // ── Scene Description Mapping ────────────────────────────────
@@ -204,14 +211,21 @@ export function buildUGCImagePrompt(params: UGCImageParams): {
     hasProduct,
     productDescription,
   } = params;
+  const pose: ComposePose = params.pose ?? "holding";
 
   const sceneData = SCENE_MAP[scene];
   const vibeExpression = VIBE_MAP[vibe];
 
-  // Product holding detail
+  // Product detail — must agree with the staging pose (Codex F2): the desk
+  // poses put the product on a surface with both hands free, so the base
+  // prompt must not simultaneously claim she is holding it near her chin.
   const productDetail =
     hasProduct && productDescription
-      ? `She is casually holding ${productDescription} in one hand near her chin level, grip natural and relaxed, product label partially visible. The product is proportional and not the focus — she is.\n\n`
+      ? pose === "holding"
+        ? `She is casually holding ${productDescription} in one hand near her chin level, grip natural and relaxed, product label partially visible. The product is proportional and not the focus — she is.\n\n`
+        : `${productDescription} ${
+            pose === "desk-open" ? "sits OPEN" : "rests CLOSED"
+          } on the desk/table in front of her, label toward the camera. BOTH her hands are visible and free — she is not holding the product or a phone. The product is proportional and not the focus — she is.\n\n`
       : "";
 
   const lashDescriptor = getLashStyleDescriptor(lashStyle);
@@ -223,7 +237,9 @@ export function buildUGCImagePrompt(params: UGCImageParams): {
   const imperfectionText = selectedImperfections.join(". ") + ".";
 
   const prompt = [
-    `Raw, unedited front-facing smartphone camera photo of a ${ageRange}-year-old ${ethnicity} woman with ${skinTone.toLowerCase()} skin and ${hairStyle.toLowerCase()} hair. This is the actual camera photo itself, not a screenshot, not an iPhone Photos app viewer, and not a phone screen.`,
+    `Raw, unedited ${
+      pose === "holding" ? "front-facing " : ""
+    }smartphone camera photo of a ${ageRange}-year-old ${ethnicity} woman with ${skinTone.toLowerCase()} skin and ${hairStyle.toLowerCase()} hair. This is the actual camera photo itself, not a screenshot, not an iPhone Photos app viewer, and not a phone screen.`,
     "",
     `She is in ${sceneData.description}. ${sceneData.lighting}.`,
     "",
@@ -232,7 +248,11 @@ export function buildUGCImagePrompt(params: UGCImageParams): {
     productDetail.trimEnd(),
     lashDetail,
     "",
-    `Authentic smartphone selfie aesthetic, candid and slightly off-center framing, camera held at eye level. The final image must fill the full frame edge-to-edge with only the real scene and person visible. No iPhone UI, no status bar, no black top/bottom bars, no file name, no buttons, no icons, no app chrome. Visible natural skin texture including pores, subtle under-eye texture, and flyaway hairs. Slight natural facial asymmetry. Muted, realistic skin tones with no color grading. Sharp, clean, in-focus capture — the texture is the skin and hair themselves, not compression artifacts, grain, or motion blur. ${imperfectionText}`,
+    `${
+      pose === "holding"
+        ? "Authentic smartphone selfie aesthetic, candid and slightly off-center framing, camera held at eye level."
+        : "Authentic smartphone UGC aesthetic, candid and slightly off-center framing, shot from a phone propped up on the desk facing her at face height — a stable frame she filmed herself with, not a held selfie."
+    } The final image must fill the full frame edge-to-edge with only the real scene and person visible. No iPhone UI, no status bar, no black top/bottom bars, no file name, no buttons, no icons, no app chrome. Visible natural skin texture including pores, subtle under-eye texture, and flyaway hairs. Slight natural facial asymmetry. Muted, realistic skin tones with no color grading. Sharp, clean, in-focus capture — the texture is the skin and hair themselves, not compression artifacts, grain, or motion blur. ${imperfectionText}`,
   ]
     .filter((line) => line !== undefined)
     .join("\n")

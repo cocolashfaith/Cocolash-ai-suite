@@ -170,7 +170,7 @@ describe("H2 — Continue wiring (component source)", () => {
     // TRUE for a freshly-approved composed shot AND for a gallery pick that
     // was composed in an earlier session (tag `ugc-avatar-composed`).
     expect(source).toContain("ugcWasComposed: hasComposedRef");
-    expect(source).toContain("composedGalleryUrls.has(u)");
+    expect(source).toContain("composedGalleryPoses.has(u)");
     expect(source).not.toContain("ugcWasComposed: false");
   });
 
@@ -287,7 +287,7 @@ describe("H3(a) — the composed image is approved, never auto-selected", () => 
     expect(source).toContain("handleApproveComposed");
     // Attempts APPEND — regenerating must never wipe earlier attempts.
     expect(source).toContain(
-      "{ url: data.imageUrl, warning: null, checking: true },"
+      "{ url: data.imageUrl, warning: null, checking: true, pose: activePose },"
     );
     expect(source).not.toContain("setComposedAttempts([]);\n    try {");
   });

@@ -479,9 +479,23 @@ describe("the vision system prompt is registered", () => {
     expect(new Set(ids).size).toBe(ids.length);
   });
 
-  it("registers the same prompt the director actually sends", async () => {
+  it("registers the same prompt family the director actually sends", async () => {
     replyOnce("prompt");
     await generateSeedanceVisionPrompt(input({ productImageUrls: images(3) }));
+    // The live prompt is staging-aware (product-showcase resolves to the
+    // desk-propped rig); the registry shows the canonical selfie rendering.
+    expect(lastCall().system).toBe(
+      buildSeedanceVisionDirectorPrompt({
+        influencerCount: 1,
+        productImageCount: 3,
+        stagingMode: "desk-propped",
+      })
+    );
+    // With an explicit selfie staging the live prompt IS the registry prompt.
+    replyOnce("prompt");
+    await generateSeedanceVisionPrompt(
+      input({ productImageUrls: images(3), stagingMode: "holding-selfie" })
+    );
     expect(lastCall().system).toBe(SEEDANCE_VISION_DIRECTOR_PROMPT);
   });
 });

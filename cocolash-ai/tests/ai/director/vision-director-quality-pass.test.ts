@@ -469,7 +469,7 @@ describe("H4 — the composed avatar already holds the product", () => {
   const plain = buildSeedanceVisionDirectorPrompt({ productImageCount: 2 });
 
   it("tells the writer the creator is already holding it", () => {
-    expect(composed).toContain("THE CREATOR IS ALREADY HOLDING THE PRODUCT:");
+    expect(composed).toContain("THE CREATOR IS ALREADY STAGED WITH THE PRODUCT:");
     expect(composed).toMatch(
       /@influencer_image1 already shows the creator holding this product/
     );
@@ -477,7 +477,7 @@ describe("H4 — the composed avatar already holds the product", () => {
 
   it("forbids staging a pickup", () => {
     expect(composed).toMatch(/Do NOT stage a pickup/);
-    expect(composed).toMatch(/no picking it up off a counter/);
+    expect(composed).toMatch(/No reaching for it as something new/);
     expect(composed).toMatch(/already in her hands when the clip starts/);
   });
 
@@ -495,18 +495,20 @@ describe("H4 — the composed avatar already holds the product", () => {
   });
 
   it("says none of that when the influencer image is a plain portrait", () => {
-    expect(plain).not.toContain("THE CREATOR IS ALREADY HOLDING THE PRODUCT:");
+    expect(plain).not.toContain("THE CREATOR IS ALREADY STAGED WITH THE PRODUCT:");
     expect(plain).not.toMatch(/Do NOT stage a pickup/);
   });
 
   it("changes the staging instruction end to end", async () => {
     const composedCall = await build({ influencerAlreadyHoldsProduct: true });
-    expect(composedCall.system).toContain("THE CREATOR IS ALREADY HOLDING THE PRODUCT:");
-    expect(composedCall.user).toMatch(/ALREADY holding this product/);
+    expect(composedCall.system).toContain("THE CREATOR IS ALREADY STAGED WITH THE PRODUCT:");
+    // Wording is staging-aware: "holding" under a selfie rig, "staged with
+    // … on the desk" under a propped rig (the campaign default decides).
+    expect(composedCall.user).toMatch(/ALREADY (holding this product|staged with this product on the desk)/);
 
     const plainCall = await build();
-    expect(plainCall.system).not.toContain("THE CREATOR IS ALREADY HOLDING THE PRODUCT:");
-    expect(plainCall.user).not.toMatch(/ALREADY holding this product/);
+    expect(plainCall.system).not.toContain("THE CREATOR IS ALREADY STAGED WITH THE PRODUCT:");
+    expect(plainCall.user).not.toMatch(/ALREADY (holding this product|staged with this product on the desk)/);
   });
 
   it("Step 3 sends the wizard's compose flag", () => {
@@ -612,7 +614,7 @@ describe("POST /api/seedance/director-vision — the new fields", () => {
     expect(system).toContain("This clip runs 12 seconds");
     expect(system).toContain("vertical 9:16 phone frame");
     expect(system).toContain("[5–12s] …");
-    expect(system).toContain("THE CREATOR IS ALREADY HOLDING THE PRODUCT:");
+    expect(system).toContain("THE CREATOR IS ALREADY STAGED WITH THE PRODUCT:");
   });
 
   it("accepts -1 (Auto) and plans ~10 s", async () => {
@@ -626,7 +628,7 @@ describe("POST /api/seedance/director-vision — the new fields", () => {
     expect(response.status).toBe(200);
     const { system } = lastCall();
     expect(system).toContain("vertical 9:16 phone frame");
-    expect(system).not.toContain("THE CREATOR IS ALREADY HOLDING THE PRODUCT:");
+    expect(system).not.toContain("THE CREATOR IS ALREADY STAGED WITH THE PRODUCT:");
   });
 
   it.each([
