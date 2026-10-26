@@ -2,6 +2,7 @@ import { NextRequest } from "next/server";
 import { z } from "zod";
 import { createClient } from "@/lib/supabase/server";
 import { requireChatAdmin } from "@/lib/chat/admin-auth";
+import { assertRowsUpdated, auditUserId, createServiceRoleClient } from "@/lib/chat/admin-write";
 import { ChatError } from "@/lib/chat/error";
 import { CHAT_SETTINGS_SINGLETON_ID } from "@/lib/chat/db";
 
@@ -19,11 +20,17 @@ export async function PATCH(req: NextRequest): Promise<Response> {
   try {
     const admin = await requireChatAdmin(supabase);
     const body = SettingsPatch.parse(await req.json());
-    const { error } = await supabase
+    // Authorized above; write with the service client (see lib/chat/admin-write.ts
+    // — the kill switch and daily cap silently failed to save for
+    // access-password admins under the user-scoped client).
+    const db = createServiceRoleClient();
+    const { data, error } = await db
       .from("chat_settings")
-      .update({ ...body, updated_by: admin.authUserId })
-      .eq("id", CHAT_SETTINGS_SINGLETON_ID);
+      .update({ ...body, updated_by: auditUserId(admin.authUserId) })
+      .eq("id", CHAT_SETTINGS_SINGLETON_ID)
+      .select("id");
     if (error) throw error;
+    assertRowsUpdated(data, "chat_settings");
     return new Response(JSON.stringify({ ok: true }), {
       status: 200,
       headers: { "content-type": "application/json" },

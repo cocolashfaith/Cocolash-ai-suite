@@ -1,6 +1,7 @@
 import { NextRequest } from "next/server";
 import { z } from "zod";
 import { createClient } from "@/lib/supabase/server";
+import { assertRowsUpdated, createServiceRoleClient } from "@/lib/chat/admin-write";
 import { requireChatAdmin } from "@/lib/chat/admin-auth";
 import { ChatError } from "@/lib/chat/error";
 
@@ -72,8 +73,15 @@ export async function PATCH(req: NextRequest): Promise<Response> {
     await requireChatAdmin(supabase);
     const body = DiscountUpdate.parse(await req.json());
     const { id, ...patch } = body;
-    const { error } = await supabase.from("discount_rules").update(patch).eq("id", id);
+    // Authorized above; write with the service client (see lib/chat/admin-write.ts).
+    const db = createServiceRoleClient();
+    const { data, error } = await db
+      .from("discount_rules")
+      .update(patch)
+      .eq("id", id)
+      .select("id");
     if (error) throw error;
+    assertRowsUpdated(data, "discount_rules");
     return Response.json({ ok: true });
   } catch (err) {
     return errorResponse(err);
@@ -85,7 +93,8 @@ export async function POST(req: NextRequest): Promise<Response> {
   try {
     await requireChatAdmin(supabase);
     const body = DiscountCreate.parse(await req.json());
-    const { data, error } = await supabase
+    const db = createServiceRoleClient();
+    const { data, error } = await db
       .from("discount_rules")
       .insert(body)
       .select(ROW_COLUMNS)

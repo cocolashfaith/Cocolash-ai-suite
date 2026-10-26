@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import { NextRequest } from "next/server";
 import * as adminAuth from "@/lib/chat/admin-auth";
 import * as supabaseServer from "@/lib/supabase/server";
+import * as adminWrite from "@/lib/chat/admin-write";
 import { ChatError } from "@/lib/chat/error";
 import { POST, PATCH } from "@/app/api/chatbot/admin/discounts/route";
 
@@ -15,6 +16,12 @@ import { POST, PATCH } from "@/app/api/chatbot/admin/discounts/route";
 
 vi.mock("@/lib/chat/admin-auth");
 vi.mock("@/lib/supabase/server");
+// Writes go through the cookie-free service client from admin-write (the
+// user-scoped client is only used to authorize).
+vi.mock("@/lib/chat/admin-write", async (orig) => ({
+  ...(await orig<typeof import("@/lib/chat/admin-write")>()),
+  createServiceRoleClient: vi.fn(),
+}));
 
 function req(body: unknown): NextRequest {
   return new NextRequest("http://localhost/api/chatbot/admin/discounts", {
@@ -43,6 +50,7 @@ describe("POST /api/chatbot/admin/discounts — auth + value integrity", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     vi.mocked(supabaseServer.createClient).mockResolvedValue({} as never);
+    vi.mocked(adminWrite.createServiceRoleClient).mockReturnValue({} as never);
   });
 
   it("rejects non-admins with the ChatError status (no insert)", async () => {
@@ -74,7 +82,7 @@ describe("POST /api/chatbot/admin/discounts — auth + value integrity", () => {
       .mockResolvedValue({ data: { id: "d1", ...validBody }, error: null });
     const select = vi.fn().mockReturnValue({ single });
     const insert = vi.fn().mockReturnValue({ select });
-    vi.mocked(supabaseServer.createClient).mockResolvedValue({
+    vi.mocked(adminWrite.createServiceRoleClient).mockReturnValue({
       from: vi.fn().mockReturnValue({ insert }),
     } as never);
 
@@ -90,6 +98,7 @@ describe("PATCH /api/chatbot/admin/discounts — value integrity", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     vi.mocked(supabaseServer.createClient).mockResolvedValue({} as never);
+    vi.mocked(adminWrite.createServiceRoleClient).mockReturnValue({} as never);
   });
 
   it("rejects a NaN/null value with 400", async () => {

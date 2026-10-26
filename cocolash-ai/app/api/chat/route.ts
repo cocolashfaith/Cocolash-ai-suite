@@ -32,6 +32,14 @@ import { log } from "@/lib/log";
 import { streamChat } from "@/lib/openrouter/chat";
 import { composeSystemPrompt, DEFAULT_VOICE_FRAGMENTS } from "@/lib/chat/voice";
 import {
+  captureLeadFromChat,
+  createHandoffFilter,
+  detectHandoff,
+  extractEmail,
+  flagHandoff,
+  runAfterResponse,
+} from "@/lib/chat/handoff";
+import {
   appendMessage,
   createSession,
   getChatSettings,
@@ -202,38 +210,18 @@ export async function POST(req: NextRequest): Promise<Response> {
     content: body.message,
   });
 
-  // Phase 14: detect an email in the user's message and write a
-  // `lead_captures` row. The widget never explicitly POSTs to /api/chat/lead
-  // — visitors just type their email mid-conversation. We extract here so
-  // the admin Leads panel actually populates.
-  const emailMatch = body.message.match(/[\w.+-]+@[\w-]+\.[\w.-]+/);
-  if (emailMatch) {
-    const email = emailMatch[0].toLowerCase();
-    try {
-      const { error } = await supabase.from("lead_captures").insert({
-        session_id: session.id,
-        email,
-        consent: true,
-        intent_at_capture: null,
-        discount_offered: null,
-        notes: "captured from chat message",
-      });
-      if (error) {
-        log.warn("chat.lead_capture_failed", {
-          requestId,
-          sessionId: session.id,
-          error: error.message,
-        });
-      } else {
-        log.info("chat.lead_captured", { requestId, sessionId: session.id, email });
-      }
-    } catch (err) {
-      log.warn("chat.lead_capture_threw", {
-        requestId,
-        sessionId: session.id,
-        error: err instanceof Error ? err.message : String(err),
-      });
-    }
+  // Detect an email in the user's message, save the lead AND email the support
+  // inbox (lib/chat/handoff.ts). The widget never explicitly POSTs to
+  // /api/chat/lead — visitors just type their email mid-conversation — so this
+  // is the path that has to notify. It used to save the row only, which is why
+  // no lead or handoff ever reached support@cocolash.com (fixed 2026-10-26).
+  // Runs after the response (runAfterResponse) so saving + emailing the lead can
+  // never delay or stall Coco's reply.
+  const capturedEmail = extractEmail(body.message);
+  if (capturedEmail) {
+    runAfterResponse("lead_capture", () =>
+      captureLeadFromChat(supabase, { sessionId: session.id, email: capturedEmail })
+    );
   }
 
   // Run intent + retrieval + history in parallel.
@@ -288,7 +276,7 @@ export async function POST(req: NextRequest): Promise<Response> {
     retrievedChunks: retrieveResult.chunks,
     isBusinessHours: isBusinessHours(),
     productContext: productContext.promptText,
-    customerProvidedEmail: emailMatch ? emailMatch[0].toLowerCase() : null,
+    customerProvidedEmail: capturedEmail,
   });
 
   // Convert the persisted history (which already includes the user turn we
@@ -312,6 +300,7 @@ export async function POST(req: NextRequest): Promise<Response> {
 
   async function runStream(controller: ReadableStreamDefaultController<Uint8Array>): Promise<void> {
     let assistantText = "";
+    let handoffMarked = false;
     try {
       controller.enqueue(
         sseFrame("sources", {
@@ -330,10 +319,23 @@ export async function POST(req: NextRequest): Promise<Response> {
         history: claudeHistory,
       });
 
+      // Coco ends a hand-off reply with HANDOFF_MARKER (lib/chat/voice-rules.ts);
+      // the filter strips it — even when split across deltas — so the shopper
+      // never sees it, and records that it was there.
+      const handoffFilter = createHandoffFilter();
       for await (const delta of tokens) {
-        assistantText += delta;
-        controller.enqueue(sseFrame("token", { delta }));
+        const visible = handoffFilter.push(delta);
+        if (!visible) continue;
+        assistantText += visible;
+        controller.enqueue(sseFrame("token", { delta: visible }));
       }
+      const tail = handoffFilter.flush();
+      if (tail) {
+        assistantText += tail;
+        controller.enqueue(sseFrame("token", { delta: tail }));
+      }
+      handoffMarked = handoffFilter.found;
+      if (handoffMarked) assistantText = assistantText.trimEnd();
 
       // Now that the assistant text is fully streamed, emit ONE consolidated
       // products frame. This includes both candidates from the user message
@@ -401,6 +403,20 @@ export async function POST(req: NextRequest): Promise<Response> {
       });
 
       await touchSession(supabase, session.id).catch(() => undefined);
+
+      // When Coco hands the customer to the team, flag the session for
+      // follow-up and email the support inbox. This is the "flag the
+      // conversation for review" the voice rules promise — it had no
+      // implementation before 2026-10-26. Scheduled after the response, after
+      // the assistant turn is persisted, so it never delays the reply.
+      if (detectHandoff({ assistantText, markerFound: handoffMarked, fragments })) {
+        runAfterResponse("handoff", () =>
+          flagHandoff(supabase, {
+            sessionId: session.id,
+            customerMessage: body.message,
+          })
+        );
+      }
 
       controller.enqueue(
         sseFrame("done", {

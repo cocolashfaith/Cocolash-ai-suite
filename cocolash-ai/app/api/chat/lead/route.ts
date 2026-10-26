@@ -10,6 +10,7 @@ import { NextRequest } from "next/server";
 import { createClient as createServiceClient } from "@supabase/supabase-js";
 import { LeadPayloadSchema } from "@/lib/chat/lead-validation";
 import { sendLeadEmail } from "@/lib/chat/notify";
+import { leadFromAddress, supportInbox, transcriptUrl } from "@/lib/chat/handoff";
 
 export const runtime = "nodejs";
 
@@ -79,16 +80,19 @@ export async function POST(req: NextRequest): Promise<Response> {
   }
 
   // Best-effort notify; failure is logged, not exposed to the visitor.
-  const transcriptLink = `${process.env.NEXT_PUBLIC_APP_URL ?? ""}/chatbot/admin/transcripts/${payload.sessionId}`;
+  // transcriptUrl() builds the `?session=` link the Transcripts page actually
+  // reads (the old `/transcripts/<id>` path 404'd).
+  const transcriptLink = transcriptUrl(payload.sessionId);
   const notify = await sendLeadEmail({
-    to: process.env.CHATBOT_SUPPORT_EMAIL ?? "support@cocolash.com",
+    to: supportInbox(),
     fromName: "CocoLash AI",
-    fromEmail: process.env.LEAD_EMAIL_FROM ?? "leads@cocolash.com",
+    fromEmail: leadFromAddress(),
     email: payload.email,
     intent: payload.intentAtCapture ?? null,
     discountOffered: payload.discountOffered ?? null,
     transcriptLink,
     notes: payload.notes ?? null,
+    idempotencyKey: `lead-endpoint:${insertRow.id}`,
   });
 
   return new Response(

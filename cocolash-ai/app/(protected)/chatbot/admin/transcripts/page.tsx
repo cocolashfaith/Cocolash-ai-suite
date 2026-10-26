@@ -1,5 +1,17 @@
 import { createAdminClient } from "@/lib/supabase/server";
 import Link from "next/link";
+import { followUpReason, isFlaggedForFollowUp } from "@/lib/chat/handoff";
+
+/** Matches both flag states ("Needs follow-up: …" and "… (email pending): …"). */
+const FOLLOW_UP_LIKE = "Needs follow-up%";
+
+function FollowUpBadge() {
+  return (
+    <span className="rounded bg-amber-100 px-2 py-0.5 text-xs font-semibold text-amber-900">
+      Needs follow-up
+    </span>
+  );
+}
 
 interface SessionRow {
   id: string;
@@ -14,7 +26,7 @@ interface SessionRow {
 export default async function ChatbotAdminTranscripts({
   searchParams,
 }: {
-  searchParams: Promise<{ session?: string }>;
+  searchParams: Promise<{ session?: string; filter?: string }>;
 }) {
   const params = await searchParams;
   const supabase = await createAdminClient();
@@ -34,6 +46,15 @@ export default async function ChatbotAdminTranscripts({
           ← Back to all transcripts
         </Link>
         <h1 className="text-2xl font-bold text-coco-brown">Transcript</h1>
+        {followUpReason(session?.intent_summary) ? (
+          <div className="flex items-start gap-2 rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
+            <FollowUpBadge />
+            <span>
+              Coco handed this customer to the team. They asked: &ldquo;
+              {followUpReason(session?.intent_summary)}&rdquo;
+            </span>
+          </div>
+        ) : null}
         <p className="text-xs text-coco-brown-medium">
           Session {params.session} · {session?.shopify_customer_id ? `customer ${session.shopify_customer_id}` : "anonymous"} · started{" "}
           {session?.created_at ? new Date(session.created_at).toLocaleString() : "—"}
@@ -57,9 +78,12 @@ export default async function ChatbotAdminTranscripts({
     );
   }
 
-  const { data: sessions } = await supabase
+  const followUpOnly = params.filter === "follow-up";
+  let query = supabase
     .from("chat_sessions")
-    .select("id, shopify_customer_id, status, created_at, last_active_at, intent_summary")
+    .select("id, shopify_customer_id, status, created_at, last_active_at, intent_summary");
+  if (followUpOnly) query = query.like("intent_summary", FOLLOW_UP_LIKE);
+  const { data: sessions } = await query
     .order("last_active_at", { ascending: false })
     .limit(100);
 
@@ -68,7 +92,19 @@ export default async function ChatbotAdminTranscripts({
   return (
     <div className="space-y-4">
       <h1 className="text-2xl font-bold text-coco-brown">Transcripts</h1>
-      <p className="text-sm text-coco-brown-medium">Last 100 sessions, most recent first.</p>
+      <div className="flex flex-wrap items-center gap-3 text-sm">
+        <p className="text-coco-brown-medium">
+          {followUpOnly
+            ? "Conversations Coco handed to the team, most recent first."
+            : "Last 100 sessions, most recent first."}
+        </p>
+        <Link
+          href={followUpOnly ? "/chatbot/admin/transcripts" : "?filter=follow-up"}
+          className="rounded border border-coco-pink-soft px-2 py-0.5 text-xs text-coco-brown underline-offset-2 hover:underline"
+        >
+          {followUpOnly ? "Show all" : "Show only needs follow-up"}
+        </Link>
+      </div>
       <div className="overflow-hidden rounded-md border border-coco-pink-soft bg-white">
         <table className="w-full text-sm">
           <thead className="bg-coco-beige text-left text-xs uppercase text-coco-brown-medium">
@@ -103,7 +139,11 @@ export default async function ChatbotAdminTranscripts({
                   {new Date(s.last_active_at).toLocaleString()}
                 </td>
                 <td className="px-3 py-2">
-                  <span className="rounded bg-coco-pink-soft px-2 py-0.5 text-xs">{s.status}</span>
+                  {isFlaggedForFollowUp(s.intent_summary) ? (
+                    <FollowUpBadge />
+                  ) : (
+                    <span className="rounded bg-coco-pink-soft px-2 py-0.5 text-xs">{s.status}</span>
+                  )}
                 </td>
               </tr>
             ))}
